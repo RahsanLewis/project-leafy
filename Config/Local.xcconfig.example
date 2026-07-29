@@ -1,0 +1,7 @@
+// Copy values into Base.xcconfig locally or configure them in CI.
+SUPABASE_URL = https:/$()/your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY = sb_publishable_your_key
+PRIVACY_POLICY_URL = https:/$()/your-domain.com/privacy
+TERMS_URL = https:/$()/your-domain.com/terms
+SUPPORT_URL = https:/$()/your-domain.com/support
+

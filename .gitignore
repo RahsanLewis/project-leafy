@@ -1,0 +1,9 @@
+DerivedData/
+.build/
+*.xcuserstate
+xcuserdata/
+Config/Local.xcconfig
+.DS_Store
+.supabase/
+supabase/.temp/
+

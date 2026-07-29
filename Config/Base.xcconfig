@@ -1,0 +1,6 @@
+SUPABASE_URL = https:/$()/YOUR_PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY = YOUR_PUBLISHABLE_KEY
+PRIVACY_POLICY_URL = https:/$()/example.com/privacy
+TERMS_URL = https:/$()/example.com/terms
+SUPPORT_URL = https:/$()/example.com/support
+

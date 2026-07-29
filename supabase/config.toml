@@ -1,0 +1,24 @@
+project_id = "project-leafy"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "leafy://auth"
+additional_redirect_urls = ["leafy://auth"]
+enable_signup = true
+
+[functions.save-nutrition-plan]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
+

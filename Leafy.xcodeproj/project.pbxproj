@@ -1,0 +1,686 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		03E0A19393B6A2D0517B2F39 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579A5F8E3ED9F131336497BC /* OnboardingView.swift */; };
+		055624F286689F89F2BF9E0B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB0A1924C3A8C12C5BC5DFF /* SettingsView.swift */; };
+		18527F8ED817D629706D725D /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8AA7BEC7FCBD7867401369B /* DashboardView.swift */; };
+		1F4DA8D52977B6A79818113F /* LeafyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */; };
+		3E19A9AA6295D4F84CEBCC6B /* PlanResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */; };
+		41D48E29C7A09E97E210B3E6 /* OnboardingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF517F2114DC9DDD40FBAC24 /* OnboardingDraft.swift */; };
+		575C123D998A2534A00DCAD3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8D67C1E7B1ACB80669999E4F /* Supabase */; };
+		589C890A6005B279A9F0ADA7 /* LeafyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78BE136F0A736115C288398 /* LeafyTheme.swift */; };
+		65AF40F44BB608F6A1891E3A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 397C3AC2A4FA044DF7265986 /* PrivacyInfo.xcprivacy */; };
+		6C51A892B4A790670217CA9F /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */; };
+		70E0EA2A2B01E0DD1A8E10E1 /* PlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C26C36A030A8DDDC190440 /* PlanService.swift */; };
+		71BB8D061CEDAD9F1FCDBBA7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5257776278A1C9A522DB9D8 /* Assets.xcassets */; };
+		808DF33F1231CFC28B60A7B8 /* NutritionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2E894FD8C58239BD5382AB /* NutritionModels.swift */; };
+		95A80EA122227291A2C9C976 /* NutritionCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A15461D53272B43E860F39C /* NutritionCalculator.swift */; };
+		A5DEEAB785BA06A4E4FB39C3 /* AuthenticationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */; };
+		B23DC6512D9DF70AA07E402F /* NutritionCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */; };
+		E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E20C0C3895F2E56263C5991 /* AppModel.swift */; };
+		F9710D039F7A23EA147A913F /* LeafyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		029474F4CEDD45D2124DE9D0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8CB40172C452CB8EF192518E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8A4C1AD10732BE502FB94DCF;
+			remoteInfo = Leafy;
+		};
+		B6B0BA23AF42202653E7B16B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8CB40172C452CB8EF192518E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8A4C1AD10732BE502FB94DCF;
+			remoteInfo = Leafy;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationView.swift; sourceTree = "<group>"; };
+		37A674F736E49A180B162977 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		397C3AC2A4FA044DF7265986 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		3D2E894FD8C58239BD5382AB /* NutritionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionModels.swift; sourceTree = "<group>"; };
+		3E20C0C3895F2E56263C5991 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		53369E8B5F0A362D4CDF4635 /* Leafy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Leafy.entitlements; sourceTree = "<group>"; };
+		579A5F8E3ED9F131336497BC /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		58F59AA903B230B4552B30BC /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		75C26C36A030A8DDDC190440 /* PlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanService.swift; sourceTree = "<group>"; };
+		791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeafyUITests.swift; sourceTree = "<group>"; };
+		7A15461D53272B43E860F39C /* NutritionCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCalculator.swift; sourceTree = "<group>"; };
+		87A983E1752F1EAB0CC2A3C5 /* Leafy.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Leafy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCalculatorTests.swift; sourceTree = "<group>"; };
+		A5257776278A1C9A522DB9D8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		ACB0A1924C3A8C12C5BC5DFF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B78BE136F0A736115C288398 /* LeafyTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeafyTheme.swift; sourceTree = "<group>"; };
+		B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeafyApp.swift; sourceTree = "<group>"; };
+		BF517F2114DC9DDD40FBAC24 /* OnboardingDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDraft.swift; sourceTree = "<group>"; };
+		BF65C4384CC1DAA3372F68BC /* LeafyUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LeafyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF6741B90BF0AA79C691837F /* LeafyTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LeafyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanResultsView.swift; sourceTree = "<group>"; };
+		CF308B7696FA49F955CCA73A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F8AA7BEC7FCBD7867401369B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7E97E88A25EEB0A5B9B0A077 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				575C123D998A2534A00DCAD3 /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		00C800CC23AC25FB31998760 /* LeafyTests */ = {
+			isa = PBXGroup;
+			children = (
+				8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */,
+			);
+			path = LeafyTests;
+			sourceTree = "<group>";
+		};
+		02DE8CF2749F7288FDA4A741 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		0C762F15D91B97A4E27D56C6 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				02DE8CF2749F7288FDA4A741 /* Auth */,
+				693051778E40464AD48D39DE /* Dashboard */,
+				5CCC46AD4CC4BF015B1C0F65 /* Onboarding */,
+				7C1BDD44AC07AB0D2846A5A0 /* Settings */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		0ED83BFC8008650835BD94D1 /* LeafyUITests */ = {
+			isa = PBXGroup;
+			children = (
+				791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */,
+			);
+			path = LeafyUITests;
+			sourceTree = "<group>";
+		};
+		33A7242C6750B085E74129EC = {
+			isa = PBXGroup;
+			children = (
+				AF332DA2913FA92758CE967D /* Config */,
+				502FFE73FD994DE3A21688B7 /* Leafy */,
+				00C800CC23AC25FB31998760 /* LeafyTests */,
+				0ED83BFC8008650835BD94D1 /* LeafyUITests */,
+				89E9AAD186B18385FF149329 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		502FFE73FD994DE3A21688B7 /* Leafy */ = {
+			isa = PBXGroup;
+			children = (
+				99ACB9909CB7CCCCF8AED5F9 /* App */,
+				63D9C5F23895C2334685FFB6 /* Core */,
+				0C762F15D91B97A4E27D56C6 /* Features */,
+				F047ED16DE33F7D002B8D1EA /* Resources */,
+			);
+			path = Leafy;
+			sourceTree = "<group>";
+		};
+		5CCC46AD4CC4BF015B1C0F65 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				BF517F2114DC9DDD40FBAC24 /* OnboardingDraft.swift */,
+				579A5F8E3ED9F131336497BC /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		63D9C5F23895C2334685FFB6 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */,
+				B78BE136F0A736115C288398 /* LeafyTheme.swift */,
+				7A15461D53272B43E860F39C /* NutritionCalculator.swift */,
+				3D2E894FD8C58239BD5382AB /* NutritionModels.swift */,
+				75C26C36A030A8DDDC190440 /* PlanService.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		693051778E40464AD48D39DE /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				F8AA7BEC7FCBD7867401369B /* DashboardView.swift */,
+				CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		7C1BDD44AC07AB0D2846A5A0 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				ACB0A1924C3A8C12C5BC5DFF /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		89E9AAD186B18385FF149329 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				87A983E1752F1EAB0CC2A3C5 /* Leafy.app */,
+				BF6741B90BF0AA79C691837F /* LeafyTests.xctest */,
+				BF65C4384CC1DAA3372F68BC /* LeafyUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		99ACB9909CB7CCCCF8AED5F9 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				3E20C0C3895F2E56263C5991 /* AppModel.swift */,
+				B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		AF332DA2913FA92758CE967D /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				58F59AA903B230B4552B30BC /* Debug.xcconfig */,
+				37A674F736E49A180B162977 /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		F047ED16DE33F7D002B8D1EA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A5257776278A1C9A522DB9D8 /* Assets.xcassets */,
+				CF308B7696FA49F955CCA73A /* Info.plist */,
+				53369E8B5F0A362D4CDF4635 /* Leafy.entitlements */,
+				397C3AC2A4FA044DF7265986 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4E7A0398864FDFFE9DB8C402 /* LeafyUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F860BC33336155B90F8891A /* Build configuration list for PBXNativeTarget "LeafyUITests" */;
+			buildPhases = (
+				4AF37BE82D85984FC0A64DCD /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				964C87AC16197BC274D7CE87 /* PBXTargetDependency */,
+			);
+			name = LeafyUITests;
+			packageProductDependencies = (
+			);
+			productName = LeafyUITests;
+			productReference = BF65C4384CC1DAA3372F68BC /* LeafyUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		8A4C1AD10732BE502FB94DCF /* Leafy */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6F48DB97AD75293120F0E93F /* Build configuration list for PBXNativeTarget "Leafy" */;
+			buildPhases = (
+				B0A85D575BB44614F3AC457A /* Sources */,
+				5C1D0C510A8147FB9A03E32B /* Resources */,
+				7E97E88A25EEB0A5B9B0A077 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Leafy;
+			packageProductDependencies = (
+				8D67C1E7B1ACB80669999E4F /* Supabase */,
+			);
+			productName = Leafy;
+			productReference = 87A983E1752F1EAB0CC2A3C5 /* Leafy.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A6758DE71FB6BAD88C4BF02C /* LeafyTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E860E2349ACA23F726998F9 /* Build configuration list for PBXNativeTarget "LeafyTests" */;
+			buildPhases = (
+				80E6E98596B9DFA8D201EC00 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A6550D56D2266D6B9979A7B7 /* PBXTargetDependency */,
+			);
+			name = LeafyTests;
+			packageProductDependencies = (
+			);
+			productName = LeafyTests;
+			productReference = BF6741B90BF0AA79C691837F /* LeafyTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8CB40172C452CB8EF192518E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					4E7A0398864FDFFE9DB8C402 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+						TestTargetID = 8A4C1AD10732BE502FB94DCF;
+					};
+					8A4C1AD10732BE502FB94DCF = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					A6758DE71FB6BAD88C4BF02C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = EE5E80B9BB1A892FBC9C39C6 /* Build configuration list for PBXProject "Leafy" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 33A7242C6750B085E74129EC;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				597B9332BCD48FA8BE960D8D /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 89E9AAD186B18385FF149329 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8A4C1AD10732BE502FB94DCF /* Leafy */,
+				A6758DE71FB6BAD88C4BF02C /* LeafyTests */,
+				4E7A0398864FDFFE9DB8C402 /* LeafyUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5C1D0C510A8147FB9A03E32B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				71BB8D061CEDAD9F1FCDBBA7 /* Assets.xcassets in Resources */,
+				65AF40F44BB608F6A1891E3A /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4AF37BE82D85984FC0A64DCD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F9710D039F7A23EA147A913F /* LeafyUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		80E6E98596B9DFA8D201EC00 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B23DC6512D9DF70AA07E402F /* NutritionCalculatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0A85D575BB44614F3AC457A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6C51A892B4A790670217CA9F /* AppConfiguration.swift in Sources */,
+				E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */,
+				A5DEEAB785BA06A4E4FB39C3 /* AuthenticationView.swift in Sources */,
+				18527F8ED817D629706D725D /* DashboardView.swift in Sources */,
+				1F4DA8D52977B6A79818113F /* LeafyApp.swift in Sources */,
+				589C890A6005B279A9F0ADA7 /* LeafyTheme.swift in Sources */,
+				95A80EA122227291A2C9C976 /* NutritionCalculator.swift in Sources */,
+				808DF33F1231CFC28B60A7B8 /* NutritionModels.swift in Sources */,
+				41D48E29C7A09E97E210B3E6 /* OnboardingDraft.swift in Sources */,
+				03E0A19393B6A2D0517B2F39 /* OnboardingView.swift in Sources */,
+				3E19A9AA6295D4F84CEBCC6B /* PlanResultsView.swift in Sources */,
+				70E0EA2A2B01E0DD1A8E10E1 /* PlanService.swift in Sources */,
+				055624F286689F89F2BF9E0B /* SettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		964C87AC16197BC274D7CE87 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8A4C1AD10732BE502FB94DCF /* Leafy */;
+			targetProxy = B6B0BA23AF42202653E7B16B /* PBXContainerItemProxy */;
+		};
+		A6550D56D2266D6B9979A7B7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8A4C1AD10732BE502FB94DCF /* Leafy */;
+			targetProxy = 029474F4CEDD45D2124DE9D0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		038086CB551852F772613F89 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		17A130BD88B9B05976FC1550 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.projectleafy.app.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Leafy.app/Leafy";
+			};
+			name = Debug;
+		};
+		46C23F7D71D1ADA1699AB7B9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 37A674F736E49A180B162977 /* Release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Leafy/Resources/Leafy.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Leafy/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.projectleafy.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		6493336DF0003B8AB1C89969 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 58F59AA903B230B4552B30BC /* Debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Leafy/Resources/Leafy.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Leafy/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.projectleafy.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		76474AC07555CEC19B171835 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.projectleafy.app.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Leafy;
+			};
+			name = Release;
+		};
+		CF4C610FBF2969CD7E70637C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		EB9BF779B8F55A5CE606CCE0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.projectleafy.app.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Leafy.app/Leafy";
+			};
+			name = Release;
+		};
+		FA746C8890D9CC996E4FB262 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.projectleafy.app.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Leafy;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2F860BC33336155B90F8891A /* Build configuration list for PBXNativeTarget "LeafyUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA746C8890D9CC996E4FB262 /* Debug */,
+				76474AC07555CEC19B171835 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3E860E2349ACA23F726998F9 /* Build configuration list for PBXNativeTarget "LeafyTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				17A130BD88B9B05976FC1550 /* Debug */,
+				EB9BF779B8F55A5CE606CCE0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6F48DB97AD75293120F0E93F /* Build configuration list for PBXNativeTarget "Leafy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6493336DF0003B8AB1C89969 /* Debug */,
+				46C23F7D71D1ADA1699AB7B9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EE5E80B9BB1A892FBC9C39C6 /* Build configuration list for PBXProject "Leafy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CF4C610FBF2969CD7E70637C /* Debug */,
+				038086CB551852F772613F89 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		597B9332BCD48FA8BE960D8D /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8D67C1E7B1ACB80669999E4F /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 597B9332BCD48FA8BE960D8D /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 8CB40172C452CB8EF192518E /* Project object */;
+}

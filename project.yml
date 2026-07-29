@@ -1,0 +1,67 @@
+name: Leafy
+options:
+  bundleIdPrefix: com.projectleafy
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    CODE_SIGN_STYLE: Automatic
+configs:
+  Debug: debug
+  Release: release
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+targets:
+  Leafy:
+    type: application
+    platform: iOS
+    sources:
+      - Leafy
+    resources:
+      - Leafy/Resources
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.projectleafy.app
+        INFOPLIST_FILE: Leafy/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Leafy/Resources/Leafy.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: Supabase
+        product: Supabase
+    scheme:
+      testTargets:
+        - LeafyTests
+        - LeafyUITests
+  LeafyTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [LeafyTests]
+    dependencies:
+      - target: Leafy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.projectleafy.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+  LeafyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [LeafyUITests]
+    dependencies:
+      - target: Leafy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.projectleafy.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
