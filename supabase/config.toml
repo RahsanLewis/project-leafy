@@ -17,8 +17,7 @@ additional_redirect_urls = ["leafy://auth"]
 enable_signup = true
 
 [functions.save-nutrition-plan]
-verify_jwt = true
+verify_jwt = false
 
 [functions.delete-account]
-verify_jwt = true
-
+verify_jwt = false

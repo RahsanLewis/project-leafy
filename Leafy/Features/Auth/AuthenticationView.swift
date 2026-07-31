@@ -4,44 +4,148 @@ import Security
 import SwiftUI
 
 struct AuthenticationView: View {
+    private enum EmailMode: String, CaseIterable { case create = "Create account", signIn = "Sign in" }
+
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var rawNonce = ""
+    @State private var appleErrorMessage: String?
+    @State private var emailMode: EmailMode = .create
 
     var body: some View {
         @Bindable var app = app
         NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Save your plan").font(.largeTitle.bold())
-                Text("Create a secure account so your targets are available when you return.").foregroundStyle(.secondary)
+            ScrollView {
+              VStack(alignment: .leading, spacing: 20) {
+                Text(emailMode == .create ? "Create your account" : "Welcome back")
+                    .font(.largeTitle.bold())
+                Text(emailMode == .create
+                     ? "Save your nutrition targets securely and access them when you return."
+                     : "Sign in to save this plan to your existing Leafy account.")
+                    .foregroundStyle(.secondary)
                 SignInWithAppleButton(.signIn) { request in
                     let nonce = Self.randomNonce(); rawNonce = nonce
                     request.requestedScopes = [.email]
                     request.nonce = Self.sha256(nonce)
                 } onCompletion: { result in handleApple(result) }
                 .signInWithAppleButtonStyle(.black).frame(height: 52).clipShape(.rect(cornerRadius: 12))
+#if targetEnvironment(simulator)
+                Label("Test Apple sign-in on a physical iPhone. Email and password work in Simulator.", systemImage: "iphone.gen3")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+#endif
                 HStack { Rectangle().frame(height: 1).foregroundStyle(.quaternary); Text("or").foregroundStyle(.secondary); Rectangle().frame(height: 1).foregroundStyle(.quaternary) }
-                TextField("Email address", text: $app.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
-                if app.saveState == .awaitingCode {
-                    TextField("Six-digit code", text: $app.emailCode).keyboardType(.numberPad).textContentType(.oneTimeCode).textFieldStyle(.roundedBorder)
-                    Button("Verify and save") { Task { await app.verifyCodeAndSave() } }.buttonStyle(PrimaryButtonStyle())
-                    Button("Send a new code") { Task { await app.sendCode() } }.frame(maxWidth: .infinity)
+
+                if app.saveState == .awaitingConfirmation {
+                    confirmationForm
                 } else {
-                    Button("Email me a code") { Task { await app.sendCode() } }.buttonStyle(PrimaryButtonStyle())
+                    Picker("Account action", selection: $emailMode) {
+                        ForEach(EmailMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+
+                    VStack(spacing: 12) {
+                        TextField("Email address", text: $app.email)
+                            .textContentType(.emailAddress).keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+                        SecureField("Password", text: $app.password)
+                            .textContentType(emailMode == .create ? .newPassword : .password)
+                            .textFieldStyle(.roundedBorder)
+                        if emailMode == .create {
+                            SecureField("Confirm password", text: $app.passwordConfirmation)
+                                .textContentType(.newPassword)
+                                .textFieldStyle(.roundedBorder)
+                            Text("Use at least 8 characters.")
+                                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    Button(emailMode == .create ? "Create account and save" : "Sign in and save") {
+                        Task {
+                            if emailMode == .create { await app.createAccount() }
+                            else { await app.signInAndSave() }
+                        }
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
                 }
-                if app.saveState != .idle && app.saveState != .awaitingCode { ProgressView().frame(maxWidth: .infinity) }
-                if let error = app.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
+                if app.saveState != .idle && app.saveState != .awaitingConfirmation && app.saveState != .resendingConfirmation {
+                    ProgressView().frame(maxWidth: .infinity)
+                }
+                if let error = appleErrorMessage ?? app.errorMessage {
+                    Label(error, systemImage: "exclamationmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
                 Text("By continuing, you agree to Leafy’s Terms and acknowledge its Privacy Policy.").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-            }.padding(24)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+              }.padding(24)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        app.errorMessage = nil
+                        app.statusMessage = nil
+                        dismiss()
+                    }
+                }
+            }
         }
         .interactiveDismissDisabled(app.saveState == .saving)
+        .onAppear {
+            app.errorMessage = nil
+            appleErrorMessage = nil
+        }
+    }
+
+    private var confirmationForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Check your email", systemImage: "envelope.badge")
+                .font(.title2.bold()).foregroundStyle(.tint)
+            Text("We created your account and sent a confirmation link to **\(app.email)**. Tap the link in that email, then return here to finish saving your plan.")
+                .foregroundStyle(.secondary)
+            Label("After confirming, come back to Leafy—even if the browser opens a blank or localhost page.", systemImage: "arrow.uturn.backward.circle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button("I've confirmed my email") { Task { await app.finishConfirmedAccount() } }
+                .buttonStyle(PrimaryButtonStyle())
+            Button {
+                Task { await app.resendAccountConfirmation() }
+            } label: {
+                if app.saveState == .resendingConfirmation {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Sending…")
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    Text("Resend confirmation email").frame(maxWidth: .infinity)
+                }
+            }
+            .disabled(app.saveState == .resendingConfirmation)
+            if let message = app.statusMessage {
+                Label(message, systemImage: "checkmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.green)
+            }
+            Button("Use a different email") {
+                app.saveState = .idle
+                app.errorMessage = nil
+                app.statusMessage = nil
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     private func handleApple(_ result: Result<ASAuthorization, any Error>) {
         switch result {
-        case let .failure(error): app.errorMessage = error.localizedDescription
+        case let .failure(error):
+            let authorizationError = error as? ASAuthorizationError
+            if authorizationError?.code == .canceled { return }
+#if targetEnvironment(simulator)
+            appleErrorMessage = "Sign in with Apple isn’t available in this simulator. Use email verification below or test it on your iPhone."
+#else
+            appleErrorMessage = "Apple couldn’t complete sign-in. Try again or use email verification below."
+#endif
         case let .success(authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let data = credential.identityToken, let token = String(data: data, encoding: .utf8), !rawNonce.isEmpty
@@ -63,4 +167,3 @@ struct AuthenticationView: View {
         })
     }
 }
-

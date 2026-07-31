@@ -2,11 +2,11 @@ import Foundation
 import Observation
 
 @Observable final class OnboardingDraft {
-    enum Step: Int, CaseIterable { case welcome, eligibility, goal, body, target, activity, pace, results }
+    enum Step: Int, CaseIterable { case welcome, eligibility, goal, body, activity, pace, results }
     var step: Step = .welcome
     var isEditing = false
-    var confirmsAdult = false
-    var hasContraindication = false
+    var confirmsAdult: Bool?
+    var hasContraindication: Bool?
     var birthDate = Calendar.current.date(byAdding: .year, value: -30, to: .now)!
     var calculationSex: CalculationSex = .female
     var heightCM = 168.0
@@ -22,6 +22,30 @@ import Observation
     var pace: GoalPace = .steady
     var unitSystem: UnitSystem = .imperial
 
+    var hasCompletedEligibility: Bool {
+        confirmsAdult != nil && hasContraindication != nil
+    }
+
+    var isEligible: Bool {
+        confirmsAdult == true && hasContraindication == false
+    }
+
+    var isIneligible: Bool {
+        confirmsAdult == false || hasContraindication == true
+    }
+
+    var goalDifferenceKG: Double {
+        abs(currentWeightKG - targetWeightKG)
+    }
+
+    var hasValidMeasurements: Bool {
+        guard (120...230).contains(heightCM), (35...350).contains(currentWeightKG) else { return false }
+        guard goal != .maintain else { return true }
+        guard (35...350).contains(targetWeightKG) else { return false }
+        if goal == .lose { return targetWeightKG < currentWeightKG }
+        return targetWeightKG > currentWeightKG
+    }
+
     var input: NutritionPlanInput {
         NutritionPlanInput(
             birthDate: birthDate, calculationSex: calculationSex,
@@ -31,4 +55,3 @@ import Observation
         )
     }
 }
-

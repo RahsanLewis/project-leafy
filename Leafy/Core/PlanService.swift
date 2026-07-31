@@ -49,27 +49,35 @@ actor PlanService {
         return try? await supabase.auth.session.user.id
     }
 
-    func sendEmailCode(_ email: String) async throws {
+    func createAccount(email: String, password: String) async throws -> Bool {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        try await supabase.auth.signInWithOTP(email: email, shouldCreateUser: true)
+        let response = try await supabase.auth.signUp(email: email, password: password)
+        if case .session = response { return false }
+        return true
     }
 
-    func verifyEmailCode(email: String, code: String) async throws {
-        try await supabase.auth.verifyOTP(email: email, token: code, type: .email)
+    func resendAccountConfirmation(email: String) async throws {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        try await supabase.auth.resend(email: email, type: .signup)
     }
 
-    func signInWithApple(identityToken: String, nonce: String) async throws {
+    func signIn(email: String, password: String) async throws -> String {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        _ = try await supabase.auth.signInWithIdToken(
+        return try await supabase.auth.signIn(email: email, password: password).accessToken
+    }
+
+    func signInWithApple(identityToken: String, nonce: String) async throws -> String {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        return try await supabase.auth.signInWithIdToken(
             credentials: OpenIDConnectCredentials(provider: .apple, idToken: identityToken, nonce: nonce)
-        )
+        ).accessToken
     }
 
     func signOut() async throws { try await supabase.auth.signOut() }
 
-    func savePlan(_ input: NutritionPlanInput) async throws -> NutritionPlan {
+    func savePlan(_ input: NutritionPlanInput, accessToken: String? = nil) async throws -> NutritionPlan {
         let data = try encoder.encode(input)
-        return try await request(function: "save-nutrition-plan", body: data, response: NutritionPlan.self)
+        return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
     }
 
     func fetchCloudState() async throws -> (NutritionPlan, NutritionPlanInput)? {
@@ -88,16 +96,21 @@ actor PlanService {
         let _: EmptyResponse = try await request(function: "delete-account", body: body, response: EmptyResponse.self)
     }
 
-    private func request<T: Decodable>(function: String, body: Data, response: T.Type) async throws -> T {
+    private func request<T: Decodable>(function: String, body: Data, accessToken suppliedToken: String? = nil, response: T.Type) async throws -> T {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        let session = try await supabase.auth.session
+        let accessToken: String
+        if let suppliedToken {
+            accessToken = suppliedToken
+        } else {
+            accessToken = try await supabase.auth.session.accessToken
+        }
         let url = configuration.supabaseURL.appending(path: "functions/v1/\(function)")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(configuration.supabaseKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
