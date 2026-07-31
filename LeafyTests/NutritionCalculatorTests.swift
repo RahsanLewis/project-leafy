@@ -73,4 +73,80 @@ final class NutritionCalculatorTests: XCTestCase {
         XCTAssertTrue((0.19...0.31).contains(fatShare))
         XCTAssertGreaterThanOrEqual(carbShare, 0.44)
     }
+
+    func testEligibilityStartsUnanswered() {
+        let draft = OnboardingDraft()
+
+        XCTAssertFalse(draft.hasCompletedEligibility)
+        XCTAssertFalse(draft.isEligible)
+        XCTAssertFalse(draft.isIneligible)
+    }
+
+    func testEligibleAnswersCompleteSafetyCheck() {
+        let draft = OnboardingDraft()
+        draft.confirmsAdult = true
+        draft.hasContraindication = false
+
+        XCTAssertTrue(draft.hasCompletedEligibility)
+        XCTAssertTrue(draft.isEligible)
+        XCTAssertFalse(draft.isIneligible)
+    }
+
+    func testUnderageAnswerIsIneligible() {
+        let draft = OnboardingDraft()
+        draft.confirmsAdult = false
+        draft.hasContraindication = false
+
+        XCTAssertTrue(draft.hasCompletedEligibility)
+        XCTAssertFalse(draft.isEligible)
+        XCTAssertTrue(draft.isIneligible)
+    }
+
+    func testHealthConsiderationIsIneligible() {
+        let draft = OnboardingDraft()
+        draft.confirmsAdult = true
+        draft.hasContraindication = true
+
+        XCTAssertTrue(draft.hasCompletedEligibility)
+        XCTAssertFalse(draft.isEligible)
+        XCTAssertTrue(draft.isIneligible)
+    }
+
+    func testDefaultLossMeasurementsAreValid() {
+        let draft = OnboardingDraft()
+
+        XCTAssertTrue(draft.hasValidMeasurements)
+        XCTAssertEqual(draft.goalDifferenceKG, 6, accuracy: 0.0001)
+    }
+
+    func testLossTargetMustBeBelowCurrentWeight() {
+        let draft = OnboardingDraft()
+        draft.targetWeightKG = draft.currentWeightKG
+
+        XCTAssertFalse(draft.hasValidMeasurements)
+    }
+
+    func testGainGoalCreatesHigherTarget() {
+        let draft = OnboardingDraft()
+        draft.goal = .gain
+
+        XCTAssertGreaterThan(draft.targetWeightKG, draft.currentWeightKG)
+        XCTAssertTrue(draft.hasValidMeasurements)
+    }
+
+    func testMaintainDoesNotRequireTargetWeight() {
+        let draft = OnboardingDraft()
+        draft.goal = .maintain
+        draft.targetWeightKG = 1
+
+        XCTAssertTrue(draft.hasValidMeasurements)
+    }
+
+    func testOnboardingStepsNoLongerContainStandaloneTarget() {
+        XCTAssertEqual(
+            OnboardingDraft.Step.allCases.map(\.rawValue),
+            [0, 1, 2, 3, 4, 5, 6]
+        )
+        XCTAssertEqual(OnboardingDraft.Step.activity.rawValue, OnboardingDraft.Step.body.rawValue + 1)
+    }
 }

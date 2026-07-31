@@ -47,7 +47,7 @@ struct PlanResultsView: View {
                 Button("Adjust answers") { app.draft.step = .goal }.frame(maxWidth: .infinity)
             }
         }
-        .alert("Something went wrong", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) {
+        .alert("Something went wrong", isPresented: Binding(get: { app.errorMessage != nil && !app.showAuthentication }, set: { if !$0 && !app.showAuthentication { app.errorMessage = nil } })) {
             Button("OK", role: .cancel) { app.errorMessage = nil }
         } message: { Text(app.errorMessage ?? "") }
     }

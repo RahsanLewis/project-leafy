@@ -47,7 +47,7 @@ enum NutritionCalculator {
         }
         let carbohydrateCalories = Double(calorieTarget) - proteinCalories - fatCalories
 
-        let weeklyChange = abs(rawTDEE - Double(calorieTarget)) * 7 / 7_700
+        let weeklyChange = input.goal == .maintain ? 0 : abs(rawTDEE - Double(calorieTarget)) * 7 / 7_700
         var estimatedDate: Date?
         if input.goal != .maintain, let target = input.targetWeightKG, weeklyChange > 0 {
             let weeks = abs(target - input.currentWeightKG) / weeklyChange
@@ -66,4 +66,3 @@ enum NutritionCalculator {
         )
     }
 }
-
