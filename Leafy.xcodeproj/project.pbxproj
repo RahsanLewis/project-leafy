@@ -9,24 +9,32 @@
 /* Begin PBXBuildFile section */
 		03E0A19393B6A2D0517B2F39 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579A5F8E3ED9F131336497BC /* OnboardingView.swift */; };
 		055624F286689F89F2BF9E0B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB0A1924C3A8C12C5BC5DFF /* SettingsView.swift */; };
+		08978B9DA129A9DD07E6C709 /* PlusJakartaSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6C6F32519588F41A6422D4BA /* PlusJakartaSans-Bold.ttf */; };
 		0AA19AFD6A06F377023E0AE0 /* DailyReminderCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF5733639929D077F181900A /* DailyReminderCoordinator.swift */; };
 		0E18ABE611DA2A5C2F651CEA /* FoodEntryEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810EB6FDEA336879CD980FC6 /* FoodEntryEditorView.swift */; };
 		18527F8ED817D629706D725D /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8AA7BEC7FCBD7867401369B /* DashboardView.swift */; };
+		1ACA522820128B4555F93B47 /* PlusJakartaSans-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FB69BC15CBC7B24DE86B0943 /* PlusJakartaSans-ExtraBold.ttf */; };
 		1F4DA8D52977B6A79818113F /* LeafyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */; };
+		209AC11E48247DEA57AE97E4 /* AIMealModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3625248BE1EAD25739E6E4ED /* AIMealModels.swift */; };
 		32299D125C2DBB327B7880C6 /* WeightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A8B90A19EA640712A8CFFD /* WeightView.swift */; };
 		33351AB99441019FA675F758 /* MorningCheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 656D87A3D1EED260DF182AC7 /* MorningCheckInView.swift */; };
 		3E19A9AA6295D4F84CEBCC6B /* PlanResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */; };
 		41D48E29C7A09E97E210B3E6 /* OnboardingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF517F2114DC9DDD40FBAC24 /* OnboardingDraft.swift */; };
 		4637838EFBEDA70AB7D163DF /* ProductDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF9D62635316B299B94CD6A /* ProductDetailView.swift */; };
+		497E7BD386EDE7983C3B3C6C /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = E74F3E7CB1C1653F57166BFF /* OFL.txt */; };
 		5568F963D637E40A3A91A155 /* ProductDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B66F9ABC150741B58CB4667 /* ProductDiscoveryView.swift */; };
 		575C123D998A2534A00DCAD3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8D67C1E7B1ACB80669999E4F /* Supabase */; };
 		589C890A6005B279A9F0ADA7 /* LeafyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78BE136F0A736115C288398 /* LeafyTheme.swift */; };
 		5E8532CCEC65FC840A8B6CA3 /* AuthenticationRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C19E082C50133F9584386E /* AuthenticationRoutingTests.swift */; };
+		6501953D6DDB911BFBCDDB1A /* TypographyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A23ECA3F4CB5DF82321F9D /* TypographyTests.swift */; };
+		6505A47A6161ABBFF884AAB6 /* AIMealModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416BFFD9066E5F4F1B1AA0B6 /* AIMealModelsTests.swift */; };
 		65AF40F44BB608F6A1891E3A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 397C3AC2A4FA044DF7265986 /* PrivacyInfo.xcprivacy */; };
 		67BE6C08A719DF26636E499B /* WeightModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE1EC9E182624111F59D04E /* WeightModels.swift */; };
 		6C51A892B4A790670217CA9F /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */; };
 		70E0EA2A2B01E0DD1A8E10E1 /* PlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C26C36A030A8DDDC190440 /* PlanService.swift */; };
 		71BB8D061CEDAD9F1FCDBBA7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5257776278A1C9A522DB9D8 /* Assets.xcassets */; };
+		7C4B5C80AB2990603087DAE2 /* MealCaptureSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 827CADB54E66AD54ADA88B9B /* MealCaptureSupport.swift */; };
+		7F750AE2AA847E9B32CA6559 /* PlusJakartaSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B2460A19B1EBD1AD607F49BE /* PlusJakartaSans-Medium.ttf */; };
 		808DF33F1231CFC28B60A7B8 /* NutritionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2E894FD8C58239BD5382AB /* NutritionModels.swift */; };
 		84D8A8A2E5524A1B194E5A24 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5186914E026A47CD8FAFB0DE /* HomeView.swift */; };
 		90394D6457B7ED351D76EB83 /* DailyNutritionModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4065D9E02A3ECDDE66B33D44 /* DailyNutritionModelsTests.swift */; };
@@ -38,8 +46,11 @@
 		A969C20CC07087A33F4ADFC6 /* WeightEntryEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69021CA01FB5628B80387DA9 /* WeightEntryEditorView.swift */; };
 		B17CF5C026561D670C497F04 /* DailyNutritionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404D624EFC28753CD28E950B /* DailyNutritionModels.swift */; };
 		B23DC6512D9DF70AA07E402F /* NutritionCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */; };
+		C8FDFCC6E633B8372C6BBCDC /* PlusJakartaSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 47B8E14A0ED8F8E5A14A1CB8 /* PlusJakartaSans-SemiBold.ttf */; };
 		DF445BC7D9AC164027356000 /* ProductDiscoveryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90625FD770FAC63677B05E97 /* ProductDiscoveryModels.swift */; };
+		E02EC0534E99D67A3A7CC139 /* PlusJakartaSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 017869E9F6FA70BFB0743B60 /* PlusJakartaSans-Regular.ttf */; };
 		E569C834AFF9E575F63F3BF2 /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A26139D4BD8D681F002007 /* BarcodeScannerView.swift */; };
+		E79DE8A46F9477FB11927452 /* AIMealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF8A9973504AE9181D274DF /* AIMealView.swift */; };
 		E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E20C0C3895F2E56263C5991 /* AppModel.swift */; };
 		F173A393BFD4139569957B45 /* DataContributionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE2BAEF28C0169A72CFB1E3 /* DataContributionView.swift */; };
 		F9710D039F7A23EA147A913F /* LeafyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */; };
@@ -63,14 +74,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		017869E9F6FA70BFB0743B60 /* PlusJakartaSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-Regular.ttf"; sourceTree = "<group>"; };
 		0F1F55F2F18F7A6501751F42 /* WeightProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightProgressTests.swift; sourceTree = "<group>"; };
 		13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationView.swift; sourceTree = "<group>"; };
+		3625248BE1EAD25739E6E4ED /* AIMealModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealModels.swift; sourceTree = "<group>"; };
 		37A674F736E49A180B162977 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		397C3AC2A4FA044DF7265986 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3D2E894FD8C58239BD5382AB /* NutritionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionModels.swift; sourceTree = "<group>"; };
 		3E20C0C3895F2E56263C5991 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		404D624EFC28753CD28E950B /* DailyNutritionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyNutritionModels.swift; sourceTree = "<group>"; };
 		4065D9E02A3ECDDE66B33D44 /* DailyNutritionModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyNutritionModelsTests.swift; sourceTree = "<group>"; };
+		416BFFD9066E5F4F1B1AA0B6 /* AIMealModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealModelsTests.swift; sourceTree = "<group>"; };
+		47B8E14A0ED8F8E5A14A1CB8 /* PlusJakartaSans-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-SemiBold.ttf"; sourceTree = "<group>"; };
 		5186914E026A47CD8FAFB0DE /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		53369E8B5F0A362D4CDF4635 /* Leafy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Leafy.entitlements; sourceTree = "<group>"; };
@@ -78,10 +93,13 @@
 		58F59AA903B230B4552B30BC /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		656D87A3D1EED260DF182AC7 /* MorningCheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MorningCheckInView.swift; sourceTree = "<group>"; };
 		69021CA01FB5628B80387DA9 /* WeightEntryEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightEntryEditorView.swift; sourceTree = "<group>"; };
+		6C6F32519588F41A6422D4BA /* PlusJakartaSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-Bold.ttf"; sourceTree = "<group>"; };
+		71A23ECA3F4CB5DF82321F9D /* TypographyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypographyTests.swift; sourceTree = "<group>"; };
 		75C26C36A030A8DDDC190440 /* PlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanService.swift; sourceTree = "<group>"; };
 		791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeafyUITests.swift; sourceTree = "<group>"; };
 		7A15461D53272B43E860F39C /* NutritionCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCalculator.swift; sourceTree = "<group>"; };
 		810EB6FDEA336879CD980FC6 /* FoodEntryEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodEntryEditorView.swift; sourceTree = "<group>"; };
+		827CADB54E66AD54ADA88B9B /* MealCaptureSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealCaptureSupport.swift; sourceTree = "<group>"; };
 		84A8B90A19EA640712A8CFFD /* WeightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightView.swift; sourceTree = "<group>"; };
 		84C19E082C50133F9584386E /* AuthenticationRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationRoutingTests.swift; sourceTree = "<group>"; };
 		87A983E1752F1EAB0CC2A3C5 /* Leafy.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Leafy.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -91,6 +109,7 @@
 		A5257776278A1C9A522DB9D8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		ACB0A1924C3A8C12C5BC5DFF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AF5733639929D077F181900A /* DailyReminderCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyReminderCoordinator.swift; sourceTree = "<group>"; };
+		B2460A19B1EBD1AD607F49BE /* PlusJakartaSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-Medium.ttf"; sourceTree = "<group>"; };
 		B78BE136F0A736115C288398 /* LeafyTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeafyTheme.swift; sourceTree = "<group>"; };
 		B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeafyApp.swift; sourceTree = "<group>"; };
 		BF517F2114DC9DDD40FBAC24 /* OnboardingDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDraft.swift; sourceTree = "<group>"; };
@@ -101,10 +120,13 @@
 		CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanResultsView.swift; sourceTree = "<group>"; };
 		CF308B7696FA49F955CCA73A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D085A58149BEB16F433AC118 /* PlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanView.swift; sourceTree = "<group>"; };
+		DBF8A9973504AE9181D274DF /* AIMealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealView.swift; sourceTree = "<group>"; };
+		E74F3E7CB1C1653F57166BFF /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		EBF9D62635316B299B94CD6A /* ProductDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailView.swift; sourceTree = "<group>"; };
 		EF5E85E0A25E0E0E0BCBC184 /* DailyReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyReminderTests.swift; sourceTree = "<group>"; };
 		F3A26139D4BD8D681F002007 /* BarcodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerView.swift; sourceTree = "<group>"; };
 		F8AA7BEC7FCBD7867401369B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		FB69BC15CBC7B24DE86B0943 /* PlusJakartaSans-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-ExtraBold.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,10 +144,12 @@
 		00C800CC23AC25FB31998760 /* LeafyTests */ = {
 			isa = PBXGroup;
 			children = (
+				416BFFD9066E5F4F1B1AA0B6 /* AIMealModelsTests.swift */,
 				84C19E082C50133F9584386E /* AuthenticationRoutingTests.swift */,
 				4065D9E02A3ECDDE66B33D44 /* DailyNutritionModelsTests.swift */,
 				EF5E85E0A25E0E0E0BCBC184 /* DailyReminderTests.swift */,
 				8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */,
+				71A23ECA3F4CB5DF82321F9D /* TypographyTests.swift */,
 				0F1F55F2F18F7A6501751F42 /* WeightProgressTests.swift */,
 			);
 			path = LeafyTests;
@@ -151,6 +175,7 @@
 		0C762F15D91B97A4E27D56C6 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				2C90B470F9D9447D8155499B /* AIMeal */,
 				02DE8CF2749F7288FDA4A741 /* Auth */,
 				693051778E40464AD48D39DE /* Dashboard */,
 				5CCC46AD4CC4BF015B1C0F65 /* Onboarding */,
@@ -167,6 +192,15 @@
 				791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */,
 			);
 			path = LeafyUITests;
+			sourceTree = "<group>";
+		};
+		2C90B470F9D9447D8155499B /* AIMeal */ = {
+			isa = PBXGroup;
+			children = (
+				DBF8A9973504AE9181D274DF /* AIMealView.swift */,
+				827CADB54E66AD54ADA88B9B /* MealCaptureSupport.swift */,
+			);
+			path = AIMeal;
 			sourceTree = "<group>";
 		};
 		33A7242C6750B085E74129EC = {
@@ -213,6 +247,7 @@
 		63D9C5F23895C2334685FFB6 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				3625248BE1EAD25739E6E4ED /* AIMealModels.swift */,
 				529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */,
 				404D624EFC28753CD28E950B /* DailyNutritionModels.swift */,
 				AF5733639929D077F181900A /* DailyReminderCoordinator.swift */,
@@ -237,6 +272,19 @@
 				D085A58149BEB16F433AC118 /* PlanView.swift */,
 			);
 			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		6CFEBCDD10D54A0AF0780688 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				E74F3E7CB1C1653F57166BFF /* OFL.txt */,
+				6C6F32519588F41A6422D4BA /* PlusJakartaSans-Bold.ttf */,
+				FB69BC15CBC7B24DE86B0943 /* PlusJakartaSans-ExtraBold.ttf */,
+				B2460A19B1EBD1AD607F49BE /* PlusJakartaSans-Medium.ttf */,
+				017869E9F6FA70BFB0743B60 /* PlusJakartaSans-Regular.ttf */,
+				47B8E14A0ED8F8E5A14A1CB8 /* PlusJakartaSans-SemiBold.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		7C1BDD44AC07AB0D2846A5A0 /* Settings */ = {
@@ -283,6 +331,7 @@
 				CF308B7696FA49F955CCA73A /* Info.plist */,
 				53369E8B5F0A362D4CDF4635 /* Leafy.entitlements */,
 				397C3AC2A4FA044DF7265986 /* PrivacyInfo.xcprivacy */,
+				6CFEBCDD10D54A0AF0780688 /* Fonts */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -400,6 +449,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				71BB8D061CEDAD9F1FCDBBA7 /* Assets.xcassets in Resources */,
+				497E7BD386EDE7983C3B3C6C /* OFL.txt in Resources */,
+				08978B9DA129A9DD07E6C709 /* PlusJakartaSans-Bold.ttf in Resources */,
+				1ACA522820128B4555F93B47 /* PlusJakartaSans-ExtraBold.ttf in Resources */,
+				7F750AE2AA847E9B32CA6559 /* PlusJakartaSans-Medium.ttf in Resources */,
+				E02EC0534E99D67A3A7CC139 /* PlusJakartaSans-Regular.ttf in Resources */,
+				C8FDFCC6E633B8372C6BBCDC /* PlusJakartaSans-SemiBold.ttf in Resources */,
 				65AF40F44BB608F6A1891E3A /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -419,10 +474,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6505A47A6161ABBFF884AAB6 /* AIMealModelsTests.swift in Sources */,
 				5E8532CCEC65FC840A8B6CA3 /* AuthenticationRoutingTests.swift in Sources */,
 				90394D6457B7ED351D76EB83 /* DailyNutritionModelsTests.swift in Sources */,
 				A37281C7C918EB4578E472CA /* DailyReminderTests.swift in Sources */,
 				B23DC6512D9DF70AA07E402F /* NutritionCalculatorTests.swift in Sources */,
+				6501953D6DDB911BFBCDDB1A /* TypographyTests.swift in Sources */,
 				9AB64946EA57AFD3AF3ED9F2 /* WeightProgressTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -431,6 +488,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				209AC11E48247DEA57AE97E4 /* AIMealModels.swift in Sources */,
+				E79DE8A46F9477FB11927452 /* AIMealView.swift in Sources */,
 				6C51A892B4A790670217CA9F /* AppConfiguration.swift in Sources */,
 				E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */,
 				A5DEEAB785BA06A4E4FB39C3 /* AuthenticationView.swift in Sources */,
@@ -443,6 +502,7 @@
 				84D8A8A2E5524A1B194E5A24 /* HomeView.swift in Sources */,
 				1F4DA8D52977B6A79818113F /* LeafyApp.swift in Sources */,
 				589C890A6005B279A9F0ADA7 /* LeafyTheme.swift in Sources */,
+				7C4B5C80AB2990603087DAE2 /* MealCaptureSupport.swift in Sources */,
 				33351AB99441019FA675F758 /* MorningCheckInView.swift in Sources */,
 				95A80EA122227291A2C9C976 /* NutritionCalculator.swift in Sources */,
 				808DF33F1231CFC28B60A7B8 /* NutritionModels.swift in Sources */,

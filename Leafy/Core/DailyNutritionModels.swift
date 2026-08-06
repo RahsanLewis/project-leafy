@@ -17,6 +17,9 @@ struct FoodEntry: Codable, Equatable, Identifiable, Sendable {
     var mealType: MealType = .unspecified
     var confidence: Double? = nil
     var userConfirmed: Bool = false
+    var occasionID: UUID? = nil
+    var entrySource: String? = nil
+    var calorieMethod: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, calories
@@ -33,7 +36,12 @@ struct FoodEntry: Codable, Equatable, Identifiable, Sendable {
         case mealType = "meal_type"
         case confidence
         case userConfirmed = "user_confirmed"
+        case occasionID = "occasion_id"
+        case entrySource = "entry_source"
+        case calorieMethod = "calorie_method"
     }
+
+    var isAIEstimate: Bool { entrySource == "photo_ai" || entrySource == "text_ai" }
 }
 
 enum MealType: String, Codable, CaseIterable, Identifiable, Sendable {

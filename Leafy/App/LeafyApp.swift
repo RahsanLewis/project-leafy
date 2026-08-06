@@ -18,7 +18,7 @@ import SwiftUI
                 case .dashboard: DashboardView()
                 }
             }
-            .fontDesign(LeafyTheme.fontDesign)
+            .font(LeafyTypography.body)
             .environment(model)
             .environment(reminders)
             .tint(LeafyTheme.green)

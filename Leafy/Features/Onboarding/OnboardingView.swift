@@ -73,7 +73,7 @@ struct OnboardingView: View {
             ForEach(WeightGoal.allCases) { goal in
                 Button { draft.goal = goal } label: {
                     ChoiceCard(selected: draft.goal == goal) {
-                        VStack(alignment: .leading, spacing: 4) { Text(goal.title).font(.headline); Text(goal.subtitle).font(.subheadline).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading, spacing: 4) { Text(goal.title).font(LeafyTypography.headline); Text(goal.subtitle).font(LeafyTypography.subheadline).foregroundStyle(.secondary) }
                     }
                 }.buttonStyle(.plain)
             }
@@ -97,14 +97,14 @@ struct OnboardingView: View {
                             Text("Date of birth")
                                 .foregroundStyle(.primary)
                             Text("Age \(age(for: draft.birthDate))")
-                                .font(.caption)
+                                .font(LeafyTypography.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text(draft.birthDate.formatted(date: .abbreviated, time: .omitted))
                             .foregroundStyle(.primary)
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
+                            .font(LeafyTypography.captionSemibold)
                             .foregroundStyle(.tertiary)
                     }
                     .contentShape(.rect)
@@ -118,14 +118,14 @@ struct OnboardingView: View {
                     .labelsHidden()
                 }
                 Button("Why this is used", systemImage: "info.circle") { showWhySex = true }
-                    .font(.footnote.weight(.medium))
+                    .font(LeafyTypography.footnote)
                     .alert("Why Leafy asks", isPresented: $showWhySex) { Button("OK") {} } message: { Text("The Mifflin–St Jeor energy equation uses different physiological constants for female and male bodies. Leafy does not use this as your gender identity.") }
             }
 
             ProfileSectionCard(title: "Your measurements", icon: "figure.arms.open") {
                 MeasurementFields(draft: draft)
                 Text("These measurements help estimate your resting energy before your activity level is added.")
-                    .font(.footnote)
+                    .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
             }
         case .activity:
@@ -133,7 +133,7 @@ struct OnboardingView: View {
             ForEach(ActivityLevel.allCases) { level in
                 Button { draft.activityLevel = level } label: {
                     ChoiceCard(selected: draft.activityLevel == level) {
-                        VStack(alignment: .leading, spacing: 4) { Text(level.title).font(.headline); Text(level.detail).font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading, spacing: 4) { Text(level.title).font(LeafyTypography.headline); Text(level.detail).font(LeafyTypography.caption).foregroundStyle(.secondary) }
                     }
                 }.buttonStyle(.plain)
             }
@@ -143,8 +143,8 @@ struct OnboardingView: View {
                 Button { draft.pace = pace } label: {
                     ChoiceCard(selected: draft.pace == pace) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(pace.title).font(.headline)
-                            Text(paceText(pace)).font(.subheadline).foregroundStyle(.secondary)
+                            Text(pace.title).font(LeafyTypography.headline)
+                            Text(paceText(pace)).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }.buttonStyle(.plain)
@@ -172,7 +172,7 @@ struct OnboardingView: View {
                 .labelsHidden()
 
                 Text("Age \(age(for: pendingBirthday))")
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 24)
@@ -187,7 +187,7 @@ struct OnboardingView: View {
                         draft.birthDate = pendingBirthday
                         showBirthdayPicker = false
                     }
-                    .fontWeight(.semibold)
+                    .font(LeafyTypography.button)
                 }
             }
         }
@@ -207,10 +207,10 @@ struct OnboardingView: View {
                     .font(.system(size: 72))
                     .foregroundStyle(LeafyTheme.green)
                 Text("Your nutrition, made clear")
-                    .font(.system(.largeTitle, design: LeafyTheme.fontDesign, weight: .bold))
+                    .font(LeafyTypography.largeTitle)
                     .multilineTextAlignment(.center)
                 Text("Personalized nutrition targets built around your body and your goal.")
-                    .font(.title3)
+                    .font(LeafyTypography.title3)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -218,7 +218,7 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 15) {
                 Text("What you’ll get")
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                 WelcomeOutcomeRow("A personalized daily calorie target")
                 WelcomeOutcomeRow("Protein, carb, and fat goals")
                 WelcomeOutcomeRow("A pace matched to your weight goal")
@@ -238,7 +238,7 @@ struct OnboardingView: View {
                     Label("No account required to preview", systemImage: "person.crop.circle.badge.checkmark")
                 }
             }
-            .font(.footnote)
+            .font(LeafyTypography.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
 
@@ -250,7 +250,7 @@ struct OnboardingView: View {
                 if !draft.isEditing {
                     if app.isAuthenticated {
                         Label(app.statusMessage ?? "You’re signed in", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline.weight(.medium))
+                            .font(LeafyTypography.subheadlineSemibold)
                             .foregroundStyle(LeafyTheme.green)
                             .frame(maxWidth: .infinity)
                     } else {
@@ -260,14 +260,14 @@ struct OnboardingView: View {
                     }
                 }
                 Text("For general wellness only—not medical advice.")
-                    .font(.caption)
+                    .font(LeafyTypography.caption)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 22) {
                     Link("Privacy", destination: app.configuration.privacyURL)
                     Link("Terms", destination: app.configuration.termsURL)
                     Link("Support", destination: app.configuration.supportURL)
                 }
-                .font(.footnote)
+                .font(LeafyTypography.footnote)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -300,7 +300,7 @@ struct OnboardingView: View {
                     .frame(width: 48, height: 48)
                     .background(LeafyTheme.mint, in: .circle)
                 Text("A quick safety check")
-                    .font(.title.bold())
+                    .font(LeafyTypography.title)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("These answers help us confirm Leafy’s estimates are appropriate for you.")
@@ -310,7 +310,7 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
 
             Label("Leafy uses general adult wellness equations. These answers are not saved with your nutrition plan.", systemImage: "lock.shield")
-                .font(.footnote)
+                .font(LeafyTypography.footnote)
                 .foregroundStyle(.secondary)
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -325,9 +325,9 @@ struct OnboardingView: View {
                 .foregroundStyle(LeafyTheme.green)
             VStack(alignment: .leading, spacing: 5) {
                 Text("Personal guidance is best")
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                 Text(eligibilityGuidanceMessage)
-                    .font(.subheadline)
+                    .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
@@ -360,7 +360,7 @@ struct OnboardingView: View {
     }
 
     private func title(_ title: String, _ subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) { Text(title).font(.largeTitle.bold()); Text(subtitle).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 8) { Text(title).font(LeafyTypography.largeTitle); Text(subtitle).font(LeafyTypography.body).foregroundStyle(.secondary) }
     }
 
     private func paceText(_ pace: GoalPace) -> String {
@@ -381,7 +381,7 @@ private struct WelcomeOutcomeRow: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(LeafyTheme.green)
             Text(text)
-                .font(.subheadline)
+                .font(LeafyTypography.subheadline)
         }
     }
 }
@@ -396,9 +396,9 @@ private struct EligibilityQuestionCard: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 7) {
                 Text(title)
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                 Text(detail)
-                    .font(.subheadline)
+                    .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
                 if !considerations.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -408,7 +408,7 @@ private struct EligibilityQuestionCard: View {
                                     .font(.system(size: 6))
                                     .foregroundStyle(LeafyTheme.green)
                                 Text(consideration)
-                                    .font(.subheadline.weight(.medium))
+                                    .font(LeafyTypography.subheadlineSemibold)
                                     .foregroundStyle(.primary)
                             }
                         }
@@ -439,7 +439,7 @@ private struct EligibilityQuestionCard: View {
             HStack(spacing: 7) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 Text(label)
-                    .fontWeight(.semibold)
+                    .font(LeafyTypography.button)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
@@ -460,7 +460,7 @@ private struct ProfileSectionCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label(title, systemImage: icon)
-                .font(.headline)
+                .font(LeafyTypography.headline)
                 .foregroundStyle(LeafyTheme.ink)
                 .symbolRenderingMode(.hierarchical)
             content
@@ -519,7 +519,7 @@ private struct MeasurementFields: View {
                 Spacer()
                 Text(value).foregroundStyle(.primary)
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(LeafyTypography.captionSemibold)
                     .foregroundStyle(.tertiary)
             }
             .contentShape(.rect)
@@ -553,7 +553,7 @@ private struct MeasurementFields: View {
                         }
                         activePicker = nil
                     }
-                    .fontWeight(.semibold)
+                    .font(LeafyTypography.button)
                 }
             }
         }
@@ -598,7 +598,7 @@ private struct MeasurementFields: View {
                 ForEach(range, id: \.self) { Text("\($0)").tag($0) }
             }
             .pickerStyle(.wheel)
-            Text(".").font(.title2.bold())
+            Text(".").font(LeafyTypography.title2)
             Picker("Tenths", selection: Binding(
                 get: { weightTenths },
                 set: { setPendingWeight(Double(Int(displayWeight)) + Double($0) / 10) }
@@ -657,9 +657,9 @@ private struct WeightGoalSummary: View {
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 3) {
                 Text(headline)
-                    .font(.subheadline.weight(.semibold))
+                    .font(LeafyTypography.subheadlineSemibold)
                 Text(detail)
-                    .font(.caption)
+                    .font(LeafyTypography.caption)
                     .foregroundStyle(.secondary)
             }
         }

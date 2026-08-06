@@ -18,12 +18,13 @@ struct WeightView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
+            .leafyBorderlessRows(separators: false)
 
             if let status = app.weightStatusMessage, let outcome = app.lastWeightOutcome {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Label(status, systemImage: statusIcon(outcome))
-                            .font(.headline)
+                            .font(LeafyTypography.headline)
                             .foregroundStyle(outcome == .reviewRequired ? .orange : LeafyTheme.green)
                         if outcome == .reviewRequired {
                             Button("Review Plan") { app.editPlan() }
@@ -31,6 +32,7 @@ struct WeightView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .leafyBorderlessRows(separators: false)
             }
 
             Section {
@@ -46,11 +48,13 @@ struct WeightView: View {
                     .padding(.vertical, LeafySpacing.small)
                 }
             }
+            .leafyBorderlessRows(separators: false)
 
             Section("Stats") {
                 statsGrid
                     .padding(.vertical, LeafySpacing.small)
             }
+            .leafyBorderlessRows(separators: false)
 
             Section("History") {
                 if app.isWeightLoading && app.weightEntries.isEmpty {
@@ -68,24 +72,24 @@ struct WeightView: View {
                     }
                 }
             }
+            .leafyBorderlessRows()
 
             if let error = app.weightErrorMessage {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("We couldn’t update your weight", systemImage: "exclamationmark.triangle.fill")
-                            .font(.headline).foregroundStyle(.orange)
-                        Text(error).font(.subheadline).foregroundStyle(.secondary)
+                            .font(LeafyTypography.headline).foregroundStyle(.orange)
+                        Text(error).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
                         Button("Try again") { Task { await app.loadWeightHistory() } }
                     }.padding(.vertical, 4)
                 }
+                .leafyBorderlessRows(separators: false)
             }
         }
-        .listStyle(.insetGrouped)
+        .leafyBorderlessList()
         .listSectionSpacing(LeafySpacing.xLarge)
         .contentMargins(.top, LeafySpacing.medium, for: .scrollContent)
         .contentMargins(.bottom, LeafySpacing.medium, for: .scrollContent)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             Button("Log Weight") { editingEntry = nil; showingEditor = true }
@@ -107,14 +111,14 @@ struct WeightView: View {
         let progress = app.weightProgress
         return VStack(alignment: .leading, spacing: LeafySpacing.compact) {
             Text(heroLabel)
-                .font(.subheadline)
+                .font(LeafyTypography.subheadline)
                 .foregroundStyle(.secondary)
             Text(displayedEntry.map { formatWeight($0.weightKG) } ?? "—")
-                .font(.system(size: 52, weight: .bold, design: LeafyTheme.fontDesign))
+                .font(LeafyTypography.metric(52, extraBold: true))
                 .contentTransition(.numericText())
             if let change = rangeChangeKG {
                 Label(rangeChangeLabel(change), systemImage: changeIcon(change))
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                     .foregroundStyle(changeColor(change))
             }
             if let value = progress.progress, let remaining = progress.remainingKG {
@@ -124,11 +128,11 @@ struct WeightView: View {
                         Text("\(Int((value * 100).rounded()))% complete")
                         Spacer()
                         Text("\(formatWeightValue(remaining)) to target")
-                    }.font(.caption).foregroundStyle(.secondary)
+                    }.font(LeafyTypography.caption).foregroundStyle(.secondary)
                 }
             } else {
                 Label("Maintenance progress", systemImage: "equal.circle.fill")
-                    .font(.subheadline.weight(.medium)).foregroundStyle(LeafyTheme.green)
+                    .font(LeafyTypography.subheadlineSemibold).foregroundStyle(LeafyTheme.green)
             }
         }
         .padding(.vertical, LeafySpacing.small)
@@ -148,7 +152,7 @@ struct WeightView: View {
                 RuleMark(y: .value("Target", displayValue(app.draft.targetWeightKG)))
                     .foregroundStyle(.secondary)
                     .lineStyle(.init(lineWidth: 1, dash: [5]))
-                    .annotation(position: .top, alignment: .leading) { Text("Target").font(.caption2).foregroundStyle(.secondary) }
+                    .annotation(position: .top, alignment: .leading) { Text("Target").font(LeafyTypography.caption2).foregroundStyle(.secondary) }
             }
             if let selectedEntry {
                 RuleMark(x: .value("Selected date", selectedEntry.recordedOn))
@@ -186,7 +190,7 @@ struct WeightView: View {
                     chartRange = range
                 } label: {
                     Text(range.rawValue)
-                        .font(.subheadline.bold())
+                        .font(LeafyTypography.subheadlineSemibold)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, LeafySpacing.small)
                         .foregroundStyle(chartRange == range ? LeafyTheme.green : .primary)
@@ -338,10 +342,10 @@ private struct WeightStat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
             Text(label)
-                .font(.caption)
+                .font(LeafyTypography.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.headline)
+                .font(LeafyTypography.headline)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -357,12 +361,12 @@ private struct WeightHistoryRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.recordedOn.formatted(date: .abbreviated, time: .omitted)).font(.body.weight(.medium))
-                if entry.source == .baseline { Text("Starting weight").font(.caption).foregroundStyle(.secondary) }
+                Text(entry.recordedOn.formatted(date: .abbreviated, time: .omitted)).font(LeafyTypography.bodyMedium)
+                if entry.source == .baseline { Text("Starting weight").font(LeafyTypography.caption).foregroundStyle(.secondary) }
             }
             Spacer()
             Text(String(format: "%.1f %@", unitSystem == .imperial ? entry.weightKG * 2.20462 : entry.weightKG, unitSystem == .imperial ? "lb" : "kg"))
-                .font(.headline.monospacedDigit())
+                .font(LeafyTypography.headline).monospacedDigit()
         }.padding(.vertical, 5)
     }
 }

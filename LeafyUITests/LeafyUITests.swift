@@ -39,7 +39,7 @@ final class LeafyUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Morning check-in"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["1,030 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["1,030 Cal"].exists)
         XCTAssertTrue(app.buttons["Yes, this is complete"].exists)
         XCTAssertTrue(app.buttons["Review food log"].exists)
         XCTAssertTrue(app.buttons["I didn’t finish logging"].exists)
@@ -52,9 +52,50 @@ final class LeafyUITests: XCTestCase {
         app.buttons["Skip for today"].tap()
         let calorieBudget = app.descendants(matching: .any)["calorieBudgetCard"]
         XCTAssertTrue(calorieBudget.waitForExistence(timeout: 2))
-        XCTAssertEqual(calorieBudget.label, "1,850 calories remaining. 0 of 1,850 calories eaten.")
+        XCTAssertEqual(calorieBudget.label, "1,320 calories remaining. 530 of 1,850 calories eaten.")
 
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(app.switches["morningReminderToggle"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testAIMealTextReviewAndConfirmationPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
+        app.launch()
+
+        app.tabBars.buttons["AI"].tap()
+        let description = app.textViews["aiMealDescription"]
+        XCTAssertTrue(description.waitForExistence(timeout: 3))
+        description.tap()
+        description.typeText("Chicken, rice, and vegetables")
+        app.buttons["Done"].tap()
+        app.buttons["analyzeMealButton"].tap()
+
+        XCTAssertTrue(app.staticTexts["One detail would help"].waitForExistence(timeout: 3))
+        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.buttons["confirmMealEstimateButton"].waitForExistence(timeout: 3))
+        app.buttons["confirmMealEstimateButton"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testBorderlessListScreensRemainNavigablePreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+
+        app.tabBars.buttons["Weight"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["weightSummaryCard"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["weightChart"].exists)
+
+        app.tabBars.buttons["Scan"].tap()
+        XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
+
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.switches["morningReminderToggle"].exists)
     }
 }

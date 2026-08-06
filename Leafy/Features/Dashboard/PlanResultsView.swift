@@ -9,7 +9,7 @@ struct PlanResultsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(isPreview ? "Your plan is ready" : "Your daily targets").font(.largeTitle.bold())
+                Text(isPreview ? "Your plan is ready" : "Your daily targets").font(LeafyTypography.largeTitle)
                 Text("A practical starting point based on the information you shared.").foregroundStyle(.secondary)
             }
             calorieCard
@@ -20,18 +20,18 @@ struct PlanResultsView: View {
             }
             if let date = plan.estimatedGoalDate {
                 Label("Estimated goal date: \(date.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
             }
             DisclosureGroup("How we calculated this", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 12) {
-                    LabeledContent("Resting energy (BMR)", value: "\(plan.bmrKcal) kcal")
-                    LabeledContent("Estimated maintenance (TDEE)", value: "\(plan.tdeeKcal) kcal")
+                    LabeledContent("Resting energy (BMR)", value: "\(plan.bmrKcal) Cal")
+                    LabeledContent("Estimated maintenance (TDEE)", value: "\(plan.tdeeKcal) Cal")
                     LabeledContent("Projected weekly change", value: weeklyChange)
                     Text("Leafy uses the Mifflin–St Jeor equation, your activity estimate, and your selected goal pace. Real energy needs and weight changes vary.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(LeafyTypography.footnote).foregroundStyle(.secondary)
                 }.padding(.top, 12)
             }.tint(LeafyTheme.green)
-            Text("For general wellness only. Leafy does not provide medical advice.").font(.caption).foregroundStyle(.secondary)
+            Text("For general wellness only. Leafy does not provide medical advice.").font(LeafyTypography.caption).foregroundStyle(.secondary)
             if isPreview {
                 Button(app.isConfigured ? "Save my plan" : "Preview complete") {
                     Task {
@@ -42,7 +42,7 @@ struct PlanResultsView: View {
                 }.buttonStyle(PrimaryButtonStyle()).disabled(!app.isConfigured)
                 if !app.isConfigured {
                     Text("Add your Supabase values to Config/Base.xcconfig to enable sign-in and cloud saving.")
-                        .font(.footnote).foregroundStyle(.orange)
+                        .font(LeafyTypography.footnote).foregroundStyle(.orange)
                 }
                 Button("Adjust answers") { app.draft.step = .goal }.frame(maxWidth: .infinity)
             }
@@ -54,8 +54,8 @@ struct PlanResultsView: View {
 
     private var calorieCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Daily calories").font(.subheadline).foregroundStyle(.secondary)
-            Text(plan.calorieTargetKcal.formatted()).font(.system(size: 48, weight: .bold, design: LeafyTheme.fontDesign)) + Text(" kcal").font(.title3).foregroundStyle(.secondary)
+            Text("Daily calories").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+            Text(plan.calorieTargetKcal.formatted()).font(LeafyTypography.metric(48, extraBold: true)) + Text(" Cal").font(LeafyTypography.title3).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(20).background(LeafyTheme.mint, in: .rect(cornerRadius: 20))
     }
 
@@ -68,7 +68,7 @@ struct PlanResultsView: View {
 private struct MacroCard: View {
     let value: Int; let label: String; let color: Color
     var body: some View {
-        VStack(spacing: 6) { Text("\(value)g").font(.title2.bold()); Text(label).font(.caption).foregroundStyle(.secondary) }
+        VStack(spacing: 6) { Text("\(value)g").font(LeafyTypography.title2); Text(label).font(LeafyTypography.caption).foregroundStyle(.secondary) }
             .frame(maxWidth: .infinity).padding(.vertical, 18).background(color.opacity(0.10), in: .rect(cornerRadius: 16))
     }
 }

@@ -30,6 +30,13 @@ final class AppModel {
     var productHistory: [ProductSummary] = []
     var isProductLoading = false
     var productErrorMessage: String?
+    var mealEstimate: MealEstimate?
+    var isMealEstimateLoading = false
+    var isMealTranscribing = false
+    var mealEstimateErrorMessage: String?
+    private var mealEstimateSessionID: UUID?
+    private var mealPhotoObjectPath: String?
+    private var mealEstimateLogDate = Calendar.current.startOfDay(for: .now)
     var isWeightLoading = false
     var isWeightMutationInProgress = false
     var weightErrorMessage: String?
@@ -299,6 +306,146 @@ final class AppModel {
         }
     }
 
+    func analyzeMeal(
+        description: String,
+        voiceTranscript: String,
+        photoData: Data?,
+        consumedAt: Date,
+        localDate: Date,
+        mealType: MealType
+    ) async -> Bool {
+        let normalizedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedTranscript = voiceTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedDescription.isEmpty || !normalizedTranscript.isEmpty || photoData != nil else {
+            mealEstimateErrorMessage = "Add a photo or describe what you ate."
+            return false
+        }
+        isMealEstimateLoading = true
+        mealEstimateErrorMessage = nil
+        defer { isMealEstimateLoading = false }
+        let sessionID = mealEstimateSessionID ?? UUID()
+        mealEstimateSessionID = sessionID
+        mealEstimateLogDate = Calendar.current.startOfDay(for: localDate)
+        if isCICOPreview {
+            mealEstimate = Self.previewMealEstimate(sessionID: sessionID)
+            return true
+        }
+        do {
+            if let photoData, mealPhotoObjectPath == nil {
+                mealPhotoObjectPath = try await service.uploadMealPhoto(photoData, sessionID: sessionID)
+            }
+            let input = MealEstimateInput(
+                sessionID: sessionID,
+                description: normalizedDescription,
+                voiceTranscript: normalizedTranscript,
+                consumedAt: consumedAt,
+                localDate: localDate,
+                mealType: mealType
+            )
+            mealEstimate = try await service.estimateMeal(input, photoObjectPath: mealPhotoObjectPath)
+            return true
+        } catch {
+            mealEstimateErrorMessage = userFacingMessage(for: error)
+            return false
+        }
+    }
+
+    func answerMealFollowUp(_ answer: String?, skip: Bool = false) async {
+        guard let sessionID = mealEstimateSessionID else { return }
+        isMealEstimateLoading = true
+        mealEstimateErrorMessage = nil
+        defer { isMealEstimateLoading = false }
+        if isCICOPreview {
+            mealEstimate = Self.previewMealEstimate(sessionID: sessionID, ready: true)
+            return
+        }
+        do {
+            mealEstimate = try await service.answerMealEstimate(sessionID: sessionID, answer: answer, skip: skip)
+        } catch {
+            mealEstimateErrorMessage = userFacingMessage(for: error)
+        }
+    }
+
+    func updateMealEstimateItem(id: UUID, name: String, portion: String, calories: Int) {
+        guard let index = mealEstimate?.items.firstIndex(where: { $0.id == id }) else { return }
+        mealEstimate?.items[index].name = name
+        mealEstimate?.items[index].portion = portion
+        mealEstimate?.items[index].calories = calories
+    }
+
+    func removeMealEstimateItem(id: UUID) {
+        mealEstimate?.items.removeAll { $0.id == id }
+    }
+
+    func confirmMealEstimate() async -> Bool {
+        guard let estimate = mealEstimate, !estimate.items.isEmpty else {
+            mealEstimateErrorMessage = "Keep at least one food item before saving."
+            return false
+        }
+        let items = estimate.items.map {
+            MealConfirmationItem(id: $0.id, name: $0.name, portion: $0.portion, calories: $0.calories)
+        }
+        guard items.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains($0.calories) }) else {
+            mealEstimateErrorMessage = "Review each food name and calorie estimate before saving."
+            return false
+        }
+        isMealEstimateLoading = true
+        mealEstimateErrorMessage = nil
+        defer { isMealEstimateLoading = false }
+        do {
+            let entries: [FoodEntry]
+            if isCICOPreview {
+                entries = items.map { item in
+                    FoodEntry(
+                        id: UUID(), userID: UUID(), name: item.name, calories: item.calories,
+                        consumedAt: .now, localDate: PlanService.localDayString(for: mealEstimateLogDate),
+                        timeZone: Calendar.current.timeZone.identifier, createdAt: .now, updatedAt: .now,
+                        portionDescription: item.portion, confidence: 0.7, userConfirmed: true,
+                        entrySource: "text_ai", calorieMethod: "estimated"
+                    )
+                }
+            } else {
+                entries = try await service.confirmMealEstimate(sessionID: estimate.sessionID, items: items)
+            }
+            selectedLogDate = mealEstimateLogDate
+            if entries.isEmpty { await loadDailyLog() }
+            else {
+                foodEntries.append(contentsOf: entries)
+                foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            }
+            clearMealEstimateState()
+            return true
+        } catch {
+            mealEstimateErrorMessage = userFacingMessage(for: error)
+            return false
+        }
+    }
+
+    func discardMealEstimate() async {
+        guard let sessionID = mealEstimateSessionID else { clearMealEstimateState(); return }
+        if !isCICOPreview { try? await service.discardMealEstimate(sessionID: sessionID) }
+        clearMealEstimateState()
+    }
+
+    func transcribeMealAudio(at url: URL) async -> String? {
+        isMealTranscribing = true
+        mealEstimateErrorMessage = nil
+        defer {
+            isMealTranscribing = false
+            try? FileManager.default.removeItem(at: url)
+        }
+        if isCICOPreview { return "Grilled chicken with one cup of rice and vegetables" }
+        do { return try await service.transcribeMealAudio(at: url) }
+        catch { mealEstimateErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    private func clearMealEstimateState() {
+        mealEstimate = nil
+        mealEstimateSessionID = nil
+        mealPhotoObjectPath = nil
+        mealEstimateErrorMessage = nil
+    }
+
     func updateFoodEntry(_ entry: FoodEntry, input: FoodEntryInput) async -> Bool {
         guard input.isValid else { dailyErrorMessage = "Enter a food name and calories between 1 and 10,000."; return false }
         isFoodMutationInProgress = true
@@ -320,7 +467,8 @@ final class AppModel {
         isFoodMutationInProgress = true
         dailyErrorMessage = nil
         do {
-            try await service.deleteFoodEntry(id: entry.id)
+            if entry.isAIEstimate { try await service.deleteAIMealEntry(id: entry.id) }
+            else { try await service.deleteFoodEntry(id: entry.id) }
             foodEntries.removeAll { $0.id == entry.id }
         } catch {
             dailyErrorMessage = userFacingMessage(for: error)
@@ -518,6 +666,7 @@ final class AppModel {
     private func resetToOnboarding() {
         currentPlan = nil; preview = nil; foodEntries = []; weightEntries = []; dailyPlan = nil
         productSearchResults = []; productHistory = []; productErrorMessage = nil
+        clearMealEstimateState()
         morningCheckIn = nil; planAdjustmentNotice = nil; showMorningCheckIn = false
         dataContributionStatus = nil; dataContributionErrorMessage = nil
         isAuthenticated = false
@@ -650,5 +799,35 @@ final class AppModel {
         morningCheckIn = MorningCheckIn(reviewDate: yesterday, entries: [breakfast, dinner], intakeDay: nil, todayWeight: nil)
         hasMorningCheckInReminder = true
         showMorningCheckIn = !ProcessInfo.processInfo.arguments.contains("-SkipMorningCheckIn")
+    }
+
+    private static func previewMealEstimate(sessionID: UUID, ready: Bool = false) -> MealEstimate {
+        MealEstimate(
+            sessionID: sessionID,
+            status: ready ? .ready : .needsClarification,
+            totalCalories: 610,
+            calorieLow: 500,
+            calorieHigh: 760,
+            confidence: 0.68,
+            assumptions: ["Chicken appears grilled", "Rice portion is about one cup"],
+            items: [
+                MealEstimateItem(
+                    id: UUID(uuidString: "D27DC6DA-CC10-4E55-9CC0-A017C9345521")!,
+                    name: "Grilled chicken", portion: "1 chicken breast", estimatedGrams: 170,
+                    calories: 280, calorieLow: 240, calorieHigh: 340, confidence: 0.82,
+                    assumptions: ["Skinless chicken breast"]
+                ),
+                MealEstimateItem(
+                    id: UUID(uuidString: "CC094E0B-3F24-4AD0-B641-47A244D14B38")!,
+                    name: "Rice and vegetables", portion: "About 1½ cups", estimatedGrams: 260,
+                    calories: 330, calorieLow: 260, calorieHigh: 420, confidence: 0.58,
+                    assumptions: ["One cup cooked rice", "Lightly oiled vegetables"]
+                ),
+            ],
+            followUp: ready ? nil : MealFollowUp(
+                id: UUID(uuidString: "47DC0199-6EBF-4B37-B7D9-AEC297A031DD")!, ordinal: 1,
+                question: "Was any oil, butter, or sauce added?"
+            )
+        )
     }
 }

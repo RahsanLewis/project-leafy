@@ -20,7 +20,7 @@ struct AuthenticationView: View {
             ScrollView {
               VStack(alignment: .leading, spacing: 20) {
                 Text(!isReturningUser && emailMode == .create ? "Create your account" : "Welcome back")
-                    .font(.largeTitle.bold())
+                    .font(LeafyTypography.largeTitle)
                 Text(isReturningUser
                      ? "Sign in to access your saved nutrition plan."
                      : emailMode == .create
@@ -35,7 +35,7 @@ struct AuthenticationView: View {
                 .signInWithAppleButtonStyle(.black).frame(height: 52).clipShape(.rect(cornerRadius: 12))
 #if targetEnvironment(simulator)
                 Label("Test Apple sign-in on a physical iPhone. Email and password work in Simulator.", systemImage: "iphone.gen3")
-                    .font(.caption)
+                    .font(LeafyTypography.caption)
                     .foregroundStyle(.secondary)
 #endif
                 HStack { Rectangle().frame(height: 1).foregroundStyle(.quaternary); Text("or").foregroundStyle(.secondary); Rectangle().frame(height: 1).foregroundStyle(.quaternary) }
@@ -63,7 +63,7 @@ struct AuthenticationView: View {
                                 .textContentType(.newPassword)
                                 .textFieldStyle(.roundedBorder)
                             Text("Use at least 8 characters.")
-                                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                                .font(LeafyTypography.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
 
@@ -81,10 +81,10 @@ struct AuthenticationView: View {
                 }
                 if let error = appleErrorMessage ?? app.errorMessage {
                     Label(error, systemImage: "exclamationmark.circle.fill")
-                        .font(.footnote)
+                        .font(LeafyTypography.footnote)
                         .foregroundStyle(.red)
                 }
-                Text("By continuing, you agree to Leafy’s Terms and acknowledge its Privacy Policy.").font(.caption).foregroundStyle(.secondary)
+                Text("By continuing, you agree to Leafy’s Terms and acknowledge its Privacy Policy.").font(LeafyTypography.caption).foregroundStyle(.secondary)
               }.padding(24)
             }
             .toolbar {
@@ -113,11 +113,11 @@ struct AuthenticationView: View {
     private var confirmationForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Check your email", systemImage: "envelope.badge")
-                .font(.title2.bold()).foregroundStyle(.tint)
+                .font(LeafyTypography.title2).foregroundStyle(.tint)
             Text("We created your account and sent a confirmation link to **\(app.email)**. Tap the link in that email, then return here to finish saving your plan.")
                 .foregroundStyle(.secondary)
             Label("After confirming, come back to Leafy—even if the browser opens a blank or localhost page.", systemImage: "arrow.uturn.backward.circle")
-                .font(.footnote)
+                .font(LeafyTypography.footnote)
                 .foregroundStyle(.secondary)
             Button("I've confirmed my email") { Task { await app.finishConfirmedAccount() } }
                 .buttonStyle(PrimaryButtonStyle())
@@ -137,7 +137,7 @@ struct AuthenticationView: View {
             .disabled(app.saveState == .resendingConfirmation)
             if let message = app.statusMessage {
                 Label(message, systemImage: "checkmark.circle.fill")
-                    .font(.footnote)
+                    .font(LeafyTypography.footnote)
                     .foregroundStyle(.green)
             }
             Button("Use a different email") {

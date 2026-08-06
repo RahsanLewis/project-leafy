@@ -289,6 +289,101 @@ actor PlanService {
         return result.entry
     }
 
+    func uploadMealPhoto(_ data: Data, sessionID: UUID) async throws -> String {
+        guard data.count <= 4 * 1024 * 1024 else {
+            throw ServiceError.invalidResponse(413, "Choose a meal photo smaller than 4 MB.")
+        }
+        guard let userID = await currentUserID() else { throw ServiceError.notAuthenticated }
+        let token = try await resolvedAccessToken()
+        let path = "\(userID.uuidString.lowercased())/ai-meals/\(sessionID.uuidString.lowercased()).jpg"
+        guard let url = URL(string: "\(configuration.supabaseURL.absoluteString)/storage/v1/object/nutrition-media/\(path)") else {
+            throw ServiceError.notConfigured
+        }
+        var upload = URLRequest(url: url)
+        upload.httpMethod = "POST"
+        upload.httpBody = data
+        upload.setValue(configuration.supabaseKey, forHTTPHeaderField: "apikey")
+        upload.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        upload.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        upload.setValue("true", forHTTPHeaderField: "x-upsert")
+        let (responseData, response) = try await URLSession.shared.data(for: upload)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, Self.apiErrorMessage(from: responseData))
+        }
+        return path
+    }
+
+    func estimateMeal(_ input: MealEstimateInput, photoObjectPath: String?) async throws -> MealEstimate {
+        var object: [String: Any] = [
+            "action": "analyze", "session_id": input.sessionID.uuidString.lowercased(),
+            "description": input.description, "voice_transcript": input.voiceTranscript,
+            "consumed_at": ISO8601DateFormatter().string(from: input.consumedAt),
+            "local_date": Self.localDayString(for: input.localDate),
+            "time_zone": Calendar.current.timeZone.identifier, "meal_type": input.mealType.rawValue,
+        ]
+        if let photoObjectPath { object["photo_object_path"] = photoObjectPath }
+        let body = try JSONSerialization.data(withJSONObject: object)
+        return try await request(function: "estimate-meal", body: body, response: MealEstimate.self)
+    }
+
+    func answerMealEstimate(sessionID: UUID, answer: String?, skip: Bool) async throws -> MealEstimate {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "answer", "session_id": sessionID.uuidString.lowercased(),
+            "answer": answer ?? "", "skip": skip,
+        ])
+        return try await request(function: "estimate-meal", body: body, response: MealEstimate.self)
+    }
+
+    func confirmMealEstimate(sessionID: UUID, items: [MealConfirmationItem]) async throws -> [FoodEntry] {
+        let encodedItems = items.map { item in
+            ["id": item.id.uuidString.lowercased(), "name": item.name, "portion": item.portion, "calories": item.calories] as [String: Any]
+        }
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "confirm", "session_id": sessionID.uuidString.lowercased(), "items": encodedItems,
+        ])
+        let result: MealConfirmationResponse = try await request(function: "estimate-meal", body: body, response: MealConfirmationResponse.self)
+        return result.entries
+    }
+
+    func discardMealEstimate(sessionID: UUID) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "discard", "session_id": sessionID.uuidString.lowercased(),
+        ])
+        let _: EmptyResponse = try await request(function: "estimate-meal", body: body, response: EmptyResponse.self)
+    }
+
+    func deleteAIMealEntry(id: UUID) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "delete_entry", "food_entry_id": id.uuidString.lowercased(),
+        ])
+        let _: EmptyResponse = try await request(function: "estimate-meal", body: body, response: EmptyResponse.self)
+    }
+
+    func transcribeMealAudio(at fileURL: URL) async throws -> String {
+        let token = try await resolvedAccessToken()
+        let audio = try Data(contentsOf: fileURL)
+        guard audio.count <= 3 * 1024 * 1024 else {
+            throw ServiceError.invalidResponse(413, "Keep voice descriptions under 60 seconds.")
+        }
+        let boundary = "LeafyBoundary\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"meal.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n".data(using: .utf8)!)
+        body.append(audio)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        let url = configuration.supabaseURL.appending(path: "functions/v1/transcribe-meal-audio")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue(configuration.supabaseKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, Self.apiErrorMessage(from: data))
+        }
+        return try decoder.decode(MealTranscriptionResponse.self, from: data).transcript
+    }
+
     func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["apple_authorization_code": appleAuthorizationCode as Any].compactMapValues { $0 })
         let _: EmptyResponse = try await request(function: "delete-account", body: body, response: EmptyResponse.self)

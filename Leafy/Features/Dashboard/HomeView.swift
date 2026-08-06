@@ -23,7 +23,12 @@ struct HomeView: View {
 
                 if let notice = app.planAdjustmentNotice {
                     AdaptiveTargetNotice(notice: notice)
-                        .listRowInsets(.init(top: LeafySpacing.small, leading: 0, bottom: 0, trailing: 0))
+                        .listRowInsets(.init(
+                            top: LeafySpacing.small,
+                            leading: LeafyTheme.pageInset,
+                            bottom: 0,
+                            trailing: LeafyTheme.pageInset
+                        ))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
@@ -38,10 +43,10 @@ struct HomeView: View {
                                 .foregroundStyle(LeafyTheme.green)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Finish your morning check-in")
-                                    .font(.headline)
+                                    .font(LeafyTypography.headline)
                                     .foregroundStyle(.primary)
                                 Text("Review yesterday and add today’s weight.")
-                                    .font(.subheadline)
+                                    .font(LeafyTypography.subheadline)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -52,7 +57,12 @@ struct HomeView: View {
                         .background(LeafyTheme.mint, in: .rect(cornerRadius: 18))
                     }
                     .buttonStyle(.plain)
-                    .listRowInsets(.init(top: LeafySpacing.small, leading: 0, bottom: 0, trailing: 0))
+                    .listRowInsets(.init(
+                        top: LeafySpacing.small,
+                        leading: LeafyTheme.pageInset,
+                        bottom: 0,
+                        trailing: LeafyTheme.pageInset
+                    ))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .accessibilityIdentifier("morningCheckInReminder")
@@ -68,6 +78,7 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
+            .leafyBorderlessRows(separators: false)
 
             Section {
                 if app.isDailyLoading && app.foodEntries.isEmpty {
@@ -95,30 +106,30 @@ struct HomeView: View {
                     Text("Food log")
                     Spacer()
                     Text("\(app.foodEntries.count) \(app.foodEntries.count == 1 ? "item" : "items")")
-                        .font(.caption)
+                        .font(LeafyTypography.caption)
                         .foregroundStyle(.secondary)
                         .textCase(nil)
                 }
             }
+            .leafyBorderlessRows()
 
             if let message = app.dailyErrorMessage {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("We couldn’t update your food log", systemImage: "exclamationmark.triangle.fill")
-                            .font(.headline)
+                            .font(LeafyTypography.headline)
                             .foregroundStyle(.orange)
-                        Text(message).font(.subheadline).foregroundStyle(.secondary)
+                        Text(message).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
                         Button("Try again") { Task { await app.loadDailyLog() } }
                     }
                     .padding(.vertical, 6)
                 }
+                .leafyBorderlessRows(separators: false)
             }
         }
-        .listStyle(.insetGrouped)
+        .leafyBorderlessList()
         .listSectionSpacing(LeafySpacing.xLarge)
         .contentMargins(.top, LeafySpacing.medium, for: .scrollContent)
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             Button("Log Food") {
@@ -165,14 +176,14 @@ private struct AdaptiveTargetNotice: View {
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             HStack(alignment: .top) {
                 Label("Your budget was personalized", systemImage: "sparkles")
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                     .foregroundStyle(LeafyTheme.green)
                 Spacer()
                 Button {
                     Task { await app.acknowledgePlanAdjustment() }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.caption.bold())
+                        .font(LeafyTypography.captionSemibold)
                         .padding(8)
                         .background(Color(.tertiarySystemGroupedBackground), in: .circle)
                 }
@@ -185,11 +196,11 @@ private struct AdaptiveTargetNotice: View {
                     .foregroundStyle(.secondary)
                 Image(systemName: "arrow.right")
                     .foregroundStyle(.secondary)
-                Text("\(notice.newCalorieTargetKcal) kcal")
-                    .font(.title3.bold())
+                Text("\(notice.newCalorieTargetKcal) Cal")
+                    .font(LeafyTypography.title3)
             }
             Text(notice.explanation)
-                .font(.subheadline)
+                .font(LeafyTypography.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(LeafySpacing.medium)
@@ -213,9 +224,9 @@ private struct DateNavigator: View {
 
             VStack(spacing: 2) {
                 Text(app.isViewingToday ? "Today" : app.selectedLogDate.formatted(.dateTime.weekday(.wide)))
-                    .font(.title2.bold())
+                    .font(LeafyTypography.title2)
                 Text(app.selectedLogDate.formatted(date: .abbreviated, time: .omitted))
-                    .font(.subheadline)
+                    .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -240,38 +251,34 @@ private struct CalorieBudgetCard: View {
         VStack(spacing: LeafySpacing.large) {
             ZStack {
                 Circle()
-                    .stroke(Color(.systemGray5), lineWidth: 18)
+                    .stroke(Color(.systemGray5), lineWidth: 20)
                 Circle()
                     .trim(from: 0, to: summary.progress)
-                    .stroke(progressColor, style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                    .stroke(progressColor, style: StrokeStyle(lineWidth: 20, lineCap: .round))
                     .rotationEffect(.degrees(-90))
 
                 VStack(spacing: LeafySpacing.xSmall) {
-                    Image(systemName: summary.isOverBudget ? "exclamationmark" : "flame.fill")
-                        .font(.title3.bold())
-                        .foregroundStyle(progressColor)
-
                     Text(heroValue)
-                        .font(.system(size: 44, weight: .bold, design: LeafyTheme.fontDesign))
+                        .font(LeafyTypography.metric(48, extraBold: true))
                         .monospacedDigit()
                         .minimumScaleFactor(0.65)
                         .lineLimit(1)
                         .accessibilityIdentifier("calorieRingValue")
 
                     Text(heroLabel)
-                        .font(.subheadline.weight(.semibold))
+                        .font(LeafyTypography.subheadlineSemibold)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("calorieRingLabel")
                 }
                 .padding(.horizontal, LeafySpacing.large)
             }
-            .frame(width: 196, height: 196)
+            .frame(width: 220, height: 220)
             .accessibilityHidden(true)
 
             HStack(spacing: LeafySpacing.xLarge) {
-                BudgetMetric(title: "Eaten", value: "\(summary.consumed)", unit: "kcal")
-                BudgetMetric(title: "Daily budget", value: formattedBudget, unit: "kcal")
+                BudgetMetric(title: "Eaten", value: "\(summary.consumed)", unit: "Cal")
+                BudgetMetric(title: "Daily budget", value: formattedBudget, unit: "Cal")
             }
         }
         .frame(maxWidth: .infinity)
@@ -311,15 +318,15 @@ private struct BudgetMetric: View {
     var body: some View {
         VStack(spacing: LeafySpacing.xSmall) {
             Text(title)
-                .font(.subheadline)
+                .font(LeafyTypography.subheadline)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value)
-                    .font(.title3.bold())
+                    .font(LeafyTypography.title3)
                     .monospacedDigit()
                     .minimumScaleFactor(0.8)
                     .lineLimit(1)
-                Text(unit).font(.caption).foregroundStyle(.secondary)
+                Text(unit).font(LeafyTypography.caption).foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity)
@@ -331,13 +338,19 @@ private struct FoodEntryRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Text(entry.consumedAt.formatted(date: .omitted, time: .shortened))
-                .font(.caption.monospacedDigit())
+                .font(LeafyTypography.caption).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 68, alignment: .leading)
-            Text(entry.name).font(.body.weight(.medium)).lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name).font(LeafyTypography.bodyMedium).lineLimit(2)
+                if entry.isAIEstimate {
+                    Label("AI estimate", systemImage: "sparkles")
+                        .font(LeafyTypography.caption2).foregroundStyle(LeafyTheme.green)
+                }
+            }
             Spacer(minLength: 8)
-            Text("\(entry.calories) kcal")
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+            Text("\(entry.calories) Cal")
+                .font(LeafyTypography.subheadlineSemibold).monospacedDigit()
         }
         .padding(.vertical, 7)
         .accessibilityElement(children: .combine)
@@ -351,9 +364,9 @@ private struct EmptyFoodLog: View {
             Image(systemName: "fork.knife.circle")
                 .font(.system(size: 38))
                 .foregroundStyle(LeafyTheme.green)
-            Text("Nothing logged yet").font(.headline)
+            Text("Nothing logged yet").font(LeafyTypography.headline)
             Text("Add food as you eat to see your calorie budget update throughout the day.")
-                .font(.subheadline)
+                .font(LeafyTypography.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }

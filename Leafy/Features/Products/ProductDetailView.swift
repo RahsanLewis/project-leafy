@@ -20,18 +20,20 @@ struct ProductDetailView: View {
                 VStack(spacing: 14) {
                     ScoreBadge(score: product.score?.score, label: product.score?.label)
                         .scaleEffect(1.7).padding(.vertical, 22)
-                    Text(product.score?.label ?? "Not enough data to score").font(.title2.bold())
-                    Text("Nutrition score").font(.subheadline).foregroundStyle(.secondary)
+                    Text(product.score?.label ?? "Not enough data to score").font(LeafyTypography.title2)
+                    Text("Nutrition score").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
             }
+            .leafyBorderlessRows(separators: false)
             Section("Product") {
                 LabeledContent("Brand", value: product.brand ?? "Not listed")
                 LabeledContent("Source", value: product.source)
                 if let barcode = product.barcode { LabeledContent("Barcode", value: barcode) }
             }
+            .leafyBorderlessRows()
             Section("Per 100 g") {
-                nutrient("Calories", code: "energy_kcal", unit: "kcal")
+                nutrient("Calories", code: "energy_kcal", unit: "Cal")
                 nutrient("Protein", code: "protein_g", unit: "g")
                 nutrient("Carbohydrate", code: "carbohydrate_g", unit: "g")
                 nutrient("Fat", code: "fat_g", unit: "g")
@@ -39,14 +41,17 @@ struct ProductDetailView: View {
                 nutrient("Sugar", code: "sugars_g", unit: "g")
                 nutrient("Sodium", code: "sodium_mg", unit: "mg")
             }
+            .leafyBorderlessRows()
             if let score = product.score, !(score.positiveFactors + score.limitingFactors).isEmpty {
                 Section("What affects the score") {
                     ForEach(score.positiveFactors, id: \.self) { Label($0, systemImage: "checkmark.circle.fill").foregroundStyle(LeafyTheme.green) }
                     ForEach(score.limitingFactors, id: \.self) { Label($0, systemImage: "exclamationmark.circle.fill").foregroundStyle(.orange) }
                 }
+                .leafyBorderlessRows()
             }
             if let ingredients = product.ingredients, !ingredients.isEmpty {
-                Section("Ingredients") { Text(ingredients).font(.subheadline).foregroundStyle(.secondary) }
+                Section("Ingredients") { Text(ingredients).font(LeafyTypography.subheadline).foregroundStyle(.secondary) }
+                    .leafyBorderlessRows(separators: false)
             }
             if intent == .log {
                 Section("Add to food log") {
@@ -55,14 +60,18 @@ struct ProductDetailView: View {
                     }
                     DatePicker("Time", selection: $consumedAt, displayedComponents: .hourAndMinute)
                     Picker("Meal", selection: $mealType) { ForEach(MealType.allCases) { Text($0.label).tag($0) } }
-                    LabeledContent("Estimated calories", value: "\(estimatedCalories) kcal")
+                    LabeledContent("Estimated calories", value: "\(estimatedCalories) Cal")
                 }
+                .leafyBorderlessRows()
             }
             Section {
                 Text("Leafy’s score evaluates nutrition data only. Ingredients and allergens are informational; always check the package if you have an allergy.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(LeafyTypography.footnote).foregroundStyle(.secondary)
             }
+            .leafyBorderlessRows(separators: false)
         }
+        .leafyBorderlessList()
+        .listSectionSpacing(LeafySpacing.large)
         .navigationTitle(product.name.capitalized)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {

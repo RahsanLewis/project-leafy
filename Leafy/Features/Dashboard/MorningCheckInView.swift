@@ -16,7 +16,7 @@ struct MorningCheckInView: View {
                     if step == .intake { intakeCard } else { weightCard }
                     if let error = app.checkInErrorMessage {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.subheadline)
+                            .font(LeafyTypography.subheadline)
                             .foregroundStyle(.orange)
                             .padding()
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -49,11 +49,11 @@ struct MorningCheckInView: View {
                 .font(.system(size: 42))
                 .foregroundStyle(LeafyTheme.green)
             Text("Morning check-in")
-                .font(.largeTitle.bold())
+                .font(LeafyTypography.largeTitle)
             Text(step == .intake
                  ? "Confirm yesterday’s food log so Leafy can learn from complete days."
                  : "Frequent weigh-ins help Leafy separate daily fluctuations from your longer-term trend.")
-                .font(.body)
+                .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
         }
     }
@@ -62,10 +62,10 @@ struct MorningCheckInView: View {
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             if let checkIn = app.morningCheckIn {
                 Text(checkIn.reviewDate.formatted(date: .complete, time: .omitted))
-                    .font(.headline)
+                    .font(LeafyTypography.headline)
                 HStack(alignment: .firstTextBaseline) {
-                    Text(checkIn.entries.isEmpty ? "No food logged" : "\(checkIn.calorieTotal.formatted()) kcal")
-                        .font(.title.bold())
+                    Text(checkIn.entries.isEmpty ? "No food logged" : "\(checkIn.calorieTotal.formatted()) Cal")
+                        .font(LeafyTypography.title)
                     Spacer()
                     Text("\(checkIn.entries.count) \(checkIn.entries.count == 1 ? "item" : "items")")
                         .foregroundStyle(.secondary)
@@ -93,14 +93,14 @@ struct MorningCheckInView: View {
     private var weightCard: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             Text("Today’s weight")
-                .font(.headline)
+                .font(LeafyTypography.headline)
             HStack(alignment: .firstTextBaseline) {
                 TextField("Weight", text: $weightText)
-                    .font(.system(size: 48, weight: .bold, design: LeafyTheme.fontDesign))
+                    .font(LeafyTypography.metric(48, extraBold: true))
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                 Text(app.draft.unitSystem == .imperial ? "lb" : "kg")
-                    .font(.title3)
+                    .font(LeafyTypography.title3)
                     .foregroundStyle(.secondary)
             }
             .padding()

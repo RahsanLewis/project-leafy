@@ -17,12 +17,19 @@ struct SettingsView: View {
                     Button("Sign in") { app.presentAuthentication(.accessExistingAccount) }
                 }
             }
+            .leafyBorderlessRows()
             Section("Personalized targets") {
+                NavigationLink {
+                    PlanView()
+                } label: {
+                    LabeledContent("Nutrition plan", value: app.currentPlan.map { "\($0.calorieTargetKcal) Cal" } ?? "Unavailable")
+                }
                 Label("Leafy uses your confirmed food logs and weight history to learn how your calorie budget fits your body over time.", systemImage: "wand.and.stars")
                 Text("Your data personalizes your targets only. Leafy does not show an estimated daily calories-burned number, and weekly budget changes are limited to 100 calories.")
-                    .font(.footnote)
+                    .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
             }
+            .leafyBorderlessRows()
             Section("Daily reminder") {
                 Toggle("Morning check-in", isOn: Binding(
                     get: { reminders.preferences.isEnabled },
@@ -46,15 +53,16 @@ struct SettingsView: View {
                 }
 
                 Text(reminders.authorizationState.description)
-                    .font(.footnote)
+                    .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
 
                 if let reminderError = reminders.errorMessage {
                     Text(reminderError)
-                        .font(.footnote)
+                        .font(LeafyTypography.footnote)
                         .foregroundStyle(.orange)
                 }
             }
+            .leafyBorderlessRows()
             Section("Your data") {
                 NavigationLink {
                     DataContributionView()
@@ -69,16 +77,21 @@ struct SettingsView: View {
                     }
                 }
                 Text("Commercial data participation is optional and separate from personalized targets.")
-                    .font(.footnote)
+                    .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
             }
+            .leafyBorderlessRows()
             Section("Legal and support") {
                 Link("Privacy Policy", destination: app.configuration.privacyURL)
                 Link("Terms of Use", destination: app.configuration.termsURL)
                 Link("Support", destination: app.configuration.supportURL)
             }
-            Section { Text("Leafy provides general wellness estimates and is not a substitute for medical care.").font(.footnote) }
+            .leafyBorderlessRows()
+            Section { Text("Leafy provides general wellness estimates and is not a substitute for medical care.").font(LeafyTypography.footnote) }
+                .leafyBorderlessRows(separators: false)
         }
+        .leafyBorderlessList()
+        .listSectionSpacing(LeafySpacing.large)
         .navigationTitle("Settings")
         .task {
             async let contribution: Void = app.loadDataContributionStatus()

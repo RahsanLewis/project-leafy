@@ -27,7 +27,7 @@ struct WeightEntryEditorView: View {
                         Picker("Decimal", selection: $tenth) {
                             ForEach(0...9, id: \.self) { Text(".\($0)").tag($0) }
                         }.pickerStyle(.wheel).frame(width: 90)
-                        Text(unitLabel).font(.title3).foregroundStyle(.secondary).padding(.trailing)
+                        Text(unitLabel).font(LeafyTypography.title3).foregroundStyle(.secondary).padding(.trailing)
                     }.frame(height: 150)
                 }
                 Section("Date") {

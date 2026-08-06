@@ -2,6 +2,8 @@
 
 Leafy is a native iOS nutrition-target planner. This first vertical slice guides an eligible adult through goal setup, previews a versioned calorie/macronutrient plan, authenticates with Apple or email OTP, and saves an authoritative server-calculated revision in Supabase.
 
+Leafy uses Plus Jakarta Sans under the SIL Open Font License. The bundled license is available at `Leafy/Resources/Fonts/OFL.txt`.
+
 ## Requirements
 
 - Xcode 26+
@@ -16,15 +18,16 @@ Leafy is a native iOS nutrition-target planner. This first vertical slice guides
 2. Open `Config/Base.xcconfig` and replace the placeholder Supabase URL, publishable key, and hosted legal/support URLs. Never place a service-role key in the app.
 3. Create or link a Supabase project in the U.S. East region, then run `supabase db push`.
 4. Configure passwordless email OTP and the Apple provider in Supabase. Enable Sign in with Apple for the app identifier in the Apple Developer portal.
-5. Deploy `save-nutrition-plan` and `delete-account`. For Apple revocation during deletion, configure `APPLE_CLIENT_ID` and a generated `APPLE_CLIENT_SECRET` as function secrets.
-6. Select the Apple development team in Xcode, build, and run.
+5. Deploy the Edge Functions in `supabase/functions`. For Apple revocation during deletion, configure `APPLE_CLIENT_ID` and a generated `APPLE_CLIENT_SECRET` as function secrets.
+6. Configure `OPENAI_API_KEY` as a Supabase function secret for AI meal photo, text, and voice estimates. Keep it server-side; never add it to an xcconfig or the iOS app.
+7. Select the Apple development team in Xcode, build, and run.
 
 The app intentionally keeps an unsigned onboarding draft in memory. A preview is computed locally; after authentication, the backend validates and recomputes it before persisting an immutable revision.
 
 ## Verification
 
 - iOS: `xcodebuild test -project Leafy.xcodeproj -scheme Leafy -destination 'platform=iOS Simulator,name=iPhone 16 Pro'`
-- Edge calculator: `deno test supabase/tests/calculator_test.ts`
+- Backend functions and calculation policy: `deno test --allow-read supabase/tests`
 - Backend: start Supabase locally and verify migrations/RLS before deploying.
 
 ## TestFlight checklist

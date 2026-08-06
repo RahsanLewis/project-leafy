@@ -14,6 +14,7 @@ struct ProductDiscoveryView: View {
         List {
             if query.isEmpty && !app.productHistory.isEmpty {
                 Section("Recently analyzed") { productRows(app.productHistory) }
+                    .leafyBorderlessRows()
             } else if query.count >= 2 {
                 Section("Products") {
                     if app.isProductLoading && app.productSearchResults.isEmpty {
@@ -22,6 +23,7 @@ struct ProductDiscoveryView: View {
                         ContentUnavailableView.search(text: query)
                     } else { productRows(app.productSearchResults) }
                 }
+                .leafyBorderlessRows()
             } else {
                 Section {
                     ContentUnavailableView(
@@ -31,12 +33,16 @@ struct ProductDiscoveryView: View {
                     )
                     .listRowBackground(Color.clear)
                 }
+                .leafyBorderlessRows(separators: false)
             }
 
             if let message = app.productErrorMessage {
                 Section { Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                    .leafyBorderlessRows(separators: false)
             }
         }
+        .leafyBorderlessList()
+        .listSectionSpacing(LeafySpacing.large)
         .navigationTitle(intent == .analyze ? "Scan" : "Find Food")
         .searchable(text: $query, prompt: "Product, brand, or barcode")
         .toolbar {
@@ -88,9 +94,9 @@ struct ProductDiscoveryView: View {
                 HStack(spacing: 14) {
                     ScoreBadge(score: product.score?.score, label: product.score?.label)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(product.name.capitalized).font(.headline).foregroundStyle(.primary).lineLimit(2)
+                        Text(product.name.capitalized).font(LeafyTypography.headline).foregroundStyle(.primary).lineLimit(2)
                         Text([product.brand, product.servingSize.map { "\($0.formatted()) \(product.servingUnit ?? "g")" }].compactMap { $0 }.joined(separator: " • "))
-                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                            .font(LeafyTypography.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.tertiary)
@@ -113,7 +119,7 @@ struct ScoreBadge: View {
     var body: some View {
         ZStack {
             Circle().fill(color.opacity(0.14)).frame(width: 52, height: 52)
-            Text(score.map(String.init) ?? "—").font(.headline.bold()).foregroundStyle(color)
+            Text(score.map(String.init) ?? "—").font(LeafyTypography.headline).foregroundStyle(color)
         }
         .accessibilityLabel(score.map { "Nutrition score \($0) out of 100" } ?? "Nutrition score unavailable")
     }

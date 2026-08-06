@@ -37,7 +37,7 @@ struct FoodEntryEditorView: View {
                         TextField("Calories", text: $caloriesText)
                             .keyboardType(.numberPad)
                             .accessibilityIdentifier("foodCaloriesField")
-                        Text("kcal").foregroundStyle(.secondary)
+                        Text("Cal").foregroundStyle(.secondary)
                     }
                     DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                 } header: {
@@ -69,7 +69,7 @@ struct FoodEntryEditorView: View {
                 if let message = app.dailyErrorMessage {
                     Section {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.subheadline)
+                            .font(LeafyTypography.subheadline)
                             .foregroundStyle(.orange)
                     }
                 }
