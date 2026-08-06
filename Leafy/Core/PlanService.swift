@@ -7,8 +7,9 @@ actor PlanService {
         var errorDescription: String? {
             switch self {
             case .notConfigured: "Connect Leafy to Supabase in Config/Base.xcconfig before saving."
-            case .notAuthenticated: "Please sign in before saving your plan."
-            case let .invalidResponse(code, message): "The server returned \(code): \(message)"
+            case .notAuthenticated: "Your session has expired. Sign in again to continue."
+            case let .invalidResponse(code, message):
+                message.isEmpty ? "The server could not complete the request (\(code))." : message
             }
         }
     }
@@ -17,6 +18,7 @@ actor PlanService {
     let supabase: SupabaseClient
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private var activeAccessToken: String?
 
     init(configuration: AppConfiguration) {
         self.configuration = configuration
@@ -46,13 +48,18 @@ actor PlanService {
 
     func currentUserID() async -> UUID? {
         guard configuration.isConfigured else { return nil }
-        return try? await supabase.auth.session.user.id
+        guard let session = try? await supabase.auth.session else { return nil }
+        activeAccessToken = session.accessToken
+        return session.user.id
     }
 
     func createAccount(email: String, password: String) async throws -> Bool {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
         let response = try await supabase.auth.signUp(email: email, password: password)
-        if case .session = response { return false }
+        if case let .session(session) = response {
+            activeAccessToken = session.accessToken
+            return false
+        }
         return true
     }
 
@@ -63,32 +70,185 @@ actor PlanService {
 
     func signIn(email: String, password: String) async throws -> String {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        return try await supabase.auth.signIn(email: email, password: password).accessToken
+        let session = try await supabase.auth.signIn(email: email, password: password)
+        activeAccessToken = session.accessToken
+        return session.accessToken
     }
 
     func signInWithApple(identityToken: String, nonce: String) async throws -> String {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        return try await supabase.auth.signInWithIdToken(
+        let session = try await supabase.auth.signInWithIdToken(
             credentials: OpenIDConnectCredentials(provider: .apple, idToken: identityToken, nonce: nonce)
-        ).accessToken
+        )
+        activeAccessToken = session.accessToken
+        return session.accessToken
     }
 
-    func signOut() async throws { try await supabase.auth.signOut() }
+    func signOut() async throws {
+        defer { activeAccessToken = nil }
+        try await supabase.auth.signOut()
+    }
 
     func savePlan(_ input: NutritionPlanInput, accessToken: String? = nil) async throws -> NutritionPlan {
         let data = try encoder.encode(input)
         return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
     }
 
-    func fetchCloudState() async throws -> (NutritionPlan, NutritionPlanInput)? {
+    func fetchCloudState(accessToken suppliedToken: String? = nil) async throws -> (NutritionPlan, NutritionPlanInput)? {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        let session = try await supabase.auth.session
-        let planData = try await rest(path: "nutrition_plans?select=*&order=revision.desc&limit=1", accessToken: session.accessToken)
-        let profileData = try await rest(path: "profiles?select=*&limit=1", accessToken: session.accessToken)
+        let accessToken: String
+        if let suppliedToken {
+            accessToken = suppliedToken
+            activeAccessToken = suppliedToken
+        } else {
+            accessToken = try await resolvedAccessToken()
+        }
+        let planData = try await rest(path: "nutrition_plans?select=*&order=revision.desc&limit=1", accessToken: accessToken)
+        let profileData = try await rest(path: "profiles?select=*&limit=1", accessToken: accessToken)
         guard let plan = try decoder.decode([NutritionPlan].self, from: planData).first,
               let profile = try JSONDecoder().decode([ProfileDTO].self, from: profileData).first
         else { return nil }
         return (plan, try profile.input())
+    }
+
+    func fetchFoodEntries(on date: Date, calendar: Calendar = .current) async throws -> [FoodEntry] {
+        let token = try await resolvedAccessToken()
+        let localDate = Self.localDayString(for: date, calendar: calendar)
+        let data = try await rest(
+            path: "food_entries?select=*&local_date=eq.\(localDate)&order=consumed_at.asc",
+            accessToken: token
+        )
+        return try decoder.decode([FoodEntry].self, from: data)
+    }
+
+    func fetchPlan(activeAt endOfDay: Date) async throws -> NutritionPlan? {
+        let token = try await resolvedAccessToken()
+        let cutoff = ISO8601DateFormatter().string(from: endOfDay)
+        let data = try await rest(
+            path: "nutrition_plans?select=*&created_at=lte.\(cutoff)&order=created_at.desc&limit=1",
+            accessToken: token
+        )
+        return try decoder.decode([NutritionPlan].self, from: data).first
+    }
+
+    func fetchWeightEntries() async throws -> [WeightEntry] {
+        let token = try await resolvedAccessToken()
+        let data = try await rest(
+            path: "weight_entries?select=*&order=recorded_on.desc",
+            accessToken: token
+        )
+        return try decoder.decode([WeightEntry].self, from: data)
+    }
+
+    func fetchIntakeDay(on date: Date, calendar: Calendar = .current) async throws -> DailyIntakeDay? {
+        let token = try await resolvedAccessToken()
+        let localDate = Self.localDayString(for: date, calendar: calendar)
+        let data = try await rest(
+            path: "daily_intake_days?select=*&local_date=eq.\(localDate)&limit=1",
+            accessToken: token
+        )
+        return try decoder.decode([DailyIntakeDay].self, from: data).first
+    }
+
+    func fetchLatestPlanAdjustment() async throws -> PlanAdjustmentNotice? {
+        let token = try await resolvedAccessToken()
+        let data = try await rest(
+            path: "plan_adjustments?select=*&acknowledged_at=is.null&order=applied_at.desc&limit=1",
+            accessToken: token
+        )
+        return try decoder.decode([PlanAdjustmentNotice].self, from: data).first
+    }
+
+    func updateDailyCheckIn(
+        status: IntakeDayStatus,
+        on date: Date,
+        calendar: Calendar = .current
+    ) async throws -> DailyCheckInResponse {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": status.rawValue,
+            "local_date": Self.localDayString(for: date, calendar: calendar),
+            "time_zone": calendar.timeZone.identifier
+        ])
+        return try await request(function: "manage-daily-checkin", body: body, response: DailyCheckInResponse.self)
+    }
+
+    func refreshAdaptiveTarget(calendar: Calendar = .current) async throws -> DailyCheckInResponse {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "refresh",
+            "time_zone": calendar.timeZone.identifier
+        ])
+        return try await request(function: "manage-daily-checkin", body: body, response: DailyCheckInResponse.self)
+    }
+
+    func acknowledgePlanAdjustment(id: UUID) async throws {
+        let token = try await resolvedAccessToken()
+        let body = try JSONSerialization.data(withJSONObject: [
+            "acknowledged_at": ISO8601DateFormatter().string(from: .now)
+        ])
+        _ = try await restMutation(
+            method: "PATCH",
+            path: "plan_adjustments?id=eq.\(id.uuidString)",
+            accessToken: token,
+            body: body,
+            prefer: "return=minimal"
+        )
+    }
+
+    func saveWeightEntry(id: UUID?, weightKG: Double, recordedOn: Date, calendar: Calendar = .current) async throws -> WeightMutationResponse {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "upsert",
+            "id": id?.uuidString as Any,
+            "weight_kg": weightKG,
+            "recorded_on": Self.localDayString(for: recordedOn, calendar: calendar),
+            "time_zone": calendar.timeZone.identifier
+        ].compactMapValues { $0 })
+        return try await request(function: "manage-weight-entry", body: body, response: WeightMutationResponse.self)
+    }
+
+    func deleteWeightEntry(id: UUID) async throws -> WeightMutationResponse {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "delete", "id": id.uuidString])
+        return try await request(function: "manage-weight-entry", body: body, response: WeightMutationResponse.self)
+    }
+
+    func createFoodEntry(_ input: FoodEntryInput, on localDate: Date, calendar: Calendar = .current) async throws -> FoodEntry {
+        let token = try await resolvedAccessToken()
+        let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, includeUpdatedAt: false)
+        let data = try await restMutation(method: "POST", path: "food_entries", accessToken: token, body: body, prefer: "return=representation")
+        guard let entry = try decoder.decode([FoodEntry].self, from: data).first else { throw ServiceError.invalidResponse(200, "No food entry was returned.") }
+        return entry
+    }
+
+    func fetchDataContributionStatus() async throws -> DataContributionStatus {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "status"])
+        return try await request(function: "manage-data-contribution", body: body, response: DataContributionStatus.self)
+    }
+
+    func joinDataContribution(countryCode: String, regionCode: String?) async throws -> DataContributionStatus {
+        var object: [String: Any] = [
+            "action": "join",
+            "jurisdiction_country": countryCode,
+        ]
+        if let regionCode { object["jurisdiction_region"] = regionCode }
+        let body = try JSONSerialization.data(withJSONObject: object)
+        return try await request(function: "manage-data-contribution", body: body, response: DataContributionStatus.self)
+    }
+
+    func leaveDataContribution() async throws -> DataContributionStatus {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "leave"])
+        return try await request(function: "manage-data-contribution", body: body, response: DataContributionStatus.self)
+    }
+
+    func updateFoodEntry(id: UUID, input: FoodEntryInput, on localDate: Date, calendar: Calendar = .current) async throws -> FoodEntry {
+        let token = try await resolvedAccessToken()
+        let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, includeUpdatedAt: true)
+        let data = try await restMutation(method: "PATCH", path: "food_entries?id=eq.\(id.uuidString)", accessToken: token, body: body, prefer: "return=representation")
+        guard let entry = try decoder.decode([FoodEntry].self, from: data).first else { throw ServiceError.invalidResponse(404, "Food entry not found.") }
+        return entry
+    }
+
+    func deleteFoodEntry(id: UUID) async throws {
+        let token = try await resolvedAccessToken()
+        _ = try await restMutation(method: "DELETE", path: "food_entries?id=eq.\(id.uuidString)", accessToken: token, body: nil, prefer: "return=minimal")
     }
 
     func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
@@ -101,8 +261,9 @@ actor PlanService {
         let accessToken: String
         if let suppliedToken {
             accessToken = suppliedToken
+            activeAccessToken = suppliedToken
         } else {
-            accessToken = try await supabase.auth.session.accessToken
+            accessToken = try await resolvedAccessToken()
         }
         let url = configuration.supabaseURL.appending(path: "functions/v1/\(function)")
         var request = URLRequest(url: url)
@@ -114,7 +275,7 @@ actor PlanService {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw ServiceError.invalidResponse(status, String(data: data, encoding: .utf8) ?? "Unknown error")
+            throw ServiceError.invalidResponse(status, Self.apiErrorMessage(from: data))
         }
         return try decoder.decode(T.self, from: data)
     }
@@ -126,12 +287,69 @@ actor PlanService {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, String(data: data, encoding: .utf8) ?? "Unknown error")
+            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, Self.apiErrorMessage(from: data))
         }
         return data
     }
+
+    private func restMutation(method: String, path: String, accessToken: String, body: Data?, prefer: String) async throws -> Data {
+        guard let url = URL(string: "\(configuration.supabaseURL.absoluteString)/rest/v1/\(path)") else { throw ServiceError.notConfigured }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = body
+        request.setValue(configuration.supabaseKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(prefer, forHTTPHeaderField: "Prefer")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, Self.apiErrorMessage(from: data))
+        }
+        return data
+    }
+
+    private static func apiErrorMessage(from data: Data) -> String {
+        if let payload = try? JSONDecoder().decode(APIErrorPayload.self, from: data), !payload.error.isEmpty {
+            return payload.error
+        }
+        return String(data: data, encoding: .utf8) ?? "The server could not complete the request."
+    }
+
+    private func foodEntryBody(_ input: FoodEntryInput, localDate: Date, calendar: Calendar, includeUpdatedAt: Bool) throws -> Data {
+        var object: [String: Any] = [
+            "name": input.normalizedName,
+            "calories": input.calories,
+            "consumed_at": ISO8601DateFormatter().string(from: input.consumedAt),
+            "local_date": Self.localDayString(for: localDate, calendar: calendar),
+            "time_zone": calendar.timeZone.identifier,
+            "meal_type": input.mealType.rawValue,
+            "user_confirmed": true,
+            "provenance": ["capture_version": "ios-v2"]
+        ]
+        if let amount = input.amount { object["amount"] = amount }
+        if let amountUnit = input.amountUnit { object["amount_unit"] = amountUnit }
+        if let gramWeight = input.gramWeight { object["gram_weight"] = gramWeight }
+        if let portionDescription = input.portionDescription { object["portion_description"] = portionDescription }
+        if includeUpdatedAt { object["updated_at"] = ISO8601DateFormatter().string(from: .now) }
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+
+    private func resolvedAccessToken() async throws -> String {
+        if let session = try? await supabase.auth.session {
+            activeAccessToken = session.accessToken
+            return session.accessToken
+        }
+        if let activeAccessToken { return activeAccessToken }
+        throw ServiceError.notAuthenticated
+    }
+
+    static func localDayString(for date: Date, calendar: Calendar = .current) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    }
 }
 
+private struct APIErrorPayload: Decodable { let error: String }
 private struct EmptyResponse: Decodable { let ok: Bool }
 private struct ProfileDTO: Decodable {
     let birthDate: String

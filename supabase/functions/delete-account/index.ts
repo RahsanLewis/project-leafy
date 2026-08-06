@@ -29,6 +29,14 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({}))
     const appleRevoked = body.apple_authorization_code ? await revokeApple(body.apple_authorization_code) : false
     const admin = createClient(url, secret)
+    const { data: mediaRows, error: mediaError } = await admin.from('nutrition_media_assets')
+      .select('object_path').eq('user_id', user.id).is('deleted_at', null)
+    if (mediaError && mediaError.code !== '42P01') throw mediaError
+    const objectPaths = (mediaRows ?? []).map((row) => row.object_path)
+    if (objectPaths.length) {
+      const { error: storageError } = await admin.storage.from('nutrition-media').remove(objectPaths)
+      if (storageError) throw storageError
+    }
     const { error } = await admin.auth.admin.deleteUser(user.id)
     if (error) throw error
     return json({ ok: true, apple_revoked: appleRevoked })
@@ -36,4 +44,3 @@ Deno.serve(async (request) => {
     return json({ error: error instanceof Error ? error.message : 'Unable to delete account' }, 400)
   }
 })
-

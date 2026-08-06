@@ -37,3 +37,14 @@ The app intentionally keeps an unsigned onboarding draft in memory. A preview is
 - Complete App Store Connect privacy details for user ID, email, physical characteristics, and health/fitness data.
 - Have wellness copy and calculation policy reviewed before inviting external testers.
 
+## Internal dogfood upload
+
+Leafy's release workflow uploads internal-only TestFlight builds. Create an App Store Connect API key and store it outside the repository at `~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8`.
+
+```sh
+export ASC_KEY_ID="your-key-id"
+export ASC_ISSUER_ID="your-issuer-id"
+./scripts/upload-testflight.sh
+```
+
+The script requires a clean Git worktree, validates the icon and public legal URLs, assigns a timestamp-based build number, archives with automatic signing, and uploads directly to App Store Connect. API keys and signing credentials must never be committed.

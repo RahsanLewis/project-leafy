@@ -1,9 +1,19 @@
 import SwiftUI
 
 enum LeafyTheme {
+    static let fontDesign: Font.Design = .rounded
     static let green = Color(red: 0.13, green: 0.43, blue: 0.29)
     static let mint = Color(red: 0.91, green: 0.97, blue: 0.92)
     static let ink = Color(red: 0.08, green: 0.15, blue: 0.11)
+}
+
+enum LeafySpacing {
+    static let xSmall: CGFloat = 4
+    static let small: CGFloat = 8
+    static let compact: CGFloat = 12
+    static let medium: CGFloat = 16
+    static let large: CGFloat = 24
+    static let xLarge: CGFloat = 32
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
@@ -14,6 +24,18 @@ struct PrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 16)
             .foregroundStyle(.white)
             .background(LeafyTheme.green.opacity(configuration.isPressed ? 0.75 : 1), in: .rect(cornerRadius: 16))
+    }
+}
+
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .foregroundStyle(LeafyTheme.green.opacity(configuration.isPressed ? 0.7 : 1))
+            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(LeafyTheme.green.opacity(0.35), lineWidth: 1.5))
     }
 }
 
@@ -32,4 +54,3 @@ struct ChoiceCard<Content: View>: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? LeafyTheme.green : .clear, lineWidth: 1.5))
     }
 }
-

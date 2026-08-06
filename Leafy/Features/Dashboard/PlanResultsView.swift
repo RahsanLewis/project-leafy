@@ -37,7 +37,7 @@ struct PlanResultsView: View {
                     Task {
                         if await app.service.currentUserID() != nil {
                             do { try await app.saveAuthenticatedDraft() } catch { app.errorMessage = error.localizedDescription }
-                        } else { app.showAuthentication = true }
+                        } else { app.presentAuthentication(.savePlan) }
                     }
                 }.buttonStyle(PrimaryButtonStyle()).disabled(!app.isConfigured)
                 if !app.isConfigured {
@@ -55,7 +55,7 @@ struct PlanResultsView: View {
     private var calorieCard: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Daily calories").font(.subheadline).foregroundStyle(.secondary)
-            Text(plan.calorieTargetKcal.formatted()).font(.system(size: 48, weight: .bold, design: .rounded)) + Text(" kcal").font(.title3).foregroundStyle(.secondary)
+            Text(plan.calorieTargetKcal.formatted()).font(.system(size: 48, weight: .bold, design: LeafyTheme.fontDesign)) + Text(" kcal").font(.title3).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(20).background(LeafyTheme.mint, in: .rect(cornerRadius: 20))
     }
 

@@ -12,14 +12,18 @@ struct AuthenticationView: View {
     @State private var appleErrorMessage: String?
     @State private var emailMode: EmailMode = .create
 
+    private var isReturningUser: Bool { app.authenticationPurpose == .accessExistingAccount }
+
     var body: some View {
         @Bindable var app = app
         NavigationStack {
             ScrollView {
               VStack(alignment: .leading, spacing: 20) {
-                Text(emailMode == .create ? "Create your account" : "Welcome back")
+                Text(!isReturningUser && emailMode == .create ? "Create your account" : "Welcome back")
                     .font(.largeTitle.bold())
-                Text(emailMode == .create
+                Text(isReturningUser
+                     ? "Sign in to access your saved nutrition plan."
+                     : emailMode == .create
                      ? "Save your nutrition targets securely and access them when you return."
                      : "Sign in to save this plan to your existing Leafy account.")
                     .foregroundStyle(.secondary)
@@ -39,10 +43,12 @@ struct AuthenticationView: View {
                 if app.saveState == .awaitingConfirmation {
                     confirmationForm
                 } else {
-                    Picker("Account action", selection: $emailMode) {
-                        ForEach(EmailMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    if !isReturningUser {
+                        Picker("Account action", selection: $emailMode) {
+                            ForEach(EmailMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
 
                     VStack(spacing: 12) {
                         TextField("Email address", text: $app.email)
@@ -61,9 +67,10 @@ struct AuthenticationView: View {
                         }
                     }
 
-                    Button(emailMode == .create ? "Create account and save" : "Sign in and save") {
+                    Button(primaryButtonTitle) {
                         Task {
-                            if emailMode == .create { await app.createAccount() }
+                            if isReturningUser { await app.signInAndLoadAccount() }
+                            else if emailMode == .create { await app.createAccount() }
                             else { await app.signInAndSave() }
                         }
                     }
@@ -94,7 +101,13 @@ struct AuthenticationView: View {
         .onAppear {
             app.errorMessage = nil
             appleErrorMessage = nil
+            if isReturningUser { emailMode = .signIn }
         }
+    }
+
+    private var primaryButtonTitle: String {
+        if isReturningUser { return "Sign in" }
+        return emailMode == .create ? "Create account and save" : "Sign in and save"
     }
 
     private var confirmationForm: some View {
@@ -150,7 +163,13 @@ struct AuthenticationView: View {
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let data = credential.identityToken, let token = String(data: data, encoding: .utf8), !rawNonce.isEmpty
             else { app.errorMessage = "Apple did not return a valid identity token."; return }
-            Task { await app.saveAfterApple(identityToken: token, nonce: rawNonce) }
+            Task {
+                if isReturningUser {
+                    await app.loadAfterApple(identityToken: token, nonce: rawNonce)
+                } else {
+                    await app.saveAfterApple(identityToken: token, nonce: rawNonce)
+                }
+            }
         }
     }
 

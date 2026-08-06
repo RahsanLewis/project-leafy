@@ -31,7 +31,10 @@ struct OnboardingView: View {
                     }
                 }
             }
-            .alert("Unable to calculate", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) {
+            .alert("Unable to calculate", isPresented: Binding(
+                get: { app.errorMessage != nil && !app.showAuthentication },
+                set: { if !$0 && !app.showAuthentication { app.errorMessage = nil } }
+            )) {
                 Button("OK", role: .cancel) { app.errorMessage = nil }
             } message: { Text(app.errorMessage ?? "") }
             .sheet(isPresented: Bindable(app).showAuthentication) { AuthenticationView() }
@@ -204,7 +207,7 @@ struct OnboardingView: View {
                     .font(.system(size: 72))
                     .foregroundStyle(LeafyTheme.green)
                 Text("Your nutrition, made clear")
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                    .font(.system(.largeTitle, design: LeafyTheme.fontDesign, weight: .bold))
                     .multilineTextAlignment(.center)
                 Text("Personalized nutrition targets built around your body and your goal.")
                     .font(.title3)
@@ -244,6 +247,18 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 Button(draft.isEditing ? "Review my plan" : "Continue") { draft.step = .eligibility }
                     .buttonStyle(PrimaryButtonStyle())
+                if !draft.isEditing {
+                    if app.isAuthenticated {
+                        Label(app.statusMessage ?? "You’re signed in", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(LeafyTheme.green)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Button("Sign in") { app.presentAuthentication(.accessExistingAccount) }
+                            .buttonStyle(SecondaryButtonStyle())
+                            .accessibilityIdentifier("welcomeSignInButton")
+                    }
+                }
                 Text("For general wellness only—not medical advice.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

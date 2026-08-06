@@ -2,22 +2,33 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AppModel.self) private var app
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                if let plan = app.currentPlan {
-                    PlanResultsView(plan: plan, isPreview: false).padding(24)
-                } else { ProgressView().padding() }
+        @Bindable var app = app
+        TabView {
+            NavigationStack {
+                HomeView()
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Leafy")
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button("Edit") { app.editPlan() }
-                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
-                }
+            .tabItem { Label("Home", systemImage: "house.fill") }
+
+            NavigationStack {
+                WeightView()
             }
+            .tabItem { Label("Weight", systemImage: "chart.line.uptrend.xyaxis") }
+
+            NavigationStack {
+                PlanView()
+            }
+            .tabItem { Label("Plan", systemImage: "target") }
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+        }
+        .tint(LeafyTheme.green)
+        .sheet(isPresented: $app.showMorningCheckIn, onDismiss: app.dismissMorningCheckIn) {
+            MorningCheckInView()
         }
     }
 }
-
