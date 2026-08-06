@@ -26,6 +26,10 @@ final class AppModel {
     var checkInErrorMessage: String?
     var isDailyLoading = false
     var isFoodMutationInProgress = false
+    var productSearchResults: [ProductSummary] = []
+    var productHistory: [ProductSummary] = []
+    var isProductLoading = false
+    var productErrorMessage: String?
     var isWeightLoading = false
     var isWeightMutationInProgress = false
     var weightErrorMessage: String?
@@ -248,6 +252,53 @@ final class AppModel {
         }
     }
 
+    func searchProducts(_ query: String) async {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count >= 2 else { productSearchResults = []; return }
+        isProductLoading = true
+        productErrorMessage = nil
+        do { productSearchResults = try await service.searchProducts(normalized) }
+        catch { productErrorMessage = userFacingMessage(for: error) }
+        isProductLoading = false
+    }
+
+    func lookupProduct(barcode: String) async -> ProductSummary? {
+        isProductLoading = true
+        productErrorMessage = nil
+        defer { isProductLoading = false }
+        do { return try await service.lookupProduct(barcode: barcode) }
+        catch { productErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func loadProductDetail(_ product: ProductSummary) async -> ProductDetail? {
+        isProductLoading = true
+        productErrorMessage = nil
+        defer { isProductLoading = false }
+        do { return try await service.productDetail(for: product) }
+        catch { productErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func loadProductHistory() async {
+        guard isAuthenticated else { return }
+        do { productHistory = try await service.fetchProductHistory() }
+        catch { productErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func logProduct(_ product: ProductDetail, grams: Double, consumedAt: Date, mealType: MealType) async -> Bool {
+        isFoodMutationInProgress = true
+        productErrorMessage = nil
+        defer { isFoodMutationInProgress = false }
+        do {
+            let entry = try await service.logProduct(product, grams: grams, consumedAt: consumedAt, localDate: selectedLogDate, mealType: mealType)
+            foodEntries.append(entry)
+            foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            return true
+        } catch {
+            productErrorMessage = userFacingMessage(for: error)
+            return false
+        }
+    }
+
     func updateFoodEntry(_ entry: FoodEntry, input: FoodEntryInput) async -> Bool {
         guard input.isValid else { dailyErrorMessage = "Enter a food name and calories between 1 and 10,000."; return false }
         isFoodMutationInProgress = true
@@ -466,6 +517,7 @@ final class AppModel {
 
     private func resetToOnboarding() {
         currentPlan = nil; preview = nil; foodEntries = []; weightEntries = []; dailyPlan = nil
+        productSearchResults = []; productHistory = []; productErrorMessage = nil
         morningCheckIn = nil; planAdjustmentNotice = nil; showMorningCheckIn = false
         dataContributionStatus = nil; dataContributionErrorMessage = nil
         isAuthenticated = false

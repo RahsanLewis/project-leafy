@@ -17,6 +17,8 @@
 		33351AB99441019FA675F758 /* MorningCheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 656D87A3D1EED260DF182AC7 /* MorningCheckInView.swift */; };
 		3E19A9AA6295D4F84CEBCC6B /* PlanResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */; };
 		41D48E29C7A09E97E210B3E6 /* OnboardingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF517F2114DC9DDD40FBAC24 /* OnboardingDraft.swift */; };
+		4637838EFBEDA70AB7D163DF /* ProductDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF9D62635316B299B94CD6A /* ProductDetailView.swift */; };
+		5568F963D637E40A3A91A155 /* ProductDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B66F9ABC150741B58CB4667 /* ProductDiscoveryView.swift */; };
 		575C123D998A2534A00DCAD3 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8D67C1E7B1ACB80669999E4F /* Supabase */; };
 		589C890A6005B279A9F0ADA7 /* LeafyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78BE136F0A736115C288398 /* LeafyTheme.swift */; };
 		5E8532CCEC65FC840A8B6CA3 /* AuthenticationRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C19E082C50133F9584386E /* AuthenticationRoutingTests.swift */; };
@@ -36,6 +38,8 @@
 		A969C20CC07087A33F4ADFC6 /* WeightEntryEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69021CA01FB5628B80387DA9 /* WeightEntryEditorView.swift */; };
 		B17CF5C026561D670C497F04 /* DailyNutritionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404D624EFC28753CD28E950B /* DailyNutritionModels.swift */; };
 		B23DC6512D9DF70AA07E402F /* NutritionCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */; };
+		DF445BC7D9AC164027356000 /* ProductDiscoveryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90625FD770FAC63677B05E97 /* ProductDiscoveryModels.swift */; };
+		E569C834AFF9E575F63F3BF2 /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A26139D4BD8D681F002007 /* BarcodeScannerView.swift */; };
 		E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E20C0C3895F2E56263C5991 /* AppModel.swift */; };
 		F173A393BFD4139569957B45 /* DataContributionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE2BAEF28C0169A72CFB1E3 /* DataContributionView.swift */; };
 		F9710D039F7A23EA147A913F /* LeafyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 791F6467741D9CF8DE8667E0 /* LeafyUITests.swift */; };
@@ -81,7 +85,9 @@
 		84A8B90A19EA640712A8CFFD /* WeightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightView.swift; sourceTree = "<group>"; };
 		84C19E082C50133F9584386E /* AuthenticationRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationRoutingTests.swift; sourceTree = "<group>"; };
 		87A983E1752F1EAB0CC2A3C5 /* Leafy.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Leafy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8B66F9ABC150741B58CB4667 /* ProductDiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDiscoveryView.swift; sourceTree = "<group>"; };
 		8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionCalculatorTests.swift; sourceTree = "<group>"; };
+		90625FD770FAC63677B05E97 /* ProductDiscoveryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDiscoveryModels.swift; sourceTree = "<group>"; };
 		A5257776278A1C9A522DB9D8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		ACB0A1924C3A8C12C5BC5DFF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AF5733639929D077F181900A /* DailyReminderCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyReminderCoordinator.swift; sourceTree = "<group>"; };
@@ -95,7 +101,9 @@
 		CEE35F7D35BDF89A0605794D /* PlanResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanResultsView.swift; sourceTree = "<group>"; };
 		CF308B7696FA49F955CCA73A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D085A58149BEB16F433AC118 /* PlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanView.swift; sourceTree = "<group>"; };
+		EBF9D62635316B299B94CD6A /* ProductDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailView.swift; sourceTree = "<group>"; };
 		EF5E85E0A25E0E0E0BCBC184 /* DailyReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyReminderTests.swift; sourceTree = "<group>"; };
+		F3A26139D4BD8D681F002007 /* BarcodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerView.swift; sourceTree = "<group>"; };
 		F8AA7BEC7FCBD7867401369B /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -146,6 +154,7 @@
 				02DE8CF2749F7288FDA4A741 /* Auth */,
 				693051778E40464AD48D39DE /* Dashboard */,
 				5CCC46AD4CC4BF015B1C0F65 /* Onboarding */,
+				478DED94B0836AE87246159F /* Products */,
 				7C1BDD44AC07AB0D2846A5A0 /* Settings */,
 				00EA3A7E2D5069780D55AC50 /* Weight */,
 			);
@@ -169,6 +178,16 @@
 				0ED83BFC8008650835BD94D1 /* LeafyUITests */,
 				89E9AAD186B18385FF149329 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		478DED94B0836AE87246159F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F3A26139D4BD8D681F002007 /* BarcodeScannerView.swift */,
+				EBF9D62635316B299B94CD6A /* ProductDetailView.swift */,
+				8B66F9ABC150741B58CB4667 /* ProductDiscoveryView.swift */,
+			);
+			path = Products;
 			sourceTree = "<group>";
 		};
 		502FFE73FD994DE3A21688B7 /* Leafy */ = {
@@ -201,6 +220,7 @@
 				7A15461D53272B43E860F39C /* NutritionCalculator.swift */,
 				3D2E894FD8C58239BD5382AB /* NutritionModels.swift */,
 				75C26C36A030A8DDDC190440 /* PlanService.swift */,
+				90625FD770FAC63677B05E97 /* ProductDiscoveryModels.swift */,
 				BFE1EC9E182624111F59D04E /* WeightModels.swift */,
 			);
 			path = Core;
@@ -414,6 +434,7 @@
 				6C51A892B4A790670217CA9F /* AppConfiguration.swift in Sources */,
 				E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */,
 				A5DEEAB785BA06A4E4FB39C3 /* AuthenticationView.swift in Sources */,
+				E569C834AFF9E575F63F3BF2 /* BarcodeScannerView.swift in Sources */,
 				B17CF5C026561D670C497F04 /* DailyNutritionModels.swift in Sources */,
 				0AA19AFD6A06F377023E0AE0 /* DailyReminderCoordinator.swift in Sources */,
 				18527F8ED817D629706D725D /* DashboardView.swift in Sources */,
@@ -430,6 +451,9 @@
 				3E19A9AA6295D4F84CEBCC6B /* PlanResultsView.swift in Sources */,
 				70E0EA2A2B01E0DD1A8E10E1 /* PlanService.swift in Sources */,
 				977706CF7CEF5FF921D9563C /* PlanView.swift in Sources */,
+				4637838EFBEDA70AB7D163DF /* ProductDetailView.swift in Sources */,
+				DF445BC7D9AC164027356000 /* ProductDiscoveryModels.swift in Sources */,
+				5568F963D637E40A3A91A155 /* ProductDiscoveryView.swift in Sources */,
 				055624F286689F89F2BF9E0B /* SettingsView.swift in Sources */,
 				A969C20CC07087A33F4ADFC6 /* WeightEntryEditorView.swift in Sources */,
 				67BE6C08A719DF26636E499B /* WeightModels.swift in Sources */,
@@ -502,7 +526,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -640,7 +664,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

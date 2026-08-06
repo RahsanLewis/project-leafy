@@ -42,4 +42,5 @@ xcodebuild -exportArchive \
   -authenticationKeyID "$ASC_KEY_ID" \
   -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
-echo "Uploaded Leafy 0.1.0 (${build_number}) as an internal-only TestFlight build."
+marketing_version="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$archive_path/Info.plist")"
+echo "Uploaded Leafy ${marketing_version} (${build_number}) as an internal-only TestFlight build."

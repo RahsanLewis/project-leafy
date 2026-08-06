@@ -24,3 +24,6 @@ verify_jwt = false
 
 [functions.manage-data-contribution]
 verify_jwt = false
+
+[functions.discover-food-product]
+verify_jwt = false

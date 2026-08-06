@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: "DF8V5K52QA"
     CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 0.1.0
+    MARKETING_VERSION: 0.2.0
     CODE_SIGN_STYLE: Automatic
 configs:
   Debug: debug
@@ -64,4 +64,3 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.projectleafy.app.uitests
         GENERATE_INFOPLIST_FILE: YES
-

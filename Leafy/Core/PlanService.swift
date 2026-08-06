@@ -251,6 +251,44 @@ actor PlanService {
         _ = try await restMutation(method: "DELETE", path: "food_entries?id=eq.\(id.uuidString)", accessToken: token, body: nil, prefer: "return=minimal")
     }
 
+    func searchProducts(_ query: String) async throws -> [ProductSummary] {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "search", "query": query])
+        let result: ProductListResponse = try await request(function: "discover-food-product", body: body, response: ProductListResponse.self)
+        return result.products
+    }
+
+    func lookupProduct(barcode: String) async throws -> ProductSummary? {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "barcode", "barcode": barcode])
+        let result: ProductSummaryResponse = try await request(function: "discover-food-product", body: body, response: ProductSummaryResponse.self)
+        return result.product
+    }
+
+    func productDetail(for product: ProductSummary) async throws -> ProductDetail {
+        var object: [String: Any] = ["action": "detail"]
+        if let id = product.foodVersionID { object["food_version_id"] = id.uuidString }
+        else if let id = product.fdcID { object["fdc_id"] = id }
+        let body = try JSONSerialization.data(withJSONObject: object)
+        let result: ProductDetailResponse = try await request(function: "discover-food-product", body: body, response: ProductDetailResponse.self)
+        return result.product
+    }
+
+    func fetchProductHistory() async throws -> [ProductSummary] {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "history"])
+        let result: ProductListResponse = try await request(function: "discover-food-product", body: body, response: ProductListResponse.self)
+        return result.products
+    }
+
+    func logProduct(_ product: ProductDetail, grams: Double, consumedAt: Date, localDate: Date, mealType: MealType, calendar: Calendar = .current) async throws -> FoodEntry {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "log", "food_version_id": product.foodVersionID.uuidString,
+            "grams": grams, "consumed_at": ISO8601DateFormatter().string(from: consumedAt),
+            "local_date": Self.localDayString(for: localDate, calendar: calendar),
+            "time_zone": calendar.timeZone.identifier, "meal_type": mealType.rawValue,
+        ])
+        let result: ProductLogResponse = try await request(function: "discover-food-product", body: body, response: ProductLogResponse.self)
+        return result.entry
+    }
+
     func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["apple_authorization_code": appleAuthorizationCode as Any].compactMapValues { $0 })
         let _: EmptyResponse = try await request(function: "delete-account", body: body, response: EmptyResponse.self)

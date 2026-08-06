@@ -22,6 +22,11 @@ struct DashboardView: View {
             .tabItem { Label("Plan", systemImage: "target") }
 
             NavigationStack {
+                ProductDiscoveryView(intent: .analyze)
+            }
+            .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
+
+            NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gearshape.fill") }

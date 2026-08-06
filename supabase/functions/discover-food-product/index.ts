@@ -1,0 +1,188 @@
+import { createClient } from 'npm:@supabase/supabase-js@2'
+import { cors, json } from '../_shared/http.ts'
+import { nutritionScore, type ScoreNutrients } from '../_shared/nutrition-score.ts'
+
+type Body = {
+  action: 'search' | 'barcode' | 'detail' | 'history' | 'log'
+  query?: string
+  barcode?: string
+  fdc_id?: number
+  food_version_id?: string
+  grams?: number
+  consumed_at?: string
+  local_date?: string
+  time_zone?: string
+  meal_type?: string
+}
+
+const nutrientCodes: Record<number, keyof ScoreNutrients | string> = {
+  1008: 'energy_kcal', 1003: 'protein_g', 1005: 'carbohydrate_g', 1004: 'fat_g',
+  1079: 'fiber_g', 2000: 'sugars_g', 1235: 'added_sugars_g', 1258: 'saturated_fat_g',
+  1257: 'trans_fat_g', 1253: 'cholesterol_mg', 1093: 'sodium_mg', 1092: 'potassium_mg',
+  1087: 'calcium_mg', 1089: 'iron_mg', 1090: 'magnesium_mg', 1114: 'vitamin_d_mcg',
+}
+
+Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  try {
+    const authorization = request.headers.get('Authorization') ?? ''
+    const url = Deno.env.get('SUPABASE_URL')!
+    const publicKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
+    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
+    const auth = createClient(url, publicKey, { global: { headers: { Authorization: authorization } } })
+    const { data: { user }, error: authError } = await auth.auth.getUser()
+    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
+    const admin = createClient(url, secret)
+    const body = await request.json() as Body
+
+    if (body.action === 'search') {
+      const query = (body.query ?? '').trim()
+      if (query.length < 2) return json({ products: [] })
+      const { data: local, error } = await admin.rpc('search_food_catalog', { p_query: query, p_limit: 20 })
+      if (error) throw error
+      const localProducts = await Promise.all((local ?? []).map((row: Record<string, unknown>) => productForVersion(admin, String(row.food_version_id))))
+      const external = localProducts.length >= 8 ? [] : await searchUSDA(query)
+      return json({ products: deduplicate([...localProducts, ...external]) })
+    }
+    if (body.action === 'barcode') {
+      const barcode = normalizeBarcode(body.barcode ?? '')
+      if (!barcode) return json({ error: 'Scan a valid UPC or EAN barcode.' }, 400)
+      const { data: local } = await admin.from('food_versions').select('id').eq('gtin', barcode).is('superseded_at', null).maybeSingle()
+      if (local) return json({ product: await productForVersion(admin, local.id) })
+      const matches = await searchUSDA(barcode)
+      if (!matches.length) return json({ product: null })
+      return json({ product: await importUSDA(admin, Number(matches[0].fdc_id)) })
+    }
+    if (body.action === 'detail') {
+      let product
+      if (body.food_version_id) product = await productForVersion(admin, body.food_version_id)
+      else if (body.fdc_id) product = await importUSDA(admin, body.fdc_id)
+      else return json({ error: 'A product identifier is required.' }, 400)
+      await admin.from('product_analysis_history').insert({ user_id: user.id, food_version_id: product.food_version_id, discovery_method: body.fdc_id ? 'search' : 'search', score_snapshot: product.score })
+      return json({ product })
+    }
+    if (body.action === 'history') {
+      const { data, error } = await admin.from('product_analysis_history').select('id, analyzed_at, food_version_id').eq('user_id', user.id).order('analyzed_at', { ascending: false }).limit(50)
+      if (error) throw error
+      const products = await Promise.all((data ?? []).map(async (row) => ({ history_id: row.id, analyzed_at: row.analyzed_at, ...(await productForVersion(admin, row.food_version_id)) })))
+      return json({ products })
+    }
+    if (body.action === 'log') {
+      const grams = Number(body.grams)
+      if (!body.food_version_id || !Number.isFinite(grams) || grams <= 0 || grams > 5000) return json({ error: 'Choose a valid serving amount.' }, 400)
+      const product = await productForVersion(admin, body.food_version_id)
+      const energy = product.nutrients.find((item: Record<string, unknown>) => item.code === 'energy_kcal')?.amount_per_100g
+      if (!Number.isFinite(energy)) return json({ error: 'This product does not include enough calorie data to log.' }, 400)
+      const calories = Math.max(1, Math.round(Number(energy) * grams / 100))
+      const { data, error } = await admin.from('food_entries').insert({
+        user_id: user.id, name: product.name, calories, consumed_at: body.consumed_at,
+        local_date: body.local_date, time_zone: body.time_zone, gram_weight: grams,
+        amount: grams, amount_unit: 'g', portion_description: `${format(grams)} g`,
+        meal_type: body.meal_type ?? 'unspecified', entry_source: 'barcode', calorie_method: 'nutrition_database',
+        canonical_food_version_id: body.food_version_id, confidence: product.score?.confidence ?? 1,
+        user_confirmed: true, provenance: { source: product.source, source_record_id: product.source_record_id, capture_version: 'ios-product-v1' },
+      }).select('*').single()
+      if (error) throw error
+      const { data: item, error: itemError } = await admin.from('consumption_items').select('id').eq('legacy_food_entry_id', data.id).single()
+      if (itemError) throw itemError
+      const snapshots = product.nutrients.map((nutrient: { code: string; amount_per_100g: number }) => ({
+        consumption_item_id: item.id,
+        nutrient_code: nutrient.code,
+        amount: Number((nutrient.amount_per_100g * grams / 100).toFixed(6)),
+        derivation_method: 'calculated',
+        source_version: `${product.source}:${product.source_record_id}`,
+        confidence: product.score?.confidence ?? 1,
+      }))
+      if (snapshots.length) {
+        const snapshotResult = await admin.from('consumption_item_nutrients').upsert(snapshots, { onConflict: 'consumption_item_id,nutrient_code' })
+        if (snapshotResult.error) throw snapshotResult.error
+      }
+      return json({ entry: data })
+    }
+    return json({ error: 'Unsupported product action.' }, 400)
+  } catch (error) {
+    console.error('discover-food-product failed', error)
+    return json({ error: error instanceof Error ? error.message : 'Unable to find that product.' }, 400)
+  }
+})
+
+async function searchUSDA(query: string) {
+  const key = Deno.env.get('FDC_API_KEY') ?? 'DEMO_KEY'
+  const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(key)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, dataType: ['Branded'], pageSize: 20 }),
+  })
+  if (!response.ok) throw new Error('The USDA food catalog is temporarily unavailable.')
+  const payload = await response.json()
+  return (payload.foods ?? []).map(summaryFromUSDA)
+}
+
+function summaryFromUSDA(food: Record<string, unknown>) {
+  const nutrients = Object.fromEntries(((food.foodNutrients as Record<string, unknown>[]) ?? []).map((n) => [String(n.nutrientId), Number(n.value)]))
+  return {
+    id: `usda:${food.fdcId}`, fdc_id: food.fdcId, food_version_id: null, name: food.description,
+    brand: food.brandOwner ?? food.brandName ?? null, barcode: food.gtinUpc ?? null, source: 'USDA FoodData Central',
+    serving_size: food.servingSize ?? null, serving_unit: food.servingSizeUnit ?? null,
+    calories_per_100g: nutrients['1008'] ?? null, image_url: null, score: null,
+  }
+}
+
+// Edge functions use a dynamically shaped database client; generated database types are
+// intentionally not bundled into deployments.
+// deno-lint-ignore no-explicit-any
+async function importUSDA(admin: any, fdcID: number) {
+  const existing = await admin.from('food_versions').select('id').eq('source_system', 'usda_fdc').eq('source_record_id', String(fdcID)).is('superseded_at', null).maybeSingle()
+  if (existing.data) return productForVersion(admin, existing.data.id)
+  const key = Deno.env.get('FDC_API_KEY') ?? 'DEMO_KEY'
+  const response = await fetch(`https://api.nal.usda.gov/fdc/v1/food/${fdcID}?api_key=${encodeURIComponent(key)}`)
+  if (!response.ok) throw new Error('USDA could not return product details.')
+  const food = await response.json()
+  const { data: canonical, error: foodError } = await admin.from('foods').insert({ canonical_name: food.description }).select('id').single()
+  if (foodError) throw foodError
+  const { data: version, error: versionError } = await admin.from('food_versions').insert({
+    food_id: canonical.id, source_system: 'usda_fdc', source_record_id: String(fdcID), source_data_type: food.dataType,
+    description: food.description, brand_name: food.brandOwner ?? food.brandName, gtin: normalizeBarcode(food.gtinUpc ?? ''),
+    market_country: food.marketCountry ?? 'US', ingredients_text: food.ingredients ?? null,
+    serving_size: food.servingSize ?? null, serving_unit: food.servingSizeUnit ?? null,
+    source_updated_at: food.modifiedDate ?? null, verification_status: 'verified', raw_source: food,
+  }).select('id').single()
+  if (versionError) throw versionError
+  const nutrients = ((food.foodNutrients ?? []) as Record<string, unknown>[]).flatMap((item) => {
+    const nutrient = item.nutrient as Record<string, unknown> | undefined
+    const id = Number(nutrient?.id ?? item.nutrientId)
+    const code = nutrientCodes[id]
+    const amount = Number(item.amount ?? item.value)
+    return code && Number.isFinite(amount) && amount >= 0 ? [{ food_version_id: version.id, nutrient_code: code, amount_per_100g: amount, derivation_method: 'label' }] : []
+  })
+  if (nutrients.length) { const result = await admin.from('food_version_nutrients').insert(nutrients); if (result.error) throw result.error }
+  if (Number(food.servingSize) > 0 && food.servingSizeUnit) await admin.from('food_portions').insert({ food_version_id: version.id, amount: 1, unit: 'serving', description: food.householdServingFullText ?? 'Serving', gram_weight: food.servingSize, source: 'usda_fdc' })
+  const nutrientObject = Object.fromEntries(nutrients.map((n) => [n.nutrient_code, n.amount_per_100g])) as ScoreNutrients
+  const score = nutritionScore(nutrientObject)
+  await admin.from('food_version_scores').insert({ food_version_id: version.id, algorithm_version: score.algorithm_version, score_100: score.score, label: score.label, raw_points: score.components.raw_points ?? null, confidence: score.confidence, positive_factors: score.positive_factors, limiting_factors: score.limiting_factors, missing_fields: score.missing_fields, components: score.components })
+  return productForVersion(admin, version.id)
+}
+
+// deno-lint-ignore no-explicit-any
+async function productForVersion(admin: any, id: string) {
+  const [{ data: version, error }, { data: nutrients }, { data: portions }, { data: score }] = await Promise.all([
+    admin.from('food_versions').select('*').eq('id', id).single(),
+    admin.from('food_version_nutrients').select('nutrient_code, amount_per_100g').eq('food_version_id', id),
+    admin.from('food_portions').select('id, amount, unit, description, gram_weight').eq('food_version_id', id),
+    admin.from('food_version_scores').select('*').eq('food_version_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+  if (error) throw error
+  const values = (nutrients ?? []).map((n: Record<string, unknown>) => ({ code: String(n.nutrient_code), amount_per_100g: Number(n.amount_per_100g) }))
+  return {
+    id, food_version_id: id, fdc_id: version.source_system === 'usda_fdc' ? Number(version.source_record_id) : null,
+    name: version.description, brand: version.brand_name, barcode: version.gtin, source: version.source_system === 'usda_fdc' ? 'USDA FoodData Central' : 'Leafy catalog',
+    source_record_id: version.source_record_id, serving_size: version.serving_size, serving_unit: version.serving_unit,
+    calories_per_100g: values.find((n: { code: string; amount_per_100g: number }) => n.code === 'energy_kcal')?.amount_per_100g ?? null,
+    ingredients: version.ingredients_text, allergens: version.allergens ?? [], image_url: version.image_url,
+    verification_status: version.verification_status, nutrients: values, portions: portions ?? [],
+    score: score ? { algorithm_version: score.algorithm_version, score: score.score_100, label: score.label, confidence: Number(score.confidence), positive_factors: score.positive_factors, limiting_factors: score.limiting_factors, missing_fields: score.missing_fields } : null,
+  }
+}
+
+function normalizeBarcode(value: string) { const digits = String(value).replace(/\D/g, ''); return digits.length >= 8 && digits.length <= 14 ? digits : '' }
+function deduplicate(products: Record<string, unknown>[]) { const seen = new Set<string>(); return products.filter((p) => { const key = String(p.barcode ?? p.id); if (seen.has(key)) return false; seen.add(key); return true }) }
+function format(value: number) { return Number.isInteger(value) ? String(value) : value.toFixed(1) }

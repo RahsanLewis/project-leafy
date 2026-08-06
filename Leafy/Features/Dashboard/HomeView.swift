@@ -5,6 +5,8 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var editorEntry: FoodEntry?
     @State private var showingEditor = false
+    @State private var showingLogChoices = false
+    @State private var showingProductFinder = false
 
     var body: some View {
         List {
@@ -120,8 +122,7 @@ struct HomeView: View {
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             Button("Log Food") {
-                editorEntry = nil
-                showingEditor = true
+                showingLogChoices = true
             }
             .buttonStyle(PrimaryButtonStyle())
             .padding(.horizontal, 20)
@@ -132,6 +133,16 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showingEditor) {
             FoodEntryEditorView(entry: editorEntry, logDate: app.selectedLogDate)
+        }
+        .sheet(isPresented: $showingProductFinder) {
+            NavigationStack { ProductDiscoveryView(intent: .log) }
+        }
+        .confirmationDialog("How would you like to log food?", isPresented: $showingLogChoices, titleVisibility: .visible) {
+            Button("Scan or Search Product") { showingProductFinder = true }
+            Button("Enter Manually") { editorEntry = nil; showingEditor = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Use the catalog for complete nutrition data, or enter calories manually.")
         }
         .task {
             if app.dailyPlan == nil && !app.isDailyLoading { await app.loadDailyLog() }
