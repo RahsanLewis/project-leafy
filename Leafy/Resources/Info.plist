@@ -13,7 +13,6 @@
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>NSCameraUsageDescription</key><string>Leafy uses the camera to scan products and photograph meals you choose to estimate.</string>
-    <key>NSMicrophoneUsageDescription</key><string>Leafy uses the microphone to transcribe a meal description. The recording is deleted immediately after transcription.</string>
     <key>UIAppFonts</key>
     <array>
         <string>PlusJakartaSans-Regular.ttf</string>
@@ -23,7 +22,7 @@
         <string>PlusJakartaSans-ExtraBold.ttf</string>
     </array>
     <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
-    <key>UILaunchScreen</key><dict/>
+    <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
     <key>UIRequiresFullScreen</key><true/>
     <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
     <key>SUPABASE_URL</key><string>$(SUPABASE_URL)</string>

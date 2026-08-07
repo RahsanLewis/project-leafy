@@ -5,8 +5,9 @@ import UIKit
 struct AIMealView: View {
     @Environment(AppModel.self) private var app
     let onSaved: () -> Void
-    @State private var description = ""
-    @State private var voiceTranscript = ""
+    let embedded: Bool
+    let logDay: Date
+    @State private var description: String
     @State private var selectedImage: UIImage?
     @State private var photoData: Data?
     @State private var photoItem: PhotosPickerItem?
@@ -14,8 +15,15 @@ struct AIMealView: View {
     @State private var mealDate = Date.now
     @State private var mealType: MealType = .unspecified
     @State private var followUpAnswer = ""
-    @State private var recorder = MealVoiceRecorder()
     @FocusState private var descriptionIsFocused: Bool
+
+    init(logDate: Date = .now, embedded: Bool = false, initialDescription: String = "", onSaved: @escaping () -> Void) {
+        self.onSaved = onSaved
+        self.embedded = embedded
+        self.logDay = logDate
+        _description = State(initialValue: initialDescription)
+        _mealDate = State(initialValue: Self.logDate(logDate, usingTimeFrom: .now))
+    }
 
     var body: some View {
         ScrollView {
@@ -31,8 +39,8 @@ struct AIMealView: View {
             .padding(.bottom, 120)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle(app.mealEstimate == nil ? "AI Meal" : "Review estimate")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle(embedded ? "Log Food" : (app.mealEstimate == nil ? "AI Meal" : "Review estimate"))
+        .navigationBarTitleDisplayMode(embedded ? .inline : .large)
         .sheet(isPresented: $showingCamera) {
             MealCameraPicker { image in setImage(image) }
                 .ignoresSafeArea()
@@ -48,7 +56,6 @@ struct AIMealView: View {
                 setImage(image)
             }
         }
-        .onDisappear { if recorder.isRecording { recorder.cancel() } }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -62,50 +69,13 @@ struct AIMealView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Tell Leafy what you ate")
                     .font(LeafyTypography.title2)
-                Text("Use a photo, type a description, or speak. Combining details gives Leafy a better estimate.")
+                Text("Describe the foods, portions, and extras you remember. Add a photo if it helps.")
                     .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            if let selectedImage {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: selectedImage)
-                        .resizable().scaledToFill()
-                        .frame(maxWidth: .infinity).frame(height: 240)
-                        .clipShape(.rect(cornerRadius: 22))
-                    Button { clearPhoto() } label: {
-                        Image(systemName: "xmark").font(.headline)
-                            .padding(10).background(.ultraThinMaterial, in: .circle)
-                    }
-                    .padding(12)
-                    .accessibilityLabel("Remove meal photo")
-                }
-            } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "camera.metering.center.weighted")
-                        .font(.system(size: 46)).foregroundStyle(LeafyTheme.green)
-                    Text("Add a meal photo")
-                        .font(LeafyTypography.headline)
-                    Text("Try to include the full plate in good lighting.")
-                        .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity).frame(height: 220)
-                .background(LeafyTheme.mint, in: .rect(cornerRadius: 22))
-            }
-
-            HStack(spacing: 12) {
-                Button { showingCamera = true } label: {
-                    Label("Camera", systemImage: "camera.fill").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(AIMealInputButtonStyle())
-                PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label("Photos", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(AIMealInputButtonStyle())
-            }
-
             VStack(alignment: .leading, spacing: 10) {
-                Text("DESCRIPTION").font(LeafyTypography.caption).foregroundStyle(.secondary)
+                Text("WHAT DID YOU EAT?").font(LeafyTypography.caption).foregroundStyle(.secondary)
                 TextEditor(text: $description)
                     .focused($descriptionIsFocused)
                     .frame(minHeight: 105)
@@ -123,10 +93,10 @@ struct AIMealView: View {
                     .accessibilityIdentifier("aiMealDescription")
             }
 
-            voiceSection
+            photoInput
             mealDetails
 
-            if let message = recorder.errorMessage ?? app.mealEstimateErrorMessage {
+            if let message = app.mealEstimateErrorMessage {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(LeafyTypography.subheadline).foregroundStyle(.orange)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -147,37 +117,30 @@ struct AIMealView: View {
         }
     }
 
-    private var voiceSection: some View {
+    private var photoInput: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("VOICE DESCRIPTION").font(LeafyTypography.caption).foregroundStyle(.secondary)
-            Button {
-                if recorder.isRecording {
-                    if let url = recorder.stop() { transcribe(url) }
-                } else {
-                    Task { await recorder.start() }
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: recorder.isRecording ? "stop.circle.fill" : "mic.circle.fill")
-                        .font(.title2).foregroundStyle(recorder.isRecording ? .red : LeafyTheme.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(recorder.isRecording ? "Stop recording" : app.isMealTranscribing ? "Transcribing…" : "Describe by voice")
-                            .font(LeafyTypography.headline).foregroundStyle(.primary)
-                        Text(recorder.isRecording ? "0:\(String(format: "%02d", recorder.elapsedSeconds)) of 1:00" : "Audio is deleted after transcription")
+            Text("PHOTO · OPTIONAL").font(LeafyTypography.caption).foregroundStyle(.secondary)
+            if let selectedImage {
+                HStack(spacing: 14) {
+                    Image(uiImage: selectedImage).resizable().scaledToFill()
+                        .frame(width: 82, height: 82).clipShape(.rect(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Photo added").font(LeafyTypography.headline)
+                        Text("Used together with your description")
                             .font(LeafyTypography.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if app.isMealTranscribing { ProgressView() }
+                    Button("Remove", role: .destructive) { clearPhoto() }
                 }
-                .padding(14).background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
-            }
-            .buttonStyle(.plain)
-            .disabled(app.isMealTranscribing)
-
-            if !voiceTranscript.isEmpty {
-                TextField("Voice transcript", text: $voiceTranscript, axis: .vertical)
-                    .lineLimit(2...5).padding(14)
-                    .background(LeafyTheme.mint, in: .rect(cornerRadius: 16))
+            } else {
+                HStack(spacing: 12) {
+                    Button { showingCamera = true } label: {
+                        Label("Take photo", systemImage: "camera.fill").frame(maxWidth: .infinity)
+                    }.buttonStyle(AIMealInputButtonStyle())
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label("Choose photo", systemImage: "photo.fill").frame(maxWidth: .infinity)
+                    }.buttonStyle(AIMealInputButtonStyle())
+                }
             }
         }
     }
@@ -293,7 +256,7 @@ struct AIMealView: View {
     }
 
     private var canAnalyze: Bool {
-        photoData != nil || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !voiceTranscript.isEmpty
+        photoData != nil || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func setImage(_ image: UIImage) {
@@ -307,23 +270,14 @@ struct AIMealView: View {
 
     private func clearPhoto() { selectedImage = nil; photoData = nil; photoItem = nil }
 
-    private func transcribe(_ url: URL) {
-        Task {
-            if let transcript = await app.transcribeMealAudio(at: url) {
-                voiceTranscript = transcript
-            }
-        }
-    }
-
     private func analyze() {
         let inputDescription = description
-        let transcript = voiceTranscript
         let photo = photoData
         let date = mealDate
         let type = mealType
         Task {
             _ = await app.analyzeMeal(
-                description: inputDescription, voiceTranscript: transcript, photoData: photo,
+                description: inputDescription, photoData: photo,
                 consumedAt: date, localDate: date, mealType: type
             )
         }
@@ -339,8 +293,18 @@ struct AIMealView: View {
     }
 
     private func resetInputs() {
-        description = ""; voiceTranscript = ""; selectedImage = nil; photoData = nil; photoItem = nil
-        followUpAnswer = ""; mealDate = .now; mealType = .unspecified; recorder.cancel()
+        description = ""; selectedImage = nil; photoData = nil; photoItem = nil
+        followUpAnswer = ""; mealDate = Self.logDate(logDay, usingTimeFrom: .now); mealType = .unspecified
+    }
+
+    private static func logDate(_ day: Date, usingTimeFrom time: Date) -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: day)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: time)
+        components.hour = timeComponents.hour
+        components.minute = timeComponents.minute
+        components.second = timeComponents.second
+        return calendar.date(from: components) ?? day
     }
 }
 
@@ -377,6 +341,14 @@ private struct MealEstimateItemCard: View {
                     Text("Range \(item.calorieLow)–\(item.calorieHigh)").font(LeafyTypography.caption).foregroundStyle(.secondary)
                 }
             }
+            if let nutrients = item.nutrients {
+                HStack(spacing: LeafySpacing.large) {
+                    macro("Protein", code: "protein_g", nutrients: nutrients)
+                    macro("Carbs", code: "carbohydrate_g", nutrients: nutrients)
+                    macro("Fat", code: "fat_g", nutrients: nutrients)
+                }
+                .padding(.top, LeafySpacing.xSmall)
+            }
         }
         .padding(.vertical, LeafySpacing.medium)
         .frame(minHeight: LeafyTheme.rowMinHeight)
@@ -386,6 +358,15 @@ private struct MealEstimateItemCard: View {
     }
 
     private func publish() { onChange(name, portion, Int(calories) ?? 0) }
+
+    private func macro(_ title: String, code: String, nutrients: [NutrientAmountInput]) -> some View {
+        let value = nutrients.first { $0.code == code }?.amount ?? 0
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(LeafyTypography.caption).foregroundStyle(.secondary)
+            Text("\(value.formatted(.number.precision(.fractionLength(0...1)))) g")
+                .font(LeafyTypography.subheadlineSemibold).monospacedDigit()
+        }
+    }
 }
 
 private struct AIMealInputButtonStyle: ButtonStyle {

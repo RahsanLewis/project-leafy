@@ -17,7 +17,7 @@ type Body = {
   meal_type?: string
   answer?: string
   skip?: boolean
-  items?: { id: string; name: string; portion: string; calories: number }[]
+  items?: { id: string; name: string; portion: string; calories: number; nutrients?: { code: string; amount: number }[] }[]
   food_entry_id?: string
 }
 
@@ -60,6 +60,7 @@ Deno.serve(async (request) => {
         p_user_id: user.id, p_session_id: body.session_id, p_items: normalized,
       })
       if (error) throw error
+      await persistConfirmedNutrients(admin, user.id, body.session_id, normalized)
       return json({ entries: data ?? [] })
     }
 
@@ -177,6 +178,15 @@ async function runAnalysis(admin: any, userID: string, sessionInput: Record<stri
   }))
   const inserted = await admin.from('ai_meal_items').insert(rows).select('*').order('ordinal')
   if (inserted.error) throw inserted.error
+  const nutrientRows = (inserted.data ?? []).flatMap((row: Record<string, unknown>, index: number) =>
+    estimate.items[index].nutrients.map((nutrient) => ({
+      ai_meal_item_id: row.id, nutrient_code: nutrient.code,
+      predicted_amount: nutrient.amount, confidence: nutrient.confidence,
+    })))
+  if (nutrientRows.length) {
+    const nutrientInsert = await admin.from('ai_meal_item_nutrients').insert(nutrientRows)
+    if (nutrientInsert.error) throw nutrientInsert.error
+  }
   let followUp = null
   if (estimate.status === 'needs_clarification' && estimate.follow_up_question) {
     const ordinal = Number(session.follow_up_count ?? 0) + 1
@@ -270,13 +280,40 @@ function sessionResponse(id: string, estimate: ReturnType<typeof normalizeMealOu
     session_id: id, status: estimate.status, total_calories: estimate.total_calories,
     calorie_low: estimate.calorie_low, calorie_high: estimate.calorie_high,
     confidence: estimate.confidence, assumptions: estimate.assumptions,
-    items: items.map((row) => ({
+    items: items.map((row, index) => ({
       id: row.id, name: row.predicted_name, portion: row.predicted_portion,
       estimated_grams: row.predicted_grams, calories: row.predicted_calories,
       calorie_low: row.calorie_low, calorie_high: row.calorie_high,
       confidence: row.confidence, assumptions: row.assumptions,
+      nutrients: estimate.items[index]?.nutrients ?? [],
     })),
     follow_up: followUp ? { id: followUp.id, ordinal: followUp.ordinal, question: followUp.question } : null,
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function persistConfirmedNutrients(admin: any, userID: string, sessionID: string, requested: { id: string; name: string; portion: string; calories: number }[]) {
+  const ids = requested.map((item) => item.id)
+  const { data: items, error: itemError } = await admin.from('ai_meal_items')
+    .select('id,food_entry_id').eq('session_id', sessionID).in('id', ids)
+  if (itemError) throw itemError
+  for (const item of items ?? []) {
+    if (!item.food_entry_id) continue
+    const [{ data: predictions, error: predictionError }, { data: consumption, error: consumptionError }] = await Promise.all([
+      admin.from('ai_meal_item_nutrients').select('nutrient_code,predicted_amount,confidence').eq('ai_meal_item_id', item.id),
+      admin.from('consumption_items').select('id').eq('legacy_food_entry_id', item.food_entry_id).eq('user_id', userID).single(),
+    ])
+    if (predictionError) throw predictionError
+    if (consumptionError) throw consumptionError
+    const snapshots = (predictions ?? []).map((nutrient: Record<string, unknown>) => ({
+      consumption_item_id: consumption.id, nutrient_code: nutrient.nutrient_code,
+      amount: nutrient.predicted_amount, derivation_method: 'estimated',
+      source_version: 'leafy-meal-v2', confidence: nutrient.confidence,
+    }))
+    if (snapshots.length) {
+      const saved = await admin.from('consumption_item_nutrients').upsert(snapshots, { onConflict: 'consumption_item_id,nutrient_code' })
+      if (saved.error) throw saved.error
+    }
   }
 }
 

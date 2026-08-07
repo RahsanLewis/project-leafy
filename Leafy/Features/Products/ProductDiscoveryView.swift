@@ -3,12 +3,24 @@ import SwiftUI
 struct ProductDiscoveryView: View {
     @Environment(AppModel.self) private var app
     let intent: ProductDiscoveryIntent
+    let embedded: Bool
+    let onLogged: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var showingScanner = false
     @State private var selectedProduct: ProductSummary?
     @State private var detail: ProductDetail?
     @State private var scannedNotFound = false
+
+    init(
+        intent: ProductDiscoveryIntent,
+        embedded: Bool = false,
+        onLogged: (() -> Void)? = nil
+    ) {
+        self.intent = intent
+        self.embedded = embedded
+        self.onLogged = onLogged
+    }
 
     var body: some View {
         List {
@@ -43,13 +55,10 @@ struct ProductDiscoveryView: View {
         }
         .leafyBorderlessList()
         .listSectionSpacing(LeafySpacing.large)
-        .navigationTitle(intent == .analyze ? "Scan" : "Find Food")
+        .navigationTitle(embedded ? "Log Food" : (intent == .analyze ? "Scan" : "Find Food"))
         .searchable(text: $query, prompt: "Product, brand, or barcode")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingScanner = true } label: { Label("Scan barcode", systemImage: "barcode.viewfinder") }
-            }
-            if intent == .log {
+            if intent == .log && !embedded {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
         }
@@ -60,6 +69,21 @@ struct ProductDiscoveryView: View {
             await app.searchProducts(query)
         }
         .task { if intent == .analyze { await app.loadProductHistory() } }
+        .safeAreaInset(edge: .bottom) {
+            if intent == .analyze || (embedded && intent == .log) {
+                Button {
+                    showingScanner = true
+                } label: {
+                    Label("Scan Barcode", systemImage: "barcode.viewfinder")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(.horizontal, LeafyTheme.pageInset)
+                .padding(.top, LeafySpacing.compact)
+                .padding(.bottom, LeafySpacing.small)
+                .background(.regularMaterial)
+                .accessibilityIdentifier("scanBarcodeButton")
+            }
+        }
         .sheet(isPresented: $showingScanner) {
             NavigationStack {
                 BarcodeScannerView { code in
@@ -76,8 +100,9 @@ struct ProductDiscoveryView: View {
             }
         }
         .navigationDestination(item: $detail) { product in
-            ProductDetailView(product: product, intent: intent) {
-                if intent == .log { dismiss() }
+            ProductDetailView(product: product, intent: intent, logDate: app.selectedLogDate) {
+                if let onLogged { onLogged() }
+                else if intent == .log { dismiss() }
             }
         }
         .alert("Product not found", isPresented: $scannedNotFound) {

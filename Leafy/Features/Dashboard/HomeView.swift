@@ -1,17 +1,24 @@
 import SwiftUI
+import UIKit
 
 struct HomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editorEntry: FoodEntry?
-    @State private var showingEditor = false
-    @State private var showingLogChoices = false
-    @State private var showingProductFinder = false
+    @State private var nutritionEntry: FoodEntry?
+    @State private var dayValueOpacity = 1.0
+    @State private var isChangingDay = false
+    @State private var showDayLoading = false
 
     var body: some View {
         List {
             Section {
-                DateNavigator()
+                DateNavigator(
+                    isChangingDay: isChangingDay,
+                    valueOpacity: dayValueOpacity,
+                    move: changeDay
+                )
                     .listRowInsets(.init(
                         top: 0,
                         leading: 0,
@@ -68,7 +75,13 @@ struct HomeView: View {
                     .accessibilityIdentifier("morningCheckInReminder")
                 }
 
-                CalorieBudgetCard(summary: app.dailySummary)
+                CalorieBudgetCard(
+                    summary: app.dailySummary,
+                    supportingValueOpacity: dayValueOpacity,
+                    isChangingDay: isChangingDay,
+                    canMoveToNextDay: !app.isViewingToday,
+                    move: changeDay
+                )
                     .listRowInsets(.init(
                         top: LeafySpacing.small,
                         leading: 0,
@@ -77,6 +90,19 @@ struct HomeView: View {
                     ))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+
+                if let nutrition = app.dailyNutrition {
+                    NavigationLink {
+                        DailyNutritionView()
+                    } label: {
+                        MacroNutritionSummary(summary: nutrition, plan: app.dailyPlan, showsDisclosure: true)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(.init(top: LeafySpacing.large, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("openDailyNutrition")
+                }
             }
             .leafyBorderlessRows(separators: false)
 
@@ -86,18 +112,24 @@ struct HomeView: View {
                         .padding(.vertical, 32)
                 } else if app.foodEntries.isEmpty {
                     EmptyFoodLog()
+                        .opacity(dayValueOpacity)
                 } else {
                     ForEach(app.foodEntries) { entry in
-                        FoodEntryRow(entry: entry)
+                        FoodEntryRow(entry: entry, valueOpacity: dayValueOpacity)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                editorEntry = entry
-                                showingEditor = true
+                                nutritionEntry = entry
                             }
-                            .swipeActions {
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button("Delete", role: .destructive) {
-                                    Task { await app.deleteFoodEntry(entry) }
+                                    Task { _ = await app.deleteFoodEntry(entry) }
                                 }
+                                Button {
+                                    editorEntry = entry
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(LeafyTheme.green)
                             }
                     }
                 }
@@ -109,6 +141,7 @@ struct HomeView: View {
                         .font(LeafyTypography.caption)
                         .foregroundStyle(.secondary)
                         .textCase(nil)
+                        .opacity(dayValueOpacity)
                 }
             }
             .leafyBorderlessRows()
@@ -127,13 +160,25 @@ struct HomeView: View {
                 .leafyBorderlessRows(separators: false)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if showDayLoading {
+                ProgressView()
+                    .controlSize(.regular)
+                    .padding(12)
+                    .background(.regularMaterial, in: .circle)
+                    .padding(.top, LeafySpacing.medium)
+                    .padding(.trailing, LeafyTheme.pageInset)
+                    .transition(.opacity)
+                    .accessibilityLabel("Loading day")
+            }
+        }
         .leafyBorderlessList()
         .listSectionSpacing(LeafySpacing.xLarge)
         .contentMargins(.top, LeafySpacing.medium, for: .scrollContent)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             Button("Log Food") {
-                showingLogChoices = true
+                app.presentMealLogger()
             }
             .buttonStyle(PrimaryButtonStyle())
             .padding(.horizontal, 20)
@@ -142,18 +187,11 @@ struct HomeView: View {
             .background(.regularMaterial)
             .accessibilityIdentifier("logFoodButton")
         }
-        .sheet(isPresented: $showingEditor) {
-            FoodEntryEditorView(entry: editorEntry, logDate: app.selectedLogDate)
+        .sheet(item: $editorEntry) { entry in
+            FoodEntryEditorView(entry: entry, logDate: app.selectedLogDate)
         }
-        .sheet(isPresented: $showingProductFinder) {
-            NavigationStack { ProductDiscoveryView(intent: .log) }
-        }
-        .confirmationDialog("How would you like to log food?", isPresented: $showingLogChoices, titleVisibility: .visible) {
-            Button("Scan or Search Product") { showingProductFinder = true }
-            Button("Enter Manually") { editorEntry = nil; showingEditor = true }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Use the catalog for complete nutrition data, or enter calories manually.")
+        .navigationDestination(item: $nutritionEntry) { entry in
+            FoodEntryNutritionView(entry: entry)
         }
         .task {
             if app.dailyPlan == nil && !app.isDailyLoading { await app.loadDailyLog() }
@@ -164,6 +202,46 @@ struct HomeView: View {
                 await app.loadDailyLog()
                 await app.loadMorningCheckIn(presentWhenNeeded: true)
             }
+        }
+    }
+
+    private func changeDay(by days: Int) {
+        guard !isChangingDay, days < 0 || !app.isViewingToday else { return }
+        isChangingDay = true
+
+        Task {
+            let exitDuration = reduceMotion ? 0.14 : 0.18
+            withAnimation(.easeOut(duration: exitDuration)) {
+                dayValueOpacity = 0
+            }
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 140 : 180))
+
+            let loadingIndicator = Task {
+                try? await Task.sleep(for: .milliseconds(280))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.15)) { showDayLoading = true }
+            }
+
+            let changed = await app.moveLogDate(by: days)
+            loadingIndicator.cancel()
+            withAnimation(.easeOut(duration: 0.12)) { showDayLoading = false }
+
+            if changed {
+                withAnimation(.easeInOut(duration: reduceMotion ? 0.18 : 0.28)) {
+                    dayValueOpacity = 1
+                }
+                if UIAccessibility.isVoiceOverRunning {
+                    UIAccessibility.post(
+                        notification: .announcement,
+                        argument: app.selectedLogDate.formatted(date: .complete, time: .omitted)
+                    )
+                }
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    dayValueOpacity = 1
+                }
+            }
+            isChangingDay = false
         }
     }
 }
@@ -211,32 +289,39 @@ private struct AdaptiveTargetNotice: View {
 
 private struct DateNavigator: View {
     @Environment(AppModel.self) private var app
+    let isChangingDay: Bool
+    let valueOpacity: Double
+    let move: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 18) {
-            Button { Task { await app.moveLogDate(by: -1) } } label: {
+            Button { move(-1) } label: {
                 Image(systemName: "chevron.left")
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
+            .disabled(isChangingDay)
             .accessibilityLabel("Previous day")
             .accessibilityIdentifier("previousDayButton")
 
             VStack(spacing: 2) {
                 Text(app.isViewingToday ? "Today" : app.selectedLogDate.formatted(.dateTime.weekday(.wide)))
                     .font(LeafyTypography.title2)
+                    .accessibilityIdentifier("selectedLogDayTitle")
                 Text(app.selectedLogDate.formatted(date: .abbreviated, time: .omitted))
                     .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("selectedLogDate")
             }
             .frame(maxWidth: .infinity)
+            .opacity(valueOpacity)
 
-            Button { Task { await app.moveLogDate(by: 1) } } label: {
+            Button { move(1) } label: {
                 Image(systemName: "chevron.right")
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .disabled(app.isViewingToday)
+            .disabled(app.isViewingToday || isChangingDay)
             .accessibilityLabel("Next day")
             .accessibilityIdentifier("nextDayButton")
         }
@@ -245,7 +330,12 @@ private struct DateNavigator: View {
 }
 
 private struct CalorieBudgetCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let summary: DailyCalorieSummary
+    let supportingValueOpacity: Double
+    let isChangingDay: Bool
+    let canMoveToNextDay: Bool
+    let move: (Int) -> Void
 
     var body: some View {
         VStack(spacing: LeafySpacing.large) {
@@ -256,6 +346,10 @@ private struct CalorieBudgetCard: View {
                     .trim(from: 0, to: summary.progress)
                     .stroke(progressColor, style: StrokeStyle(lineWidth: 20, lineCap: .round))
                     .rotationEffect(.degrees(-90))
+                    .animation(
+                        reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.06),
+                        value: summary.progress
+                    )
 
                 VStack(spacing: LeafySpacing.xSmall) {
                     Text(heroValue)
@@ -263,35 +357,71 @@ private struct CalorieBudgetCard: View {
                         .monospacedDigit()
                         .minimumScaleFactor(0.65)
                         .lineLimit(1)
+                        .contentTransition(
+                            reduceMotion
+                                ? .opacity
+                                : .numericText(value: Double(heroNumericValue ?? 0))
+                        )
+                        .animation(
+                            reduceMotion
+                                ? .easeOut(duration: 0.16)
+                                : .spring(duration: 0.42, bounce: 0.05),
+                            value: heroNumericValue
+                        )
                         .accessibilityIdentifier("calorieRingValue")
 
                     Text(heroLabel)
                         .font(LeafyTypography.subheadlineSemibold)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .contentTransition(.opacity)
+                        .animation(.easeInOut(duration: 0.2), value: heroLabel)
                         .accessibilityIdentifier("calorieRingLabel")
                 }
                 .padding(.horizontal, LeafySpacing.large)
             }
             .frame(width: 220, height: 220)
+            .contentShape(Circle())
             .accessibilityHidden(true)
 
             HStack(spacing: LeafySpacing.xLarge) {
-                BudgetMetric(title: "Eaten", value: "\(summary.consumed)", unit: "Cal")
-                BudgetMetric(title: "Daily budget", value: formattedBudget, unit: "Cal")
+                BudgetMetric(
+                    title: "Eaten",
+                    value: "\(summary.consumed)",
+                    unit: "Cal",
+                    valueOpacity: supportingValueOpacity
+                )
+                BudgetMetric(
+                    title: "Daily budget",
+                    value: formattedBudget,
+                    unit: "Cal",
+                    valueOpacity: supportingValueOpacity
+                )
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, LeafySpacing.small)
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded(handleRingDrag)
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityIdentifier("calorieBudgetCard")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment where canMoveToNextDay: move(1)
+            case .decrement: move(-1)
+            default: break
+            }
+        }
     }
 
     private var heroValue: String {
-        guard let remaining = summary.remaining else { return "—" }
-        return abs(remaining).formatted()
+        heroNumericValue?.formatted() ?? "—"
     }
+    private var heroNumericValue: Int? { summary.remaining.map(abs) }
     private var heroLabel: String {
         guard summary.budget != nil else { return "budget unavailable" }
         return summary.isOverBudget ? "calories over" : "calories remaining"
@@ -309,12 +439,24 @@ private struct CalorieBudgetCard: View {
             ? "\(abs(remaining).formatted()) calories over. \(summary.consumed.formatted()) of \(budget.formatted()) calories eaten."
             : "\(remaining.formatted()) calories remaining. \(summary.consumed.formatted()) of \(budget.formatted()) calories eaten."
     }
+
+    private func handleRingDrag(_ value: DragGesture.Value) {
+        guard !isChangingDay else { return }
+        let horizontal = value.predictedEndTranslation.width
+        let vertical = value.predictedEndTranslation.height
+        guard abs(horizontal) >= 55, abs(horizontal) > abs(vertical) * 1.35 else { return }
+        let days = horizontal < 0 ? 1 : -1
+        guard days < 0 || canMoveToNextDay else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        move(days)
+    }
 }
 
 private struct BudgetMetric: View {
     let title: String
     let value: String
     let unit: String
+    let valueOpacity: Double
     var body: some View {
         VStack(spacing: LeafySpacing.xSmall) {
             Text(title)
@@ -326,6 +468,7 @@ private struct BudgetMetric: View {
                     .monospacedDigit()
                     .minimumScaleFactor(0.8)
                     .lineLimit(1)
+                    .opacity(valueOpacity)
                 Text(unit).font(LeafyTypography.caption).foregroundStyle(.secondary)
             }
         }
@@ -335,26 +478,29 @@ private struct BudgetMetric: View {
 
 private struct FoodEntryRow: View {
     let entry: FoodEntry
+    let valueOpacity: Double
     var body: some View {
         HStack(spacing: 14) {
             Text(entry.consumedAt.formatted(date: .omitted, time: .shortened))
                 .font(LeafyTypography.caption).monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 68, alignment: .leading)
+                .opacity(valueOpacity)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name).font(LeafyTypography.bodyMedium).lineLimit(2)
-                if entry.isAIEstimate {
-                    Label("AI estimate", systemImage: "sparkles")
-                        .font(LeafyTypography.caption2).foregroundStyle(LeafyTheme.green)
-                }
+                Text(entry.name)
+                    .font(LeafyTypography.bodyMedium)
+                    .lineLimit(2)
+                    .opacity(valueOpacity)
             }
             Spacer(minLength: 8)
             Text("\(entry.calories) Cal")
                 .font(LeafyTypography.subheadlineSemibold).monospacedDigit()
+                .opacity(valueOpacity)
         }
         .padding(.vertical, 7)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Double tap to edit")
+        .accessibilityIdentifier("foodEntryRow-\(entry.id.uuidString)")
+        .accessibilityHint("Double tap for nutrition details. Swipe left for edit or delete actions.")
     }
 }
 

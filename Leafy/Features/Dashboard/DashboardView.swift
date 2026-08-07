@@ -20,9 +20,9 @@ struct DashboardView: View {
             .tag(DashboardTab.weight)
 
             NavigationStack {
-                AIMealView { selection = .home }
+                AskLeafyView()
             }
-            .tabItem { Label("AI", systemImage: "sparkles") }
+            .tabItem { Label("Ask", systemImage: "sparkles") }
             .tag(DashboardTab.ai)
 
             NavigationStack {
@@ -40,6 +40,9 @@ struct DashboardView: View {
         .tint(LeafyTheme.green)
         .sheet(isPresented: $app.showMorningCheckIn, onDismiss: app.dismissMorningCheckIn) {
             MorningCheckInView()
+        }
+        .sheet(isPresented: $app.showLogFood, onDismiss: { app.pendingMealDescription = "" }) {
+            LogFoodView(initialMethod: app.pendingMealDescription.isEmpty ? .search : .ai, initialAIDescription: app.pendingMealDescription)
         }
     }
 }

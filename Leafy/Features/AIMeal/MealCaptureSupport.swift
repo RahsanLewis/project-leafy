@@ -1,5 +1,3 @@
-import AVFAudio
-import Observation
 import SwiftUI
 import UIKit
 
@@ -46,75 +44,5 @@ extension UIImage {
             if let data = normalized.jpegData(compressionQuality: quality), data.count <= maxBytes { return data }
         }
         return nil
-    }
-}
-
-@MainActor @Observable
-final class MealVoiceRecorder: NSObject, AVAudioRecorderDelegate {
-    var isRecording = false
-    var elapsedSeconds = 0
-    var errorMessage: String?
-    private var recorder: AVAudioRecorder?
-    private var timer: Timer?
-    private(set) var fileURL: URL?
-
-    func start() async {
-        errorMessage = nil
-        guard await microphoneAllowed() else {
-            errorMessage = "Allow microphone access in iOS Settings to describe a meal by voice."
-            return
-        }
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .spokenAudio)
-            try session.setActive(true)
-            let url = FileManager.default.temporaryDirectory.appending(path: "leafy-meal-\(UUID().uuidString).m4a")
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 24_000,
-                AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
-            ]
-            let recorder = try AVAudioRecorder(url: url, settings: settings)
-            recorder.delegate = self
-            recorder.record(forDuration: 60)
-            self.recorder = recorder
-            fileURL = url
-            elapsedSeconds = 0
-            isRecording = true
-            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.elapsedSeconds += 1
-                    if self.elapsedSeconds >= 60 { _ = self.stop() }
-                }
-            }
-        } catch {
-            errorMessage = "Leafy couldn’t start recording. \(error.localizedDescription)"
-        }
-    }
-
-    @discardableResult func stop() -> URL? {
-        recorder?.stop()
-        timer?.invalidate()
-        timer = nil
-        isRecording = false
-        try? AVAudioSession.sharedInstance().setActive(false)
-        return fileURL
-    }
-
-    func cancel() {
-        recorder?.stop()
-        timer?.invalidate()
-        if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
-        recorder = nil
-        timer = nil
-        fileURL = nil
-        elapsedSeconds = 0
-        isRecording = false
-    }
-
-    private func microphoneAllowed() async -> Bool {
-        await withCheckedContinuation { continuation in
-            AVAudioApplication.requestRecordPermission { allowed in continuation.resume(returning: allowed) }
-        }
     }
 }

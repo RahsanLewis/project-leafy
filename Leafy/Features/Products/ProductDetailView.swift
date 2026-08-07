@@ -9,9 +9,16 @@ struct ProductDetailView: View {
     @State private var consumedAt = Date()
     @State private var mealType: MealType = .unspecified
 
-    init(product: ProductDetail, intent: ProductDiscoveryIntent, onLogged: @escaping () -> Void) {
+    init(
+        product: ProductDetail,
+        intent: ProductDiscoveryIntent,
+        logDate: Date = .now,
+        initialGrams: Double? = nil,
+        onLogged: @escaping () -> Void
+    ) {
         self.product = product; self.intent = intent; self.onLogged = onLogged
-        _grams = State(initialValue: product.defaultGrams)
+        _grams = State(initialValue: initialGrams ?? product.defaultGrams)
+        _consumedAt = State(initialValue: Self.logDate(logDate, usingTimeFrom: .now))
     }
 
     var body: some View {
@@ -30,16 +37,23 @@ struct ProductDetailView: View {
                 LabeledContent("Brand", value: product.brand ?? "Not listed")
                 LabeledContent("Source", value: product.source)
                 if let barcode = product.barcode { LabeledContent("Barcode", value: barcode) }
+                if intent == .analyze {
+                    LabeledContent("Serving") {
+                        HStack {
+                            TextField("100", value: $grams, format: .number)
+                                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                            Text("g").foregroundStyle(.secondary)
+                        }
+                        .frame(width: 130)
+                    }
+                }
             }
             .leafyBorderlessRows()
-            Section("Per 100 g") {
+            Section("Nutrition for \(grams.formatted(.number.precision(.fractionLength(0...1)))) g") {
                 nutrient("Calories", code: "energy_kcal", unit: "Cal")
-                nutrient("Protein", code: "protein_g", unit: "g")
-                nutrient("Carbohydrate", code: "carbohydrate_g", unit: "g")
-                nutrient("Fat", code: "fat_g", unit: "g")
-                nutrient("Fiber", code: "fiber_g", unit: "g")
-                nutrient("Sugar", code: "sugars_g", unit: "g")
-                nutrient("Sodium", code: "sodium_mg", unit: "mg")
+                ForEach(NutrientCatalog.items) { item in
+                    nutrient(item.name, code: item.code, unit: item.unit)
+                }
             }
             .leafyBorderlessRows()
             if let score = product.score, !(score.positiveFactors + score.limitingFactors).isEmpty {
@@ -89,9 +103,20 @@ struct ProductDetailView: View {
     }
 
     private var estimatedCalories: Int { Int(((product.caloriesPer100G ?? 0) * grams / 100).rounded()) }
+    private static func logDate(_ day: Date, usingTimeFrom time: Date) -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: day)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: time)
+        components.hour = timeComponents.hour
+        components.minute = timeComponents.minute
+        components.second = timeComponents.second
+        return calendar.date(from: components) ?? day
+    }
+
     @ViewBuilder private func nutrient(_ title: String, code: String, unit: String) -> some View {
         if let value = product.nutrients.first(where: { $0.code == code })?.amountPer100G {
-            LabeledContent(title, value: "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)")
+            let servingValue = value * grams / 100
+            LabeledContent(title, value: "\(servingValue.formatted(.number.precision(.fractionLength(0...2)))) \(unit)")
         }
     }
 }

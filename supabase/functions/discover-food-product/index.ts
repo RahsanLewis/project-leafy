@@ -13,6 +13,7 @@ type Body = {
   local_date?: string
   time_zone?: string
   meal_type?: string
+  record_history?: boolean
 }
 
 const nutrientCodes: Record<number, keyof ScoreNutrients | string> = {
@@ -20,6 +21,12 @@ const nutrientCodes: Record<number, keyof ScoreNutrients | string> = {
   1079: 'fiber_g', 2000: 'sugars_g', 1235: 'added_sugars_g', 1258: 'saturated_fat_g',
   1257: 'trans_fat_g', 1253: 'cholesterol_mg', 1093: 'sodium_mg', 1092: 'potassium_mg',
   1087: 'calcium_mg', 1089: 'iron_mg', 1090: 'magnesium_mg', 1114: 'vitamin_d_mcg',
+  1106: 'vitamin_a_mcg_rae', 1162: 'vitamin_c_mg', 1109: 'vitamin_e_mg', 1185: 'vitamin_k_mcg',
+  1165: 'thiamin_mg', 1166: 'riboflavin_mg', 1167: 'niacin_mg_ne', 1175: 'vitamin_b6_mg',
+  1177: 'folate_mcg_dfe', 1178: 'vitamin_b12_mcg', 1176: 'biotin_mcg', 1170: 'pantothenic_acid_mg',
+  1091: 'phosphorus_mg', 1100: 'iodine_mcg', 1095: 'zinc_mg', 1103: 'selenium_mcg',
+  1098: 'copper_mg', 1101: 'manganese_mg', 1096: 'chromium_mcg', 1102: 'molybdenum_mcg',
+  1088: 'chloride_mg', 1180: 'choline_mg', 1051: 'water_g', 1057: 'caffeine_mg', 1018: 'alcohol_g',
 }
 
 Deno.serve(async (request) => {
@@ -58,7 +65,9 @@ Deno.serve(async (request) => {
       if (body.food_version_id) product = await productForVersion(admin, body.food_version_id)
       else if (body.fdc_id) product = await importUSDA(admin, body.fdc_id)
       else return json({ error: 'A product identifier is required.' }, 400)
-      await admin.from('product_analysis_history').insert({ user_id: user.id, food_version_id: product.food_version_id, discovery_method: body.fdc_id ? 'search' : 'search', score_snapshot: product.score })
+      if (body.record_history !== false) {
+        await admin.from('product_analysis_history').insert({ user_id: user.id, food_version_id: product.food_version_id, discovery_method: 'search', score_snapshot: product.score })
+      }
       return json({ product })
     }
     if (body.action === 'history') {

@@ -2,6 +2,92 @@ import XCTest
 @testable import Leafy
 
 final class WeightProgressTests: XCTestCase {
+    func testWeightChartRangesUseExpectedCalendarBoundaries() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 7, hour: 10))!
+
+        XCTAssertFalse(WeightView.ChartRange.allCases.map(\.rawValue).contains("1D"))
+        XCTAssertEqual(
+            WeightView.ChartRange.week.startDate(relativeTo: now, calendar: calendar),
+            calendar.date(byAdding: .day, value: -7, to: now)
+        )
+        XCTAssertEqual(
+            WeightView.ChartRange.month.startDate(relativeTo: now, calendar: calendar),
+            calendar.date(byAdding: .day, value: -30, to: now)
+        )
+        XCTAssertEqual(
+            WeightView.ChartRange.quarter.startDate(relativeTo: now, calendar: calendar),
+            calendar.date(byAdding: .day, value: -90, to: now)
+        )
+        XCTAssertEqual(
+            WeightView.ChartRange.yearToDate.startDate(relativeTo: now, calendar: calendar),
+            calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))
+        )
+        XCTAssertEqual(
+            WeightView.ChartRange.year.startDate(relativeTo: now, calendar: calendar),
+            calendar.date(byAdding: .day, value: -365, to: now)
+        )
+        XCTAssertNil(WeightView.ChartRange.all.startDate(relativeTo: now, calendar: calendar))
+    }
+
+    func testTrendInsightsDescribeObservedLossAcrossSelectedRange() {
+        let entries = [
+            makeEntry(weightKG: 80.0, day: 1),
+            makeEntry(weightKG: 79.7, day: 4),
+            makeEntry(weightKG: 79.4, day: 7),
+            makeEntry(weightKG: 79.1, day: 10),
+            makeEntry(weightKG: 78.8, day: 13),
+            makeEntry(weightKG: 78.5, day: 16),
+            makeEntry(weightKG: 78.2, day: 19),
+            makeEntry(weightKG: 77.9, day: 22),
+        ]
+        let calendar = Calendar(identifier: .gregorian)
+        let periodStart = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let periodEnd = calendar.date(from: DateComponents(year: 2026, month: 1, day: 22))!
+
+        let insights = WeightTrendInsights(
+            entries: entries,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            targetKG: 77,
+            goal: .lose,
+            plannedWeeklyChangeKG: 0.7,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(insights.trendWeightKG!, 78.2, accuracy: 0.001)
+        XCTAssertEqual(insights.periodChangeKG!, -2.1, accuracy: 0.001)
+        XCTAssertEqual(insights.weeklyPaceKG!, -0.7, accuracy: 0.001)
+        XCTAssertEqual(insights.paceComparison, .onPace)
+        XCTAssertEqual(insights.weighInDayCount, 8)
+        XCTAssertEqual(insights.periodDayCount, 22)
+        XCTAssertEqual(insights.consistency!, 8.0 / 22.0, accuracy: 0.001)
+        guard case let .date(forecast) = insights.goalForecast else {
+            return XCTFail("Expected an observed goal forecast")
+        }
+        XCTAssertEqual(forecast, calendar.date(from: DateComponents(year: 2026, month: 1, day: 31)))
+    }
+
+    func testTrendInsightsStayInLearningStateWithSparseData() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = [makeEntry(weightKG: 80, day: 1), makeEntry(weightKG: 79.8, day: 3)]
+        let end = calendar.date(from: DateComponents(year: 2026, month: 1, day: 7))!
+        let insights = WeightTrendInsights(
+            entries: entries,
+            periodStart: calendar.date(from: DateComponents(year: 2026, month: 1, day: 1)),
+            periodEnd: end,
+            targetKG: 75,
+            goal: .lose,
+            plannedWeeklyChangeKG: 0.5,
+            calendar: calendar
+        )
+
+        XCTAssertNil(insights.weeklyPaceKG)
+        XCTAssertEqual(insights.paceComparison, .learning)
+        XCTAssertEqual(insights.goalForecast, .learning)
+    }
+
     func testLossProgressUsesStartingLatestAndTargetWeights() {
         let progress = WeightProgress(latestKG: 85, previousKG: 86, startingKG: 90, targetKG: 80, goal: .lose)
 

@@ -15,6 +15,9 @@ final class AppModel {
     var foodEntries: [FoodEntry] = []
     var weightEntries: [WeightEntry] = []
     var dailyPlan: NutritionPlan?
+    var dailyNutrition: DailyNutritionSummary?
+    var isNutrientAutoFillLoading = false
+    var nutrientAutoFillError: String?
     var morningCheckIn: MorningCheckIn?
     var showMorningCheckIn = false
     var hasMorningCheckInReminder = false
@@ -32,8 +35,14 @@ final class AppModel {
     var productErrorMessage: String?
     var mealEstimate: MealEstimate?
     var isMealEstimateLoading = false
-    var isMealTranscribing = false
     var mealEstimateErrorMessage: String?
+    var chatThreads: [NutritionChatThread] = []
+    var activeChatThreadID: UUID?
+    var chatMessages: [NutritionChatMessage] = []
+    var isChatLoading = false
+    var chatErrorMessage: String?
+    var showLogFood = false
+    var pendingMealDescription = ""
     private var mealEstimateSessionID: UUID?
     private var mealPhotoObjectPath: String?
     private var mealEstimateLogDate = Calendar.current.startOfDay(for: .now)
@@ -214,38 +223,90 @@ final class AppModel {
         isDailyLoading = true
         dailyErrorMessage = nil
         do {
-            async let entries = service.fetchFoodEntries(on: selectedLogDate)
-            if isViewingToday {
-                dailyPlan = currentPlan
-            } else {
-                let calendar = Calendar.current
-                let endOfDay = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: calendar.startOfDay(for: selectedLogDate)) ?? selectedLogDate
-                dailyPlan = try await service.fetchPlan(activeAt: endOfDay)
-            }
-            let loadedEntries = try await entries
-            foodEntries = loadedEntries.sorted { $0.consumedAt < $1.consumedAt }
+            async let loadedDay = dailyLog(for: selectedLogDate)
+            async let loadedNutrition = service.fetchDailyNutrition(on: selectedLogDate)
+            let loaded = try await loadedDay
+            dailyPlan = loaded.plan
+            foodEntries = loaded.entries
+            dailyNutrition = try? await loadedNutrition
         } catch {
             dailyErrorMessage = userFacingMessage(for: error)
         }
         isDailyLoading = false
     }
 
-    func moveLogDate(by days: Int) async {
+    @discardableResult
+    func moveLogDate(by days: Int) async -> Bool {
         let calendar = Calendar.current
-        guard let candidate = calendar.date(byAdding: .day, value: days, to: selectedLogDate) else { return }
+        guard let candidate = calendar.date(byAdding: .day, value: days, to: selectedLogDate) else { return false }
         let today = calendar.startOfDay(for: .now)
-        selectedLogDate = min(calendar.startOfDay(for: candidate), today)
-        await loadDailyLog()
+        let destination = min(calendar.startOfDay(for: candidate), today)
+        guard destination != selectedLogDate else { return false }
+
+        if isCICOPreview {
+            selectedLogDate = destination
+            dailyPlan = currentPlan
+            foodEntries = []
+            dailyNutrition = Self.previewDailyNutrition(plan: currentPlan)
+            return true
+        }
+
+        isDailyLoading = true
+        dailyErrorMessage = nil
+        defer { isDailyLoading = false }
+        do {
+            let loaded = try await dailyLog(for: destination)
+            selectedLogDate = destination
+            dailyPlan = loaded.plan
+            foodEntries = loaded.entries
+            dailyNutrition = try? await service.fetchDailyNutrition(on: destination)
+            return true
+        } catch {
+            dailyErrorMessage = userFacingMessage(for: error)
+            return false
+        }
+    }
+
+    private func dailyLog(for date: Date) async throws -> (plan: NutritionPlan?, entries: [FoodEntry]) {
+        async let entries = service.fetchFoodEntries(on: date)
+        let plan: NutritionPlan?
+        if Calendar.current.isDateInToday(date) {
+            plan = currentPlan
+        } else {
+            let calendar = Calendar.current
+            let day = calendar.startOfDay(for: date)
+            let endOfDay = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: day) ?? date
+            plan = try await service.fetchPlan(activeAt: endOfDay)
+        }
+        return (plan, try await entries.sorted { $0.consumedAt < $1.consumedAt })
     }
 
     func createFoodEntry(_ input: FoodEntryInput) async -> Bool {
         guard input.isValid else { dailyErrorMessage = "Enter a food name and calories between 1 and 10,000."; return false }
         isFoodMutationInProgress = true
         dailyErrorMessage = nil
+        if isCICOPreview {
+            let entry = FoodEntry(
+                id: UUID(), userID: UUID(), name: input.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                calories: input.calories, consumedAt: input.consumedAt,
+                localDate: PlanService.localDayString(for: selectedLogDate),
+                timeZone: Calendar.current.timeZone.identifier,
+                createdAt: .now, updatedAt: .now,
+                amount: input.amount, amountUnit: input.amountUnit,
+                gramWeight: input.gramWeight, portionDescription: input.portionDescription,
+                mealType: input.mealType
+            )
+            foodEntries.append(entry)
+            foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = Self.previewDailyNutrition(plan: dailyPlan)
+            isFoodMutationInProgress = false
+            return true
+        }
         do {
             let entry = try await service.createFoodEntry(input, on: selectedLogDate)
             foodEntries.append(entry)
             foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
             isFoodMutationInProgress = false
             return true
         } catch {
@@ -285,6 +346,26 @@ final class AppModel {
         catch { productErrorMessage = userFacingMessage(for: error); return nil }
     }
 
+    func loadProductDetail(for entry: FoodEntry) async -> ProductDetail? {
+        guard let foodVersionID = entry.canonicalFoodVersionID else { return nil }
+        isProductLoading = true
+        productErrorMessage = nil
+        defer { isProductLoading = false }
+        do { return try await service.productDetail(foodVersionID: foodVersionID) }
+        catch { productErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func loadNutrients(for entry: FoodEntry) async -> [NutrientAmountInput] {
+        if isCICOPreview { return dailyNutrition?.nutrients.map {
+            NutrientAmountInput(
+                code: $0.code, amount: $0.amount,
+                derivationMethod: $0.hasEstimate ? .estimated : .calculated,
+                confidence: $0.confidence
+            )
+        } ?? [] }
+        return (try? await service.fetchFoodEntryNutrients(entryID: entry.id)) ?? []
+    }
+
     func loadProductHistory() async {
         guard isAuthenticated else { return }
         do { productHistory = try await service.fetchProductHistory() }
@@ -299,6 +380,7 @@ final class AppModel {
             let entry = try await service.logProduct(product, grams: grams, consumedAt: consumedAt, localDate: selectedLogDate, mealType: mealType)
             foodEntries.append(entry)
             foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
             return true
         } catch {
             productErrorMessage = userFacingMessage(for: error)
@@ -308,15 +390,13 @@ final class AppModel {
 
     func analyzeMeal(
         description: String,
-        voiceTranscript: String,
         photoData: Data?,
         consumedAt: Date,
         localDate: Date,
         mealType: MealType
     ) async -> Bool {
         let normalizedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedTranscript = voiceTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedDescription.isEmpty || !normalizedTranscript.isEmpty || photoData != nil else {
+        guard !normalizedDescription.isEmpty || photoData != nil else {
             mealEstimateErrorMessage = "Add a photo or describe what you ate."
             return false
         }
@@ -337,7 +417,6 @@ final class AppModel {
             let input = MealEstimateInput(
                 sessionID: sessionID,
                 description: normalizedDescription,
-                voiceTranscript: normalizedTranscript,
                 consumedAt: consumedAt,
                 localDate: localDate,
                 mealType: mealType
@@ -383,7 +462,10 @@ final class AppModel {
             return false
         }
         let items = estimate.items.map {
-            MealConfirmationItem(id: $0.id, name: $0.name, portion: $0.portion, calories: $0.calories)
+            MealConfirmationItem(
+                id: $0.id, name: $0.name, portion: $0.portion, calories: $0.calories,
+                nutrients: $0.nutrients ?? []
+            )
         }
         guard items.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains($0.calories) }) else {
             mealEstimateErrorMessage = "Review each food name and calorie estimate before saving."
@@ -412,6 +494,7 @@ final class AppModel {
             else {
                 foodEntries.append(contentsOf: entries)
                 foodEntries.sort { $0.consumedAt < $1.consumedAt }
+                dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
             }
             clearMealEstimateState()
             return true
@@ -427,18 +510,6 @@ final class AppModel {
         clearMealEstimateState()
     }
 
-    func transcribeMealAudio(at url: URL) async -> String? {
-        isMealTranscribing = true
-        mealEstimateErrorMessage = nil
-        defer {
-            isMealTranscribing = false
-            try? FileManager.default.removeItem(at: url)
-        }
-        if isCICOPreview { return "Grilled chicken with one cup of rice and vegetables" }
-        do { return try await service.transcribeMealAudio(at: url) }
-        catch { mealEstimateErrorMessage = userFacingMessage(for: error); return nil }
-    }
-
     private func clearMealEstimateState() {
         mealEstimate = nil
         mealEstimateSessionID = nil
@@ -446,14 +517,102 @@ final class AppModel {
         mealEstimateErrorMessage = nil
     }
 
+    func startNewChat() {
+        activeChatThreadID = nil
+        chatMessages = []
+        chatErrorMessage = nil
+    }
+
+    func loadChatThreads() async {
+        guard !isCICOPreview else { return }
+        do { chatThreads = try await service.listNutritionChatThreads() }
+        catch { chatErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func openChatThread(_ thread: NutritionChatThread) async {
+        isChatLoading = true
+        chatErrorMessage = nil
+        defer { isChatLoading = false }
+        if isCICOPreview { activeChatThreadID = thread.id; return }
+        do {
+            let result = try await service.loadNutritionChatThread(id: thread.id)
+            activeChatThreadID = result.thread.id
+            chatMessages = result.messages
+        } catch { chatErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func sendChatMessage(_ text: String) async {
+        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty, message.count <= 2_000 else {
+            chatErrorMessage = "Keep your question under 2,000 characters."
+            return
+        }
+        isChatLoading = true
+        chatErrorMessage = nil
+        defer { isChatLoading = false }
+        if isCICOPreview {
+            let now = Date.now
+            chatMessages.append(NutritionChatMessage(id: UUID(), role: "user", content: message, sources: [], suggestedLogDescription: nil, createdAt: now))
+            let eaten = message.localizedCaseInsensitiveContains("ate")
+            chatMessages.append(NutritionChatMessage(
+                id: UUID(), role: "assistant",
+                content: eaten ? "That sounds like a balanced meal. I can help estimate and log it after you review the portions." : "Based on your current plan, aim for protein-rich foods you enjoy and use your remaining calorie budget to guide the portion.",
+                sources: [NutritionChatSource(kind: "plan", label: "Your Leafy plan")],
+                suggestedLogDescription: eaten ? message : nil, createdAt: now
+            ))
+            return
+        }
+        do {
+            let result = try await service.sendNutritionChatMessage(message, threadID: activeChatThreadID, clientMessageID: UUID())
+            activeChatThreadID = result.thread.id
+            chatMessages.append(contentsOf: [result.userMessage, result.assistantMessage])
+            if let index = chatThreads.firstIndex(where: { $0.id == result.thread.id }) { chatThreads[index] = result.thread }
+            else { chatThreads.insert(result.thread, at: 0) }
+        } catch { chatErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func deleteChatThread(_ thread: NutritionChatThread) async {
+        if !isCICOPreview {
+            do { try await service.deleteNutritionChatThread(id: thread.id) }
+            catch { chatErrorMessage = userFacingMessage(for: error); return }
+        }
+        chatThreads.removeAll { $0.id == thread.id }
+        if activeChatThreadID == thread.id { startNewChat() }
+    }
+
+    func presentMealLogger(description: String = "") {
+        pendingMealDescription = description
+        showLogFood = true
+    }
+
     func updateFoodEntry(_ entry: FoodEntry, input: FoodEntryInput) async -> Bool {
         guard input.isValid else { dailyErrorMessage = "Enter a food name and calories between 1 and 10,000."; return false }
         isFoodMutationInProgress = true
         dailyErrorMessage = nil
+        if isCICOPreview {
+            guard let index = foodEntries.firstIndex(where: { $0.id == entry.id }) else {
+                isFoodMutationInProgress = false
+                return false
+            }
+            foodEntries[index].name = input.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            foodEntries[index].calories = input.calories
+            foodEntries[index].consumedAt = input.consumedAt
+            foodEntries[index].amount = input.amount
+            foodEntries[index].amountUnit = input.amountUnit
+            foodEntries[index].gramWeight = input.gramWeight
+            foodEntries[index].portionDescription = input.portionDescription
+            foodEntries[index].mealType = input.mealType
+            foodEntries[index].updatedAt = .now
+            foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = Self.previewDailyNutrition(plan: dailyPlan)
+            isFoodMutationInProgress = false
+            return true
+        }
         do {
             let updated = try await service.updateFoodEntry(id: entry.id, input: input, on: selectedLogDate)
             if let index = foodEntries.firstIndex(where: { $0.id == entry.id }) { foodEntries[index] = updated }
             foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
             isFoodMutationInProgress = false
             return true
         } catch {
@@ -463,17 +622,44 @@ final class AppModel {
         }
     }
 
-    func deleteFoodEntry(_ entry: FoodEntry) async {
+    func deleteFoodEntry(_ entry: FoodEntry) async -> Bool {
         isFoodMutationInProgress = true
         dailyErrorMessage = nil
+        if isCICOPreview {
+            foodEntries.removeAll { $0.id == entry.id }
+            dailyNutrition = Self.previewDailyNutrition(plan: dailyPlan)
+            isFoodMutationInProgress = false
+            return true
+        }
         do {
             if entry.isAIEstimate { try await service.deleteAIMealEntry(id: entry.id) }
             else { try await service.deleteFoodEntry(id: entry.id) }
             foodEntries.removeAll { $0.id == entry.id }
+            dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
+            isFoodMutationInProgress = false
+            return true
         } catch {
             dailyErrorMessage = userFacingMessage(for: error)
+            isFoodMutationInProgress = false
+            return false
         }
-        isFoodMutationInProgress = false
+    }
+
+    func autoFillNutrients(for input: FoodEntryInput) async -> [NutrientAmountInput]? {
+        isNutrientAutoFillLoading = true
+        nutrientAutoFillError = nil
+        defer { isNutrientAutoFillLoading = false }
+        if isCICOPreview {
+            return [
+                .init(code: "protein_g", amount: 24, derivationMethod: .estimated, confidence: 0.72),
+                .init(code: "carbohydrate_g", amount: 36, derivationMethod: .estimated, confidence: 0.68),
+                .init(code: "fat_g", amount: 11, derivationMethod: .estimated, confidence: 0.64),
+                .init(code: "fiber_g", amount: 5, derivationMethod: .estimated, confidence: 0.5),
+                .init(code: "sodium_mg", amount: 420, derivationMethod: .estimated, confidence: 0.45),
+            ]
+        }
+        do { return try await service.autoFillNutrients(for: input).nutrients }
+        catch { nutrientAutoFillError = userFacingMessage(for: error); return nil }
     }
 
     func loadWeightHistory() async {
@@ -796,6 +982,7 @@ final class AppModel {
         route = .dashboard
         isAuthenticated = true
         foodEntries = []
+        dailyNutrition = Self.previewDailyNutrition(plan: plan)
         morningCheckIn = MorningCheckIn(reviewDate: yesterday, entries: [breakfast, dinner], intakeDay: nil, todayWeight: nil)
         hasMorningCheckInReminder = true
         showMorningCheckIn = !ProcessInfo.processInfo.arguments.contains("-SkipMorningCheckIn")
@@ -828,6 +1015,36 @@ final class AppModel {
                 id: UUID(uuidString: "47DC0199-6EBF-4B37-B7D9-AEC297A031DD")!, ordinal: 1,
                 question: "Was any oil, butter, or sauce added?"
             )
+        )
+    }
+
+    private static func previewDailyNutrition(plan: NutritionPlan?) -> DailyNutritionSummary? {
+        guard let plan else { return nil }
+        let values: [(String, String, String, Double, Double?, NutrientTargetKind)] = [
+            ("protein_g", "Protein", "g", 54, Double(plan.proteinG), .goal),
+            ("carbohydrate_g", "Carbohydrate", "g", 82, Double(plan.carbohydrateG), .goal),
+            ("fat_g", "Fat", "g", 24, Double(plan.fatG), .goal),
+            ("fiber_g", "Dietary fiber", "g", 13, 28, .goal),
+            ("sodium_mg", "Sodium", "mg", 920, 2300, .limit),
+            ("vitamin_d_mcg", "Vitamin D", "mcg", 7, 20, .goal),
+            ("calcium_mg", "Calcium", "mg", 610, 1300, .goal),
+            ("iron_mg", "Iron", "mg", 8.2, 18, .goal),
+        ]
+        let nutrients = values.enumerated().map { index, value in
+            DailyNutrient(
+                code: value.0, name: value.1, unit: value.2, nutrientClass: index < 3 ? "macro" : "other",
+                displayOrder: index, targetKind: value.5, amount: value.3, targetAmount: value.4,
+                percentOfTarget: value.4.map { value.3 / $0 }, coverage: 0.78,
+                estimatedAmount: value.3 * 0.35, verifiedAmount: value.3 * 0.65, confidence: 0.68
+            )
+        }
+        return DailyNutritionSummary(
+            localDate: PlanService.localDayString(for: .now), totalCalories: 0, macroCoverage: 0.78,
+            reference: NutrientReference(
+                code: "fda_adults_4_plus_2020", name: "FDA Daily Values",
+                population: "Adults and children age 4 and older",
+                sourceURL: URL(string: "https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels")!
+            ), nutrients: nutrients
         )
     }
 }

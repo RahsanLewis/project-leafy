@@ -47,6 +47,56 @@ final class DailyNutritionModelsTests: XCTestCase {
         XCTAssertEqual(input.mealType, .breakfast)
     }
 
+    func testNutrientProgressUsesReferenceTarget() {
+        let nutrient = DailyNutrient(
+            code: "protein_g", name: "Protein", unit: "g", nutrientClass: "macro",
+            displayOrder: 10, targetKind: .goal, amount: 75, targetAmount: 100,
+            percentOfTarget: 0.75, coverage: 0.9, estimatedAmount: 25,
+            verifiedAmount: 50, confidence: 0.8
+        )
+
+        XCTAssertEqual(nutrient.progress, 0.75, accuracy: 0.001)
+        XCTAssertTrue(nutrient.hasSufficientCoverage)
+    }
+
+    func testLimitNutrientDoesNotReportRemainingAsAGoal() {
+        let nutrient = DailyNutrient(
+            code: "sodium_mg", name: "Sodium", unit: "mg", nutrientClass: "mineral",
+            displayOrder: 230, targetKind: .limit, amount: 2_400, targetAmount: 2_300,
+            percentOfTarget: 2400.0 / 2300.0, coverage: 1, estimatedAmount: 0,
+            verifiedAmount: 2_400, confidence: nil
+        )
+
+        XCTAssertEqual(nutrient.progress, 1)
+        XCTAssertGreaterThan(nutrient.percentOfTarget ?? 0, 1)
+    }
+
+    func testFoodEntryDecodesLinkedCatalogVersion() throws {
+        let versionID = UUID(uuidString: "FCE5542D-F6AA-44DA-A61B-A254B823A72A")!
+        let json = """
+        {
+          "id":"52A16EE5-22DB-47EB-81D5-D9FA231D0D5B",
+          "user_id":"D11C9E3C-043E-46F3-BA7C-FD4C7030CB99",
+          "name":"Greek yogurt",
+          "calories":140,
+          "consumed_at":"2026-08-07T12:00:00Z",
+          "local_date":"2026-08-07",
+          "time_zone":"America/New_York",
+          "meal_type":"unspecified",
+          "user_confirmed":false,
+          "created_at":"2026-08-07T12:00:00Z",
+          "updated_at":"2026-08-07T12:00:00Z",
+          "canonical_food_version_id":"\(versionID.uuidString)"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(FoodEntry.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.canonicalFoodVersionID, versionID)
+    }
+
     private func entry(calories: Int) -> FoodEntry {
         FoodEntry(
             id: UUID(),

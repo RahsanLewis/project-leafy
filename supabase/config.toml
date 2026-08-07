@@ -33,3 +33,12 @@ verify_jwt = false
 
 [functions.transcribe-meal-audio]
 verify_jwt = false
+
+[functions.nutrition-chat]
+verify_jwt = false
+
+[functions.daily-nutrition]
+verify_jwt = false
+
+[functions.manage-food-entry]
+verify_jwt = false

@@ -121,6 +121,23 @@ actor PlanService {
         return try decoder.decode([FoodEntry].self, from: data)
     }
 
+    func fetchDailyNutrition(on date: Date, calendar: Calendar = .current) async throws -> DailyNutritionSummary {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "local_date": Self.localDayString(for: date, calendar: calendar)
+        ])
+        return try await request(function: "daily-nutrition", body: body, response: DailyNutritionSummary.self)
+    }
+
+    func fetchFoodEntryNutrients(entryID: UUID) async throws -> [NutrientAmountInput] {
+        let token = try await resolvedAccessToken()
+        let data = try await rest(
+            path: "consumption_items?select=consumption_item_nutrients(nutrient_code,amount,derivation_method,source_version,confidence)&legacy_food_entry_id=eq.\(entryID.uuidString)&limit=1",
+            accessToken: token
+        )
+        let envelope = try decoder.decode([ConsumptionNutrientEnvelope].self, from: data).first
+        return envelope?.consumptionItemNutrients.filter { $0.code != "energy_kcal" } ?? []
+    }
+
     func fetchPlan(activeAt endOfDay: Date) async throws -> NutritionPlan? {
         let token = try await resolvedAccessToken()
         let cutoff = ISO8601DateFormatter().string(from: endOfDay)
@@ -211,11 +228,9 @@ actor PlanService {
     }
 
     func createFoodEntry(_ input: FoodEntryInput, on localDate: Date, calendar: Calendar = .current) async throws -> FoodEntry {
-        let token = try await resolvedAccessToken()
-        let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, includeUpdatedAt: false)
-        let data = try await restMutation(method: "POST", path: "food_entries", accessToken: token, body: body, prefer: "return=representation")
-        guard let entry = try decoder.decode([FoodEntry].self, from: data).first else { throw ServiceError.invalidResponse(200, "No food entry was returned.") }
-        return entry
+        let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, action: "create", id: nil)
+        let result: FoodEntryResponse = try await request(function: "manage-food-entry", body: body, response: FoodEntryResponse.self)
+        return result.entry
     }
 
     func fetchDataContributionStatus() async throws -> DataContributionStatus {
@@ -239,11 +254,19 @@ actor PlanService {
     }
 
     func updateFoodEntry(id: UUID, input: FoodEntryInput, on localDate: Date, calendar: Calendar = .current) async throws -> FoodEntry {
-        let token = try await resolvedAccessToken()
-        let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, includeUpdatedAt: true)
-        let data = try await restMutation(method: "PATCH", path: "food_entries?id=eq.\(id.uuidString)", accessToken: token, body: body, prefer: "return=representation")
-        guard let entry = try decoder.decode([FoodEntry].self, from: data).first else { throw ServiceError.invalidResponse(404, "Food entry not found.") }
-        return entry
+        let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, action: "update", id: id)
+        let result: FoodEntryResponse = try await request(function: "manage-food-entry", body: body, response: FoodEntryResponse.self)
+        return result.entry
+    }
+
+    func autoFillNutrients(for input: FoodEntryInput) async throws -> NutrientAutoFillResponse {
+        var object: [String: Any] = [
+            "action": "autofill", "name": input.normalizedName, "calories": input.calories,
+        ]
+        if let gramWeight = input.gramWeight { object["gram_weight"] = gramWeight }
+        if let portion = input.portionDescription { object["portion_description"] = portion }
+        let body = try JSONSerialization.data(withJSONObject: object)
+        return try await request(function: "manage-food-entry", body: body, response: NutrientAutoFillResponse.self)
     }
 
     func deleteFoodEntry(id: UUID) async throws {
@@ -267,6 +290,18 @@ actor PlanService {
         var object: [String: Any] = ["action": "detail"]
         if let id = product.foodVersionID { object["food_version_id"] = id.uuidString }
         else if let id = product.fdcID { object["fdc_id"] = id }
+        object["record_history"] = true
+        let body = try JSONSerialization.data(withJSONObject: object)
+        let result: ProductDetailResponse = try await request(function: "discover-food-product", body: body, response: ProductDetailResponse.self)
+        return result.product
+    }
+
+    func productDetail(foodVersionID: UUID) async throws -> ProductDetail {
+        let object: [String: Any] = [
+            "action": "detail",
+            "food_version_id": foodVersionID.uuidString,
+            "record_history": false,
+        ]
         let body = try JSONSerialization.data(withJSONObject: object)
         let result: ProductDetailResponse = try await request(function: "discover-food-product", body: body, response: ProductDetailResponse.self)
         return result.product
@@ -316,7 +351,7 @@ actor PlanService {
     func estimateMeal(_ input: MealEstimateInput, photoObjectPath: String?) async throws -> MealEstimate {
         var object: [String: Any] = [
             "action": "analyze", "session_id": input.sessionID.uuidString.lowercased(),
-            "description": input.description, "voice_transcript": input.voiceTranscript,
+            "description": input.description,
             "consumed_at": ISO8601DateFormatter().string(from: input.consumedAt),
             "local_date": Self.localDayString(for: input.localDate),
             "time_zone": Calendar.current.timeZone.identifier, "meal_type": input.mealType.rawValue,
@@ -336,7 +371,13 @@ actor PlanService {
 
     func confirmMealEstimate(sessionID: UUID, items: [MealConfirmationItem]) async throws -> [FoodEntry] {
         let encodedItems = items.map { item in
-            ["id": item.id.uuidString.lowercased(), "name": item.name, "portion": item.portion, "calories": item.calories] as [String: Any]
+            [
+                "id": item.id.uuidString.lowercased(), "name": item.name,
+                "portion": item.portion, "calories": item.calories,
+                "nutrients": item.nutrients.map { nutrient in
+                    ["code": nutrient.code, "amount": nutrient.amount]
+                },
+            ] as [String: Any]
         }
         let body = try JSONSerialization.data(withJSONObject: [
             "action": "confirm", "session_id": sessionID.uuidString.lowercased(), "items": encodedItems,
@@ -359,29 +400,31 @@ actor PlanService {
         let _: EmptyResponse = try await request(function: "estimate-meal", body: body, response: EmptyResponse.self)
     }
 
-    func transcribeMealAudio(at fileURL: URL) async throws -> String {
-        let token = try await resolvedAccessToken()
-        let audio = try Data(contentsOf: fileURL)
-        guard audio.count <= 3 * 1024 * 1024 else {
-            throw ServiceError.invalidResponse(413, "Keep voice descriptions under 60 seconds.")
-        }
-        let boundary = "LeafyBoundary\(UUID().uuidString)"
-        var body = Data()
-        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"meal.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n".data(using: .utf8)!)
-        body.append(audio)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-        let url = configuration.supabaseURL.appending(path: "functions/v1/transcribe-meal-audio")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue(configuration.supabaseKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, Self.apiErrorMessage(from: data))
-        }
-        return try decoder.decode(MealTranscriptionResponse.self, from: data).transcript
+    func listNutritionChatThreads() async throws -> [NutritionChatThread] {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "list_threads"])
+        let result: NutritionChatThreadListResponse = try await request(function: "nutrition-chat", body: body, response: NutritionChatThreadListResponse.self)
+        return result.threads
+    }
+
+    func loadNutritionChatThread(id: UUID) async throws -> NutritionChatLoadResponse {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "load_thread", "thread_id": id.uuidString.lowercased()])
+        return try await request(function: "nutrition-chat", body: body, response: NutritionChatLoadResponse.self)
+    }
+
+    func sendNutritionChatMessage(_ content: String, threadID: UUID?, clientMessageID: UUID) async throws -> NutritionChatSendResponse {
+        var payload: [String: Any] = [
+            "action": "send", "message": content,
+            "client_message_id": clientMessageID.uuidString.lowercased(),
+            "local_date": Self.localDayString(for: .now),
+        ]
+        if let threadID { payload["thread_id"] = threadID.uuidString.lowercased() }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await request(function: "nutrition-chat", body: body, response: NutritionChatSendResponse.self)
+    }
+
+    func deleteNutritionChatThread(id: UUID) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "delete_thread", "thread_id": id.uuidString.lowercased()])
+        let _: EmptyResponse = try await request(function: "nutrition-chat", body: body, response: EmptyResponse.self)
     }
 
     func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
@@ -448,22 +491,39 @@ actor PlanService {
         return String(data: data, encoding: .utf8) ?? "The server could not complete the request."
     }
 
-    private func foodEntryBody(_ input: FoodEntryInput, localDate: Date, calendar: Calendar, includeUpdatedAt: Bool) throws -> Data {
+    private func foodEntryBody(
+        _ input: FoodEntryInput,
+        localDate: Date,
+        calendar: Calendar,
+        action: String,
+        id: UUID?
+    ) throws -> Data {
         var object: [String: Any] = [
+            "action": action,
             "name": input.normalizedName,
             "calories": input.calories,
             "consumed_at": ISO8601DateFormatter().string(from: input.consumedAt),
             "local_date": Self.localDayString(for: localDate, calendar: calendar),
             "time_zone": calendar.timeZone.identifier,
             "meal_type": input.mealType.rawValue,
-            "user_confirmed": true,
-            "provenance": ["capture_version": "ios-v2"]
         ]
+        if !input.nutrients.isEmpty {
+            object["nutrients"] = input.nutrients.map { nutrient -> [String: Any] in
+                var value: [String: Any] = [
+                    "code": nutrient.code,
+                    "amount": nutrient.amount,
+                    "derivation_method": nutrient.derivationMethod.rawValue,
+                ]
+                if let sourceVersion = nutrient.sourceVersion { value["source_version"] = sourceVersion }
+                if let confidence = nutrient.confidence { value["confidence"] = confidence }
+                return value
+            }
+        }
+        if let id { object["id"] = id.uuidString }
         if let amount = input.amount { object["amount"] = amount }
         if let amountUnit = input.amountUnit { object["amount_unit"] = amountUnit }
         if let gramWeight = input.gramWeight { object["gram_weight"] = gramWeight }
         if let portionDescription = input.portionDescription { object["portion_description"] = portionDescription }
-        if includeUpdatedAt { object["updated_at"] = ISO8601DateFormatter().string(from: .now) }
         return try JSONSerialization.data(withJSONObject: object)
     }
 
@@ -484,6 +544,11 @@ actor PlanService {
 
 private struct APIErrorPayload: Decodable { let error: String }
 private struct EmptyResponse: Decodable { let ok: Bool }
+private struct FoodEntryResponse: Decodable { let entry: FoodEntry }
+private struct ConsumptionNutrientEnvelope: Decodable {
+    let consumptionItemNutrients: [NutrientAmountInput]
+    enum CodingKeys: String, CodingKey { case consumptionItemNutrients = "consumption_item_nutrients" }
+}
 private struct ProfileDTO: Decodable {
     let birthDate: String
     let calculationSex: CalculationSex

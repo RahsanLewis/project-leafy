@@ -21,9 +21,10 @@ struct MealEstimateItem: Codable, Equatable, Identifiable, Sendable {
     let calorieHigh: Int
     let confidence: Double
     let assumptions: [String]
+    var nutrients: [NutrientAmountInput]?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, portion, calories, confidence, assumptions
+        case id, name, portion, calories, confidence, assumptions, nutrients
         case estimatedGrams = "estimated_grams"
         case calorieLow = "calorie_low"
         case calorieHigh = "calorie_high"
@@ -64,7 +65,6 @@ struct MealEstimate: Codable, Equatable, Sendable {
 struct MealEstimateInput: Sendable {
     let sessionID: UUID
     let description: String
-    let voiceTranscript: String
     let consumedAt: Date
     let localDate: Date
     let mealType: MealType
@@ -75,7 +75,7 @@ struct MealConfirmationItem: Encodable, Equatable, Sendable {
     let name: String
     let portion: String
     let calories: Int
+    let nutrients: [NutrientAmountInput]
 }
 
 struct MealConfirmationResponse: Codable, Sendable { let entries: [FoodEntry] }
-struct MealTranscriptionResponse: Codable, Sendable { let transcript: String }
