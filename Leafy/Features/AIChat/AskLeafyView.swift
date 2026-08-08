@@ -7,39 +7,44 @@ struct AskLeafyView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 18) {
-                    if app.chatMessages.isEmpty { emptyState }
-                    ForEach(app.chatMessages) { message in
-                        ChatBubble(message: message) {
-                            if let description = message.suggestedLogDescription {
-                                app.presentMealLogger(description: description)
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 18) {
+                        if app.chatMessages.isEmpty { emptyState }
+                        ForEach(app.chatMessages) { message in
+                            ChatBubble(message: message) {
+                                if let description = message.suggestedLogDescription {
+                                    app.presentMealLogger(description: description)
+                                }
+                            } onItemChange: { itemID, name, portion, calories in
+                                app.updateChatMealItem(
+                                    messageID: message.id, itemID: itemID,
+                                    name: name, portion: portion, calories: calories
+                                )
+                            } onItemRemove: { itemID in
+                                app.removeChatMealItem(messageID: message.id, itemID: itemID)
+                            } onLogMeal: {
+                                Task { await app.confirmChatMeal(messageID: message.id) }
                             }
-                        } onItemChange: { itemID, name, portion, calories in
-                            app.updateChatMealItem(
-                                messageID: message.id, itemID: itemID,
-                                name: name, portion: portion, calories: calories
-                            )
-                        } onItemRemove: { itemID in
-                            app.removeChatMealItem(messageID: message.id, itemID: itemID)
-                        } onLogMeal: {
-                            Task { await app.confirmChatMeal(messageID: message.id) }
+                            .id(message.id)
                         }
-                        .id(message.id)
+                        if app.isChatLoading { ProgressView().frame(maxWidth: .infinity, alignment: .leading) }
+                        if let error = app.chatErrorMessage {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(LeafyTypography.subheadline).foregroundStyle(.orange)
+                        }
                     }
-                    if app.isChatLoading { ProgressView().frame(maxWidth: .infinity, alignment: .leading) }
-                    if let error = app.chatErrorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(LeafyTypography.subheadline).foregroundStyle(.orange)
-                    }
+                    .padding(.horizontal, LeafyTheme.pageInset).padding(.vertical, 18)
                 }
-                .padding(.horizontal, LeafyTheme.pageInset).padding(.vertical, 18)
+                .scrollDismissesKeyboard(.interactively)
+                .simultaneousGesture(TapGesture().onEnded { focused = false })
+                .onChange(of: app.chatMessages.count) { _, _ in
+                    if let id = app.chatMessages.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: app.chatMessages.count) { _, _ in
-                if let id = app.chatMessages.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
-            }
+
+            composer
         }
         .background(LeafyTheme.canvas)
         .navigationTitle("Ask Leafy")
@@ -59,13 +64,7 @@ struct AskLeafyView: View {
                 } label: { Image(systemName: "square.and.pencil") }
                     .accessibilityLabel("New chat")
             }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused = false }
-                    .accessibilityIdentifier("dismissAskLeafyKeyboardButton")
-            }
         }
-        .safeAreaInset(edge: .bottom) { composer }
         .sheet(isPresented: $showingHistory) { history }
         .task { if app.chatThreads.isEmpty { await app.loadChatThreads() } }
         .onDisappear { focused = false }

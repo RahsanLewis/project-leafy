@@ -113,13 +113,14 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 2))
         field.typeText("What should I eat for dinner?")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(app.buttons["dismissAskLeafyKeyboardButton"].exists)
 
-        let dismissButton = app.buttons["dismissAskLeafyKeyboardButton"]
-        XCTAssertTrue(dismissButton.waitForExistence(timeout: 2))
-        dismissButton.tap()
+        app.staticTexts["General wellness guidance only—not medical advice."].tap()
 
         XCTAssertEqual(field.value as? String, "What should I eat for dinner?")
-        XCTAssertEqual(app.keyboards.count, 0)
+        let keyboardDismissed = NSPredicate(format: "count == 0")
+        expectation(for: keyboardDismissed, evaluatedWith: app.keyboards)
+        waitForExpectations(timeout: 2)
         XCTAssertTrue(app.tabBars.buttons["Weight"].isHittable)
         app.tabBars.buttons["Weight"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["weightSummaryCard"].waitForExistence(timeout: 3))
