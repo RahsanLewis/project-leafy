@@ -15,6 +15,10 @@ struct AIMealView: View {
     @State private var mealDate = Date.now
     @State private var mealType: MealType = .unspecified
     @State private var followUpAnswer = ""
+    @State private var analysisTask: Task<Void, Never>?
+    @State private var showingAnalysisWait = false
+    @State private var waitStartedAt = Date.now
+    @State private var waitEstimateSeconds = 12.0
     @FocusState private var descriptionIsFocused: Bool
 
     init(logDate: Date = .now, embedded: Bool = false, initialDescription: String = "", onSaved: @escaping () -> Void) {
@@ -38,12 +42,19 @@ struct AIMealView: View {
             .padding(.top, LeafySpacing.medium)
             .padding(.bottom, 120)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(LeafyTheme.canvas)
         .navigationTitle(embedded ? "Log Food" : (app.mealEstimate == nil ? "AI Meal" : "Review estimate"))
         .navigationBarTitleDisplayMode(embedded ? .inline : .large)
         .sheet(isPresented: $showingCamera) {
             MealCameraPicker { image in setImage(image) }
                 .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showingAnalysisWait) {
+            AIMealLoadingView(
+                startedAt: waitStartedAt,
+                estimatedSeconds: waitEstimateSeconds,
+                onCancel: cancelAnalysis
+            )
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -81,7 +92,7 @@ struct AIMealView: View {
                     .frame(minHeight: 105)
                     .padding(12)
                     .scrollContentBackground(.hidden)
-                    .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+                    .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
                     .overlay(alignment: .topLeading) {
                         if description.isEmpty {
                             Text("Example: Two chicken tacos with cheese, salsa, and a small horchata")
@@ -100,7 +111,7 @@ struct AIMealView: View {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(LeafyTypography.subheadline).foregroundStyle(.orange)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
+                    .background(LeafyTheme.surface, in: .rect(cornerRadius: 14))
             }
 
             Text("AI estimates can be inaccurate. You’ll review every item before it is added to your calorie budget.")
@@ -155,7 +166,7 @@ struct AIMealView: View {
             DatePicker("Date and time", selection: $mealDate, in: ...Date.now)
                 .padding(14)
         }
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
     }
 
     @ViewBuilder private func review(_ estimate: MealEstimate) -> some View {
@@ -182,14 +193,14 @@ struct AIMealView: View {
                     Text(followUp.question).font(LeafyTypography.title3)
                     TextField("Your answer", text: $followUpAnswer, axis: .vertical)
                         .lineLimit(2...4).padding(13)
-                        .background(Color(.tertiarySystemGroupedBackground), in: .rect(cornerRadius: 12))
+                        .background(LeafyTheme.elevatedSurface, in: .rect(cornerRadius: 12))
                     HStack {
-                        Button("Skip") { Task { await app.answerMealFollowUp(nil, skip: true) } }
+                        Button("Skip") { refineEstimate(answer: nil, skip: true) }
                         Spacer()
                         Button("Update estimate") {
                             let answer = followUpAnswer
                             followUpAnswer = ""
-                            Task { await app.answerMealFollowUp(answer) }
+                            refineEstimate(answer: answer, skip: false)
                         }
                         .buttonStyle(.borderedProminent).tint(LeafyTheme.green)
                         .disabled(followUpAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -275,12 +286,43 @@ struct AIMealView: View {
         let photo = photoData
         let date = mealDate
         let type = mealType
-        Task {
-            _ = await app.analyzeMeal(
+        beginAnalysis(hasPhoto: photo != nil) {
+            await app.analyzeMeal(
                 description: inputDescription, photoData: photo,
                 consumedAt: date, localDate: date, mealType: type
             )
         }
+    }
+
+    private func refineEstimate(answer: String?, skip: Bool) {
+        followUpAnswer = ""
+        beginAnalysis(hasPhoto: photoData != nil) {
+            await app.answerMealFollowUp(answer, skip: skip)
+        }
+    }
+
+    private func beginAnalysis(hasPhoto: Bool, operation: @escaping @MainActor () async -> Bool) {
+        analysisTask?.cancel()
+        waitStartedAt = .now
+        waitEstimateSeconds = AIMealWaitEstimator.estimatedSeconds(hasPhoto: hasPhoto)
+        showingAnalysisWait = true
+        analysisTask = Task { @MainActor in
+            let startedAt = Date.now
+            let succeeded = await operation()
+            guard !Task.isCancelled else { return }
+            if succeeded {
+                AIMealWaitEstimator.record(Date.now.timeIntervalSince(startedAt), hasPhoto: hasPhoto)
+            }
+            showingAnalysisWait = false
+            analysisTask = nil
+        }
+    }
+
+    private func cancelAnalysis() {
+        analysisTask?.cancel()
+        analysisTask = nil
+        showingAnalysisWait = false
+        Task { await app.cancelMealEstimateAnalysis() }
     }
 
     private func confirm() {
@@ -348,6 +390,19 @@ private struct MealEstimateItemCard: View {
                     macro("Fat", code: "fat_g", nutrients: nutrients)
                 }
                 .padding(.top, LeafySpacing.xSmall)
+                NavigationLink {
+                    AIItemImpactView(item: item)
+                } label: {
+                    HStack {
+                        Text("View food impact")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+                    .padding(.top, LeafySpacing.small)
+                }
+                .accessibilityIdentifier("aiItemFoodImpact")
             }
         }
         .padding(.vertical, LeafySpacing.medium)
@@ -369,11 +424,43 @@ private struct MealEstimateItemCard: View {
     }
 }
 
+private struct AIItemImpactView: View {
+    let item: MealEstimateItem
+    @State private var servingScale = 1.0
+
+    var body: some View {
+        ScrollView {
+            FoodImpactDashboard(
+                input: FoodImpactInput(
+                    name: item.name,
+                    baseCalories: Double(item.calories),
+                    nutrients: item.nutrients ?? [],
+                    provenance: "AI-assisted estimate",
+                    confidence: item.confidence,
+                    context: .prospective
+                ),
+                servingScale: $servingScale,
+                servingDescription: { scale in
+                    if let grams = item.estimatedGrams {
+                        return "\((grams * scale).formatted(.number.precision(.fractionLength(0...1)))) g"
+                    }
+                    return "\(scale.formatted(.number.precision(.fractionLength(0...2))))× estimated serving"
+                }
+            )
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.vertical, LeafySpacing.medium)
+        }
+        .background(LeafyTheme.canvas)
+        .navigationTitle(item.name.capitalized)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct AIMealInputButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(LeafyTypography.button).foregroundStyle(LeafyTheme.green).padding(.vertical, 14)
-            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 14))
+            .background(LeafyTheme.surface, in: .rect(cornerRadius: 14))
             .opacity(configuration.isPressed ? 0.65 : 1)
     }
 }

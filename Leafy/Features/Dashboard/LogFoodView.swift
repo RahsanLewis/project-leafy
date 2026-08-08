@@ -38,7 +38,7 @@ struct LogFoodView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, LeafyTheme.pageInset)
                 .padding(.vertical, LeafySpacing.small)
-                .background(Color(.systemGroupedBackground))
+                .background(LeafyTheme.canvas)
                 .accessibilityIdentifier("foodLoggingMethodPicker")
 
                 TabView(selection: $method) {

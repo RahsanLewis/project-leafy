@@ -6,6 +6,7 @@ final class AppModel {
     enum Route: Equatable { case launching, onboarding, dashboard }
     enum AuthenticationPurpose: Equatable { case savePlan, accessExistingAccount }
     enum SaveState: Equatable { case idle, creatingAccount, awaitingConfirmation, resendingConfirmation, authenticating, saving, deleting }
+    enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
 
     var route: Route = .launching
     var draft = OnboardingDraft()
@@ -34,13 +35,15 @@ final class AppModel {
     var isProductLoading = false
     var productErrorMessage: String?
     var mealEstimate: MealEstimate?
-    var isMealEstimateLoading = false
+    var mealEstimateActivity: MealEstimateActivity = .idle
+    var isMealEstimateLoading: Bool { mealEstimateActivity != .idle }
     var mealEstimateErrorMessage: String?
     var chatThreads: [NutritionChatThread] = []
     var activeChatThreadID: UUID?
     var chatMessages: [NutritionChatMessage] = []
     var isChatLoading = false
     var chatErrorMessage: String?
+    var chatMealLoggingMessageID: UUID?
     var showLogFood = false
     var pendingMealDescription = ""
     private var mealEstimateSessionID: UUID?
@@ -400,13 +403,17 @@ final class AppModel {
             mealEstimateErrorMessage = "Add a photo or describe what you ate."
             return false
         }
-        isMealEstimateLoading = true
+        mealEstimateActivity = .analyzing
         mealEstimateErrorMessage = nil
-        defer { isMealEstimateLoading = false }
+        defer { mealEstimateActivity = .idle }
         let sessionID = mealEstimateSessionID ?? UUID()
         mealEstimateSessionID = sessionID
         mealEstimateLogDate = Calendar.current.startOfDay(for: localDate)
         if isCICOPreview {
+            if ProcessInfo.processInfo.arguments.contains("-HoldAIMealEstimate") {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return false }
+            }
             mealEstimate = Self.previewMealEstimate(sessionID: sessionID)
             return true
         }
@@ -424,24 +431,32 @@ final class AppModel {
             mealEstimate = try await service.estimateMeal(input, photoObjectPath: mealPhotoObjectPath)
             return true
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return false }
             mealEstimateErrorMessage = userFacingMessage(for: error)
             return false
         }
     }
 
-    func answerMealFollowUp(_ answer: String?, skip: Bool = false) async {
-        guard let sessionID = mealEstimateSessionID else { return }
-        isMealEstimateLoading = true
+    func answerMealFollowUp(_ answer: String?, skip: Bool = false) async -> Bool {
+        guard let sessionID = mealEstimateSessionID else { return false }
+        mealEstimateActivity = .refining
         mealEstimateErrorMessage = nil
-        defer { isMealEstimateLoading = false }
+        defer { mealEstimateActivity = .idle }
         if isCICOPreview {
+            if ProcessInfo.processInfo.arguments.contains("-HoldAIMealEstimate") {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return false }
+            }
             mealEstimate = Self.previewMealEstimate(sessionID: sessionID, ready: true)
-            return
+            return true
         }
         do {
             mealEstimate = try await service.answerMealEstimate(sessionID: sessionID, answer: answer, skip: skip)
+            return true
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return false }
             mealEstimateErrorMessage = userFacingMessage(for: error)
+            return false
         }
     }
 
@@ -471,9 +486,9 @@ final class AppModel {
             mealEstimateErrorMessage = "Review each food name and calorie estimate before saving."
             return false
         }
-        isMealEstimateLoading = true
+        mealEstimateActivity = .saving
         mealEstimateErrorMessage = nil
-        defer { isMealEstimateLoading = false }
+        defer { mealEstimateActivity = .idle }
         do {
             let entries: [FoodEntry]
             if isCICOPreview {
@@ -508,6 +523,17 @@ final class AppModel {
         guard let sessionID = mealEstimateSessionID else { clearMealEstimateState(); return }
         if !isCICOPreview { try? await service.discardMealEstimate(sessionID: sessionID) }
         clearMealEstimateState()
+    }
+
+    func cancelMealEstimateAnalysis() async {
+        let sessionID = mealEstimateSessionID
+        mealEstimateActivity = .idle
+        mealEstimate = nil
+        mealEstimateSessionID = nil
+        mealPhotoObjectPath = nil
+        mealEstimateErrorMessage = nil
+        guard let sessionID, !isCICOPreview else { return }
+        try? await service.discardMealEstimate(sessionID: sessionID)
     }
 
     private func clearMealEstimateState() {
@@ -554,11 +580,21 @@ final class AppModel {
             let now = Date.now
             chatMessages.append(NutritionChatMessage(id: UUID(), role: "user", content: message, sources: [], suggestedLogDescription: nil, createdAt: now))
             let eaten = message.localizedCaseInsensitiveContains("ate")
+            let previewEstimate = eaten ? Self.previewMealEstimate(sessionID: UUID(), ready: true) : nil
             chatMessages.append(NutritionChatMessage(
                 id: UUID(), role: "assistant",
-                content: eaten ? "That sounds like a balanced meal. I can help estimate and log it after you review the portions." : "Based on your current plan, aim for protein-rich foods you enjoy and use your remaining calorie budget to guide the portion.",
+                content: eaten ? "Here’s an estimate based on what you described. Review the portions before logging it." : "Based on your current plan, aim for protein-rich foods you enjoy and use your remaining calorie budget to guide the portion.",
                 sources: [NutritionChatSource(kind: "plan", label: "Your Leafy plan")],
-                suggestedLogDescription: eaten ? message : nil, createdAt: now
+                suggestedLogDescription: nil,
+                mealSuggestion: previewEstimate.map {
+                    NutritionChatMealSuggestion(
+                        sessionID: $0.sessionID, status: .ready,
+                        totalCalories: $0.totalCalories, calorieLow: $0.calorieLow,
+                        calorieHigh: $0.calorieHigh, confidence: $0.confidence,
+                        assumptions: $0.assumptions, items: $0.items
+                    )
+                },
+                createdAt: now
             ))
             return
         }
@@ -569,6 +605,65 @@ final class AppModel {
             if let index = chatThreads.firstIndex(where: { $0.id == result.thread.id }) { chatThreads[index] = result.thread }
             else { chatThreads.insert(result.thread, at: 0) }
         } catch { chatErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func updateChatMealItem(messageID: UUID, itemID: UUID, name: String, portion: String, calories: Int) {
+        guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageID }),
+              let itemIndex = chatMessages[messageIndex].mealSuggestion?.items.firstIndex(where: { $0.id == itemID }) else { return }
+        chatMessages[messageIndex].mealSuggestion?.items[itemIndex].name = name
+        chatMessages[messageIndex].mealSuggestion?.items[itemIndex].portion = portion
+        chatMessages[messageIndex].mealSuggestion?.items[itemIndex].calories = calories
+    }
+
+    func removeChatMealItem(messageID: UUID, itemID: UUID) {
+        guard let index = chatMessages.firstIndex(where: { $0.id == messageID }) else { return }
+        chatMessages[index].mealSuggestion?.items.removeAll { $0.id == itemID }
+    }
+
+    func confirmChatMeal(messageID: UUID) async -> Bool {
+        guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageID }),
+              let suggestion = chatMessages[messageIndex].mealSuggestion,
+              suggestion.status == .ready, !suggestion.items.isEmpty else { return false }
+        let items = suggestion.items.map {
+            MealConfirmationItem(
+                id: $0.id, name: $0.name, portion: $0.portion, calories: $0.calories,
+                nutrients: $0.nutrients ?? []
+            )
+        }
+        guard items.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains($0.calories) }) else {
+            chatErrorMessage = "Review each food name and calorie estimate before logging."
+            return false
+        }
+        chatMealLoggingMessageID = messageID
+        chatErrorMessage = nil
+        defer { chatMealLoggingMessageID = nil }
+        do {
+            let entries: [FoodEntry]
+            if isCICOPreview {
+                entries = items.map { item in
+                    FoodEntry(
+                        id: UUID(), userID: UUID(), name: item.name, calories: item.calories,
+                        consumedAt: .now, localDate: PlanService.localDayString(for: .now),
+                        timeZone: Calendar.current.timeZone.identifier, createdAt: .now, updatedAt: .now,
+                        portionDescription: item.portion, confidence: 0.7, userConfirmed: true,
+                        entrySource: "text_ai", calorieMethod: "estimated"
+                    )
+                }
+            } else {
+                entries = try await service.confirmMealEstimate(sessionID: suggestion.sessionID, items: items)
+            }
+            selectedLogDate = Calendar.current.startOfDay(for: .now)
+            foodEntries.append(contentsOf: entries)
+            foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
+            if let refreshedIndex = chatMessages.firstIndex(where: { $0.id == messageID }) {
+                chatMessages[refreshedIndex].mealSuggestion?.status = .logged
+            }
+            return true
+        } catch {
+            chatErrorMessage = userFacingMessage(for: error)
+            return false
+        }
     }
 
     func deleteChatThread(_ thread: NutritionChatThread) async {

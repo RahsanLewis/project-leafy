@@ -26,6 +26,19 @@ export type MealModelOutput = {
   assumptions: string[]
 }
 
+export const mealEstimateItemSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['name', 'portion', 'estimated_grams', 'calories', 'calorie_low', 'calorie_high', 'confidence', 'assumptions', 'nutrients'],
+  properties: {
+    name: { type: 'string' }, portion: { type: 'string' },
+    estimated_grams: { type: ['number', 'null'] }, calories: { type: 'integer' },
+    calorie_low: { type: 'integer' }, calorie_high: { type: 'integer' },
+    confidence: { type: 'number' },
+    assumptions: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    nutrients: nutrientArraySchema,
+  },
+} as const
+
 export const mealEstimateSchema = {
   type: 'object', additionalProperties: false,
   required: ['status', 'follow_up_question', 'items', 'total_calories', 'calorie_low', 'calorie_high', 'confidence', 'assumptions'],
@@ -34,18 +47,7 @@ export const mealEstimateSchema = {
     follow_up_question: { type: ['string', 'null'] },
     items: {
       type: 'array', minItems: 1, maxItems: 12,
-      items: {
-        type: 'object', additionalProperties: false,
-        required: ['name', 'portion', 'estimated_grams', 'calories', 'calorie_low', 'calorie_high', 'confidence', 'assumptions', 'nutrients'],
-        properties: {
-          name: { type: 'string' }, portion: { type: 'string' },
-          estimated_grams: { type: ['number', 'null'] }, calories: { type: 'integer' },
-          calorie_low: { type: 'integer' }, calorie_high: { type: 'integer' },
-          confidence: { type: 'number' },
-          assumptions: { type: 'array', items: { type: 'string' }, maxItems: 6 },
-          nutrients: nutrientArraySchema,
-        },
-      },
+      items: mealEstimateItemSchema,
     },
     total_calories: { type: 'integer' }, calorie_low: { type: 'integer' },
     calorie_high: { type: 'integer' }, confidence: { type: 'number' },

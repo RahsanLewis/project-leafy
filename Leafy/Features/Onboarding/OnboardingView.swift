@@ -23,7 +23,7 @@ struct OnboardingView: View {
                 }
                 if draft.step != .welcome && draft.step != .results { navigationBar }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(LeafyTheme.canvas)
             .toolbar {
                 if draft.isEditing {
                     ToolbarItem(placement: .cancellationAction) {
@@ -333,7 +333,7 @@ struct OnboardingView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
     }
 
     private var eligibilityGuidanceMessage: String {
@@ -424,7 +424,7 @@ private struct EligibilityQuestionCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 18))
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: 18))
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(selection == nil ? Color.primary.opacity(0.06) : LeafyTheme.green.opacity(0.55), lineWidth: 1.5)
@@ -467,7 +467,7 @@ private struct ProfileSectionCard<Content: View>: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 18))
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: 18))
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)

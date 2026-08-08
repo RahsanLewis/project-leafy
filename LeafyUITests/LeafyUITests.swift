@@ -83,7 +83,7 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
-    func testAskLeafyCanHandAnEatenMealToReviewPreview() {
+    func testAskLeafyCanReviewAndLogAnEatenMealInlinePreview() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
         app.launch()
@@ -94,9 +94,56 @@ final class LeafyUITests: XCTestCase {
         field.tap()
         field.typeText("I ate a chicken rice bowl")
         app.buttons["Send"].tap()
-        XCTAssertTrue(app.buttons["reviewAndLogButton"].waitForExistence(timeout: 3))
-        app.buttons["reviewAndLogButton"].tap()
-        XCTAssertTrue(app.textViews["aiMealDescription"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["chatMealSuggestion"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["logChatMealButton"].exists)
+        app.buttons["logChatMealButton"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chatMealLoggedLabel"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testAskLeafyKeyboardCanDismissWithoutLosingDraftPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launch()
+
+        app.tabBars.buttons["Ask"].tap()
+        let field = app.textFields["askLeafyField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 2))
+        field.typeText("What should I eat for dinner?")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+
+        let dismissButton = app.buttons["dismissAskLeafyKeyboardButton"]
+        XCTAssertTrue(dismissButton.waitForExistence(timeout: 2))
+        dismissButton.tap()
+
+        XCTAssertEqual(field.value as? String, "What should I eat for dinner?")
+        XCTAssertEqual(app.keyboards.count, 0)
+        XCTAssertTrue(app.tabBars.buttons["Weight"].isHittable)
+        app.tabBars.buttons["Weight"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["weightSummaryCard"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testAIMealLoadingCanBeCancelledWithoutLosingDraftPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash", "-HoldAIMealEstimate"]
+        app.launch()
+
+        app.buttons["logFoodButton"].tap()
+        app.segmentedControls["foodLoggingMethodPicker"].buttons["AI"].tap()
+        let description = app.textViews["aiMealDescription"]
+        XCTAssertTrue(description.waitForExistence(timeout: 3))
+        description.tap()
+        description.typeText("Chicken and rice")
+        app.buttons["Done"].tap()
+        app.buttons["analyzeMealButton"].tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["aiMealLoadingScreen"].waitForExistence(timeout: 2))
+        app.buttons["cancelMealAnalysisButton"].tap()
+        XCTAssertTrue(description.waitForExistence(timeout: 2))
+        XCTAssertEqual(description.value as? String, "Chicken and rice")
     }
 
     @MainActor
@@ -209,12 +256,12 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
-    func testBeyondSolidSplashAppearsOnlyDuringColdLaunch() {
+    func testLeafySplashAppearsOnlyDuringColdLaunch() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-HoldBrandSplash"]
         app.launch()
 
-        let splash = app.descendants(matching: .any)["beyondSolidSplash"]
+        let splash = app.descendants(matching: .any)["leafySplash"]
         XCTAssertTrue(splash.waitForExistence(timeout: 2))
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 4))
         XCTAssertFalse(splash.exists)

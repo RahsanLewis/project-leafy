@@ -13,7 +13,7 @@ struct PlanView: View {
                     .padding(.top, 80)
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(LeafyTheme.canvas)
         .navigationTitle("Plan")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

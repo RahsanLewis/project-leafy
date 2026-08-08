@@ -416,6 +416,7 @@ actor PlanService {
             "action": "send", "message": content,
             "client_message_id": clientMessageID.uuidString.lowercased(),
             "local_date": Self.localDayString(for: .now),
+            "time_zone": Calendar.current.timeZone.identifier,
         ]
         if let threadID { payload["thread_id"] = threadID.uuidString.lowercased() }
         let body = try JSONSerialization.data(withJSONObject: payload)

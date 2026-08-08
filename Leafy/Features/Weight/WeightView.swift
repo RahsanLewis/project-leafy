@@ -141,10 +141,8 @@ struct WeightView: View {
         .safeAreaInset(edge: .bottom) {
             Button("Log Weight") { editingEntry = nil; showingEditor = true }
                 .buttonStyle(PrimaryButtonStyle())
-                .padding(.horizontal, 20)
-                .padding(.top, LeafySpacing.compact)
-                .padding(.bottom, LeafySpacing.small)
-                .background(.regularMaterial)
+                .clipShape(Capsule())
+                .leafyDetachedBottomControl()
                 .accessibilityIdentifier("logWeightButton")
         }
         .sheet(isPresented: $showingEditor) {

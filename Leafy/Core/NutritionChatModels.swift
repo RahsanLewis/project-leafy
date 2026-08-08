@@ -19,17 +19,46 @@ struct NutritionChatSource: Codable, Identifiable, Equatable, Sendable {
     let label: String
 }
 
+enum NutritionChatMealStatus: String, Codable, Equatable, Sendable {
+    case ready
+    case logged
+    case unavailable
+}
+
+struct NutritionChatMealSuggestion: Codable, Equatable, Sendable {
+    let sessionID: UUID
+    var status: NutritionChatMealStatus
+    let totalCalories: Int
+    let calorieLow: Int
+    let calorieHigh: Int
+    let confidence: Double
+    let assumptions: [String]
+    var items: [MealEstimateItem]
+
+    enum CodingKeys: String, CodingKey {
+        case status, confidence, assumptions, items
+        case sessionID = "session_id"
+        case totalCalories = "total_calories"
+        case calorieLow = "calorie_low"
+        case calorieHigh = "calorie_high"
+    }
+
+    var reviewedTotal: Int { items.reduce(0) { $0 + $1.calories } }
+}
+
 struct NutritionChatMessage: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let role: String
     let content: String
     let sources: [NutritionChatSource]
     let suggestedLogDescription: String?
+    var mealSuggestion: NutritionChatMealSuggestion? = nil
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, sources
         case suggestedLogDescription = "suggested_log_description"
+        case mealSuggestion = "meal_suggestion"
         case createdAt = "created_at"
     }
 }

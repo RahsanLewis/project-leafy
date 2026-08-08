@@ -1,8 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
+import { mealEstimateItemSchema, normalizeMealOutput } from '../_shared/meal-estimate.ts'
 
-type Body = { action: 'send' | 'list_threads' | 'load_thread' | 'delete_thread'; thread_id?: string; message?: string; client_message_id?: string; local_date?: string }
+type Body = { action: 'send' | 'list_threads' | 'load_thread' | 'delete_thread'; thread_id?: string; message?: string; client_message_id?: string; local_date?: string; time_zone?: string }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const messageColumns = 'id,role,content,sources,suggested_log_description,meal_estimate_session_id,created_at'
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -24,9 +26,9 @@ Deno.serve(async (request) => {
     }
     if (body.action === 'load_thread') {
       const thread = await ownedThread(admin, user.id, body.thread_id)
-      const messages = await admin.from('ai_chat_messages').select('id,role,content,sources,suggested_log_description,created_at').eq('thread_id', thread.id).eq('user_id', user.id).order('created_at')
+      const messages = await admin.from('ai_chat_messages').select(messageColumns).eq('thread_id', thread.id).eq('user_id', user.id).order('created_at')
       if (messages.error) throw messages.error
-      return json({ thread, messages: messages.data ?? [] })
+      return json({ thread, messages: await decorateMessages(admin, user.id, messages.data ?? []) })
     }
     if (body.action === 'delete_thread') {
       const thread = await ownedThread(admin, user.id, body.thread_id)
@@ -79,18 +81,31 @@ Deno.serve(async (request) => {
     if (!response.ok) throw new Error(payload?.error?.message ?? 'Ask Leafy could not answer right now.')
     const parsed = JSON.parse(outputText(payload))
     const sources = allowedSources(parsed.source_keys, context, foods)
+    const mealSuggestion = parsed.meal_status === 'ready'
+      ? normalizeMealOutput({
+        status: 'ready', follow_up_question: null, items: parsed.meal_items,
+        total_calories: parsed.meal_total_calories, calorie_low: parsed.meal_calorie_low,
+        calorie_high: parsed.meal_calorie_high, confidence: parsed.meal_confidence,
+        assumptions: parsed.meal_assumptions,
+      }, true)
+      : null
     const now = new Date().toISOString()
-    const userRow = await admin.from('ai_chat_messages').insert({ thread_id: thread.id, user_id: user.id, role: 'user', content: message, client_message_id: body.client_message_id }).select('id,role,content,sources,suggested_log_description,created_at').single()
+    const userRow = await admin.from('ai_chat_messages').insert({ thread_id: thread.id, user_id: user.id, role: 'user', content: message, client_message_id: body.client_message_id }).select(messageColumns).single()
     if (userRow.error) throw userRow.error
+    const mealSessionID = mealSuggestion
+      ? await persistMealSuggestion(admin, user.id, message, body, mealSuggestion, model, payload, Date.now() - started)
+      : null
     const assistantRow = await admin.from('ai_chat_messages').insert({
       thread_id: thread.id, user_id: user.id, role: 'assistant', content: String(parsed.answer).slice(0, 8000), sources,
-      suggested_log_description: parsed.suggested_log_description || null, model_id: model, provider_response_id: payload.id ?? null,
+      suggested_log_description: mealSessionID ? null : (parsed.suggested_log_description || null), model_id: model, provider_response_id: payload.id ?? null,
+      meal_estimate_session_id: mealSessionID,
       input_tokens: payload.usage?.input_tokens ?? null, output_tokens: payload.usage?.output_tokens ?? null, latency_ms: Date.now() - started,
-    }).select('id,role,content,sources,suggested_log_description,created_at').single()
+    }).select(messageColumns).single()
     if (assistantRow.error) throw assistantRow.error
     const updated = await admin.from('ai_chat_threads').update({ last_message_at: now, updated_at: now }).eq('id', thread.id).eq('user_id', user.id).select('id,title,last_message_at,created_at').single()
     if (updated.error) throw updated.error
-    return json({ thread: updated.data, user_message: userRow.data, assistant_message: assistantRow.data })
+    const decorated = await decorateMessages(admin, user.id, [userRow.data, assistantRow.data])
+    return json({ thread: updated.data, user_message: decorated[0], assistant_message: decorated[1] })
   } catch (error) {
     console.error('nutrition-chat failed', error)
     return json({ error: error instanceof Error ? error.message : 'Ask Leafy could not answer right now.' }, 400)
@@ -108,9 +123,9 @@ async function ownedThread(admin: any, userID: string, id?: string) {
 // deno-lint-ignore no-explicit-any
 async function loadLatest(admin: any, userID: string, threadID: string) {
   const thread = await ownedThread(admin, userID, threadID)
-  const rows = await admin.from('ai_chat_messages').select('id,role,content,sources,suggested_log_description,created_at').eq('thread_id', threadID).eq('user_id', userID).order('created_at', { ascending: false }).limit(2)
+  const rows = await admin.from('ai_chat_messages').select(messageColumns).eq('thread_id', threadID).eq('user_id', userID).order('created_at', { ascending: false }).limit(2)
   if (rows.error) throw rows.error
-  const messages = (rows.data ?? []).reverse()
+  const messages = await decorateMessages(admin, userID, (rows.data ?? []).reverse())
   return json({ thread, user_message: messages[0], assistant_message: messages[1] })
 }
 
@@ -138,10 +153,114 @@ async function catalogMatches(admin: any, query: string) {
 }
 
 function systemPrompt(context: unknown, foods: unknown[]) {
-  return `You are Ask Leafy, an adult general-wellness nutrition assistant. Be practical, concise, nonjudgmental, and transparent about uncertainty. Never diagnose, treat disease, change medication, promote eating-disorder behaviors, or give unsafe rapid-weight-loss guidance. For pregnancy, breastfeeding, eating-disorder recovery, clinician-directed diets, severe symptoms, or medication interactions, provide only broad safety information and recommend an appropriate clinician. Use the private Leafy context only when relevant. Do not claim exact calories without portion details. Catalog candidates may be approximate. If the user clearly describes food they already ate and a reviewable description can be created, set suggested_log_description; otherwise it must be null. Never say food was logged. Return only the requested JSON.\nPRIVATE CONTEXT: ${JSON.stringify(context)}\nCATALOG CANDIDATES: ${JSON.stringify(foods)}`
+  return `You are Ask Leafy, an adult general-wellness nutrition assistant. Be practical, concise, nonjudgmental, and transparent about uncertainty. Never diagnose, treat disease, change medication, promote eating-disorder behaviors, or give unsafe rapid-weight-loss guidance. For pregnancy, breastfeeding, eating-disorder recovery, clinician-directed diets, severe symptoms, or medication interactions, provide only broad safety information and recommend an appropriate clinician. Use the private Leafy context only when relevant. Catalog candidates may be approximate.
+
+When the user is describing food they already consumed, help them create a structured log. Ask one focused follow-up at a time whenever another answer would materially improve the item or portion estimates. Continue asking useful follow-ups across messages; there is no fixed number. If the user does not know an answer, make a conservative best-effort estimate with wider ranges and lower confidence. Use meal_status needs_clarification while asking, ready when a reviewable itemized estimate is available, and none for ordinary nutrition questions. For ready meals, identify every caloric food and drink, include sauces/oils/toppings, estimate nutrients conservatively, and put the structured values only in the meal fields rather than repeating the full breakdown in answer. Never claim a meal was logged. Return only the requested JSON.\nPRIVATE CONTEXT: ${JSON.stringify(context)}\nCATALOG CANDIDATES: ${JSON.stringify(foods)}`
 }
 
-const chatSchema = { type: 'object', additionalProperties: false, properties: { answer: { type: 'string' }, source_keys: { type: 'array', items: { type: 'string', enum: ['plan', 'today', 'weight', 'catalog'] } }, suggested_log_description: { type: ['string', 'null'] } }, required: ['answer', 'source_keys', 'suggested_log_description'] }
+const chatSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    answer: { type: 'string' },
+    source_keys: { type: 'array', items: { type: 'string', enum: ['plan', 'today', 'weight', 'catalog'] } },
+    suggested_log_description: { type: ['string', 'null'] },
+    meal_status: { type: 'string', enum: ['none', 'needs_clarification', 'ready'] },
+    meal_items: { type: 'array', minItems: 0, maxItems: 12, items: mealEstimateItemSchema },
+    meal_total_calories: { type: ['integer', 'null'] }, meal_calorie_low: { type: ['integer', 'null'] },
+    meal_calorie_high: { type: ['integer', 'null'] }, meal_confidence: { type: ['number', 'null'] },
+    meal_assumptions: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+  },
+  required: ['answer', 'source_keys', 'suggested_log_description', 'meal_status', 'meal_items', 'meal_total_calories', 'meal_calorie_low', 'meal_calorie_high', 'meal_confidence', 'meal_assumptions'],
+}
+
+async function persistMealSuggestion(
+  // deno-lint-ignore no-explicit-any
+  admin: any, userID: string, description: string, body: Body,
+  estimate: ReturnType<typeof normalizeMealOutput>, model: string,
+  // deno-lint-ignore no-explicit-any
+  payload: any, latency: number,
+) {
+  const sessionID = crypto.randomUUID()
+  const now = new Date()
+  const localDate = /^\d{4}-\d{2}-\d{2}$/.test(body.local_date ?? '') ? body.local_date! : now.toISOString().slice(0, 10)
+  const timeZone = String(body.time_zone ?? 'UTC').slice(0, 80) || 'UTC'
+  const session = await admin.from('ai_meal_sessions').insert({
+    id: sessionID, user_id: userID, status: 'ready', input_modalities: ['chat'],
+    description_text: description.slice(0, 2000), meal_type: 'unspecified',
+    consumed_at: now.toISOString(), local_date: localDate, time_zone: timeZone,
+    provider: 'openai', model_id: model, prompt_version: 'leafy-chat-meal-v1', schema_version: 2,
+    provider_response_id: payload.id ?? null, estimated_calories: estimate.total_calories,
+    calorie_low: estimate.calorie_low, calorie_high: estimate.calorie_high,
+    confidence: estimate.confidence, assumptions: estimate.assumptions,
+    input_tokens: payload.usage?.input_tokens ?? null, output_tokens: payload.usage?.output_tokens ?? null,
+    latency_ms: Math.max(0, latency),
+  })
+  if (session.error) throw session.error
+  const rows = estimate.items.map((item, index) => ({
+    session_id: sessionID, ordinal: index + 1, predicted_name: item.name,
+    predicted_portion: item.portion, predicted_grams: item.estimated_grams,
+    predicted_calories: item.calories, calorie_low: item.calorie_low,
+    calorie_high: item.calorie_high, confidence: item.confidence, assumptions: item.assumptions,
+  }))
+  const inserted = await admin.from('ai_meal_items').insert(rows).select('id,ordinal')
+  if (inserted.error) throw inserted.error
+  const itemIDs = new Map((inserted.data ?? []).map((row: Record<string, unknown>) => [Number(row.ordinal), String(row.id)]))
+  const nutrients = estimate.items.flatMap((item, index) => item.nutrients.map((nutrient) => ({
+    ai_meal_item_id: itemIDs.get(index + 1), nutrient_code: nutrient.code,
+    predicted_amount: nutrient.amount, confidence: nutrient.confidence,
+  }))).filter((row) => row.ai_meal_item_id)
+  if (nutrients.length) {
+    const result = await admin.from('ai_meal_item_nutrients').insert(nutrients)
+    if (result.error) throw result.error
+  }
+  return sessionID
+}
+
+// deno-lint-ignore no-explicit-any
+async function decorateMessages(admin: any, userID: string, messages: Record<string, unknown>[]) {
+  return await Promise.all(messages.map(async (message) => {
+    const sessionID = message.meal_estimate_session_id
+    if (!sessionID) return { ...message, meal_suggestion: null }
+    return { ...message, meal_suggestion: await loadMealSuggestion(admin, userID, String(sessionID)) }
+  }))
+}
+
+// deno-lint-ignore no-explicit-any
+async function loadMealSuggestion(admin: any, userID: string, sessionID: string) {
+  const session = await admin.from('ai_meal_sessions')
+    .select('id,status,estimated_calories,calorie_low,calorie_high,confidence,assumptions')
+    .eq('id', sessionID).eq('user_id', userID).is('deleted_at', null).maybeSingle()
+  if (session.error || !session.data) return null
+  const items = await admin.from('ai_meal_items')
+    .select('id,ordinal,predicted_name,predicted_portion,predicted_grams,predicted_calories,calorie_low,calorie_high,confidence,assumptions,food_entry_id')
+    .eq('session_id', sessionID).order('ordinal')
+  if (items.error) throw items.error
+  const ids = (items.data ?? []).map((item: Record<string, unknown>) => String(item.id))
+  const nutrients = ids.length
+    ? await admin.from('ai_meal_item_nutrients').select('ai_meal_item_id,nutrient_code,predicted_amount,confidence').in('ai_meal_item_id', ids)
+    : { data: [], error: null }
+  if (nutrients.error) throw nutrients.error
+  const nutrientMap = new Map<string, Record<string, unknown>[]>()
+  for (const nutrient of nutrients.data ?? []) {
+    const id = String(nutrient.ai_meal_item_id)
+    nutrientMap.set(id, [...(nutrientMap.get(id) ?? []), {
+      code: nutrient.nutrient_code, amount: nutrient.predicted_amount, confidence: nutrient.confidence,
+    }])
+  }
+  const status = session.data.status === 'confirmed' ? 'logged' : session.data.status === 'ready' ? 'ready' : 'unavailable'
+  return {
+    session_id: session.data.id, status, total_calories: session.data.estimated_calories,
+    calorie_low: session.data.calorie_low, calorie_high: session.data.calorie_high,
+    confidence: session.data.confidence, assumptions: session.data.assumptions ?? [],
+    items: (items.data ?? []).map((item: Record<string, unknown>) => ({
+      id: item.id, name: item.predicted_name, portion: item.predicted_portion ?? '',
+      estimated_grams: item.predicted_grams, calories: item.predicted_calories,
+      calorie_low: item.calorie_low, calorie_high: item.calorie_high,
+      confidence: item.confidence, assumptions: item.assumptions ?? [],
+      nutrients: nutrientMap.get(String(item.id)) ?? [],
+    })),
+  }
+}
 
 // deno-lint-ignore no-explicit-any
 function outputText(payload: any) { const text = payload.output_text ?? payload.output?.flatMap((item: any) => item.content ?? []).find((item: any) => item.type === 'output_text')?.text; if (!text) throw new Error('Ask Leafy returned an empty response.'); return text }

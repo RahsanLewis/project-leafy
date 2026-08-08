@@ -5,6 +5,7 @@ import SwiftUI
     @State private var model = AppModel()
     @State private var reminders = DailyReminderCoordinator()
     @State private var splashCompleted = ProcessInfo.processInfo.arguments.contains("-SkipBrandSplash")
+    @AppStorage(AppearanceMode.storageKey) private var appearanceRawValue = AppearanceMode.light.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -13,18 +14,19 @@ import SwiftUI
                     switch model.route {
                     case .launching:
                         ZStack {
-                            Color(.systemGroupedBackground).ignoresSafeArea()
+                            LeafyTheme.canvas.ignoresSafeArea()
                             ProgressView("Loading Leafy…")
                         }
                     case .onboarding: OnboardingView()
                     case .dashboard: DashboardView()
                     }
                 } else {
-                    BeyondSolidSplashView()
+                    LeafySplashView()
                         .transition(.opacity)
                 }
             }
             .font(LeafyTypography.body)
+            .preferredColorScheme(appearanceMode.preferredColorScheme)
             .environment(model)
             .environment(reminders)
             .tint(LeafyTheme.green)
@@ -50,6 +52,10 @@ import SwiftUI
                 if route == .dashboard { openPendingMorningCheckIn() }
             }
         }
+    }
+
+    private var appearanceMode: AppearanceMode {
+        AppearanceMode(rawValue: appearanceRawValue) ?? .light
     }
 
     private func openPendingMorningCheckIn() {

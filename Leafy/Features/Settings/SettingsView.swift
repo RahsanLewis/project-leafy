@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(DailyReminderCoordinator.self) private var reminders
     @State private var confirmDeletion = false
+    @AppStorage(AppearanceMode.storageKey) private var appearanceRawValue = AppearanceMode.light.rawValue
     var body: some View {
         List {
             Section("Account") {
@@ -16,6 +17,20 @@ struct SettingsView: View {
                 } else {
                     Button("Sign in") { app.presentAuthentication(.accessExistingAccount) }
                 }
+            }
+            .leafyBorderlessRows()
+            Section("Appearance") {
+                Picker("Theme", selection: $appearanceRawValue) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.navigationLink)
+                .accessibilityIdentifier("appearancePicker")
+
+                Text("Light is Leafy’s default. Follow System matches your iPhone’s current appearance.")
+                    .font(LeafyTypography.footnote)
+                    .foregroundStyle(.secondary)
             }
             .leafyBorderlessRows()
             Section("Personalized targets") {

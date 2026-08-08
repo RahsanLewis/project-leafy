@@ -20,12 +20,12 @@ struct MorningCheckInView: View {
                             .foregroundStyle(.orange)
                             .padding()
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+                            .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
                     }
                 }
                 .padding(LeafySpacing.large)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(LeafyTheme.canvas)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Not now") { dismiss() }
@@ -87,7 +87,7 @@ struct MorningCheckInView: View {
             }
         }
         .padding(LeafySpacing.large)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: 24))
     }
 
     private var weightCard: some View {
@@ -104,7 +104,7 @@ struct MorningCheckInView: View {
                     .foregroundStyle(.secondary)
             }
             .padding()
-            .background(Color(.tertiarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+            .background(LeafyTheme.elevatedSurface, in: .rect(cornerRadius: 16))
             Button("Log weight") { Task { await saveWeight() } }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(app.isWeightMutationInProgress || parsedWeightKG == nil)
@@ -113,7 +113,7 @@ struct MorningCheckInView: View {
                 .foregroundStyle(LeafyTheme.green)
         }
         .padding(LeafySpacing.large)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: 24))
     }
 
     private func actionButton(_ title: String, status: IntakeDayStatus) -> some View {

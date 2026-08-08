@@ -14,6 +14,7 @@ struct FoodEntryNutritionView: View {
                 ProductDetailView(
                     product: product,
                     intent: .analyze,
+                    impactContext: .logged,
                     initialGrams: entry.gramWeight,
                     onLogged: {}
                 )
@@ -53,21 +54,21 @@ private struct LimitedFoodNutritionView: View {
     @Environment(AppModel.self) private var app
     let entry: FoodEntry
     @State private var nutrients: [NutrientAmountInput] = []
+    @State private var servingScale = 1.0
 
     var body: some View {
         List {
             Section {
-                VStack(spacing: 14) {
-                    ScoreBadge(score: nil, label: nil)
-                        .scaleEffect(1.7)
-                        .padding(.vertical, 22)
-                    Text("Nutrition data incomplete")
-                        .font(LeafyTypography.title2)
-                    Text("No verified product profile is linked")
-                        .font(LeafyTypography.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+                FoodImpactDashboard(
+                    input: impactInput,
+                    servingScale: $servingScale,
+                    servingDescription: { scale in
+                        if let grams = entry.gramWeight {
+                            return "\((grams * scale).formatted(.number.precision(.fractionLength(0...1)))) g"
+                        }
+                        return "\(scale.formatted(.number.precision(.fractionLength(0...2))))× logged serving"
+                    }
+                )
             }
             .leafyBorderlessRows(separators: false)
 
@@ -106,6 +107,19 @@ private struct LimitedFoodNutritionView: View {
 
     private var sourceLabel: String {
         entry.isAIEstimate ? "AI-assisted estimate" : "Manual entry"
+    }
+
+    private var impactInput: FoodImpactInput {
+        let confidences = nutrients.compactMap(\.confidence)
+        let confidence = entry.confidence ?? (confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count))
+        return FoodImpactInput(
+            name: entry.name,
+            baseCalories: Double(entry.calories),
+            nutrients: nutrients,
+            provenance: sourceLabel,
+            confidence: confidence,
+            context: .logged
+        )
     }
 
     private func nutrientRow(_ item: NutrientCatalog.Item) -> some View {

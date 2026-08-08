@@ -1,24 +1,30 @@
 import SwiftUI
 
-struct BeyondSolidSplashView: View {
+struct LeafySplashView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isVisible = false
 
     var body: some View {
         ZStack {
-            Color(red: 0.025, green: 0.028, blue: 0.027)
+            Color.white
                 .ignoresSafeArea()
 
-            Text("Beyond Solid")
-                .font(LeafyTypography.metric(32, extraBold: true))
-                .foregroundStyle(.white)
-                .tracking(-0.7)
+            VStack(spacing: LeafySpacing.medium) {
+                Image("LeafyLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 112, height: 112)
+                Text("Leafy")
+                    .font(LeafyTypography.metric(36, extraBold: true))
+                    .foregroundStyle(.black)
+                    .tracking(-0.8)
+            }
                 .opacity(isVisible ? 1 : 0)
                 .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : 0.97))
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Beyond Solid")
-        .accessibilityIdentifier("beyondSolidSplash")
+        .accessibilityLabel("Leafy")
+        .accessibilityIdentifier("leafySplash")
         .onAppear {
             withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .easeOut(duration: 0.65)) {
                 isVisible = true

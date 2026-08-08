@@ -77,10 +77,8 @@ struct ProductDiscoveryView: View {
                     Label("Scan Barcode", systemImage: "barcode.viewfinder")
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .padding(.horizontal, LeafyTheme.pageInset)
-                .padding(.top, LeafySpacing.compact)
-                .padding(.bottom, LeafySpacing.small)
-                .background(.regularMaterial)
+                .clipShape(Capsule())
+                .leafyDetachedBottomControl()
                 .accessibilityIdentifier("scanBarcodeButton")
             }
         }

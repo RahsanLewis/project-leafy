@@ -1,13 +1,62 @@
 import SwiftUI
 
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    static let storageKey = "leafy.appearance.mode"
+
+    case light
+    case dark
+    case system
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .light: "Light"
+        case .dark: "Dark"
+        case .system: "Follow System"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        case .system: nil
+        }
+    }
+}
+
 enum LeafyTheme {
     static let green = Color(red: 0.13, green: 0.43, blue: 0.29)
-    static let mint = Color(red: 0.91, green: 0.97, blue: 0.92)
-    static let ink = Color(red: 0.08, green: 0.15, blue: 0.11)
-    static let canvas = Color(.systemGroupedBackground)
+    static let mint = adaptiveColor(
+        light: UIColor(red: 0.91, green: 0.97, blue: 0.92, alpha: 1),
+        dark: UIColor(red: 0.08, green: 0.19, blue: 0.13, alpha: 1)
+    )
+    static let ink = adaptiveColor(
+        light: UIColor(red: 0.08, green: 0.15, blue: 0.11, alpha: 1),
+        dark: UIColor(white: 0.96, alpha: 1)
+    )
+    static let canvas = adaptiveColor(
+        light: .white,
+        dark: UIColor(red: 0.035, green: 0.04, blue: 0.038, alpha: 1)
+    )
+    static let surface = adaptiveColor(
+        light: UIColor(white: 0.96, alpha: 1),
+        dark: UIColor(white: 0.10, alpha: 1)
+    )
+    static let elevatedSurface = adaptiveColor(
+        light: .white,
+        dark: UIColor(white: 0.14, alpha: 1)
+    )
     static let hairline = Color.primary.opacity(0.10)
     static let pageInset: CGFloat = 20
     static let rowMinHeight: CGFloat = 60
+
+    private static func adaptiveColor(light: UIColor, dark: UIColor) -> Color {
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? dark : light
+        })
+    }
 }
 
 enum LeafyTypography {
@@ -69,7 +118,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .foregroundStyle(LeafyTheme.green.opacity(configuration.isPressed ? 0.7 : 1))
-            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+            .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(LeafyTheme.green.opacity(0.35), lineWidth: 1.5))
     }
 }
@@ -85,7 +134,7 @@ struct ChoiceCard<Content: View>: View {
                 .foregroundStyle(selected ? LeafyTheme.green : .secondary)
         }
         .padding(16)
-        .background(selected ? LeafyTheme.mint : Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+        .background(selected ? LeafyTheme.mint : LeafyTheme.surface, in: .rect(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? LeafyTheme.green : .clear, lineWidth: 1.5))
     }
 }
@@ -118,6 +167,24 @@ private struct LeafyBorderlessRowsModifier: ViewModifier {
     }
 }
 
+private struct LeafyDetachedBottomControlModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.top, LeafySpacing.small)
+            .padding(.bottom, LeafySpacing.medium)
+            .compositingGroup()
+            .shadow(
+                color: .black.opacity(colorScheme == .dark ? 0.24 : 0.10),
+                radius: 12,
+                x: 0,
+                y: 5
+            )
+    }
+}
+
 extension View {
     func leafyBorderlessList() -> some View {
         modifier(LeafyBorderlessListModifier())
@@ -125,5 +192,9 @@ extension View {
 
     func leafyBorderlessRows(separators: Bool = true) -> some View {
         modifier(LeafyBorderlessRowsModifier(separators: separators))
+    }
+
+    func leafyDetachedBottomControl() -> some View {
+        modifier(LeafyDetachedBottomControlModifier())
     }
 }

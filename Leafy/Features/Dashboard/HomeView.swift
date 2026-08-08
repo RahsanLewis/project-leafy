@@ -181,10 +181,8 @@ struct HomeView: View {
                 app.presentMealLogger()
             }
             .buttonStyle(PrimaryButtonStyle())
-            .padding(.horizontal, 20)
-            .padding(.top, LeafySpacing.compact)
-            .padding(.bottom, LeafySpacing.small)
-            .background(.regularMaterial)
+            .clipShape(Capsule())
+            .leafyDetachedBottomControl()
             .accessibilityIdentifier("logFoodButton")
         }
         .sheet(item: $editorEntry) { entry in
@@ -263,7 +261,7 @@ private struct AdaptiveTargetNotice: View {
                     Image(systemName: "xmark")
                         .font(LeafyTypography.captionSemibold)
                         .padding(8)
-                        .background(Color(.tertiarySystemGroupedBackground), in: .circle)
+                        .background(LeafyTheme.surface, in: .circle)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss budget update")
