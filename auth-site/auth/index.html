@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Continue in Leafy</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <main class="shell auth-shell">
+    <p class="eyebrow">SECURE ACCOUNT LINK</p>
+    <h1>Continue in Leafy</h1>
+    <p class="lede">Your account link is ready. Open Leafy on this device to finish securely.</p>
+    <a class="button" id="open-leafy" href="leafy://auth/callback">Open Leafy</a>
+    <p class="meta">If Leafy does not open, make sure it is installed and try this link again on your iPhone.</p>
+  </main>
+  <script>
+    const scheme = location.hostname.startsWith("auth-staging.") ? "leafy-staging" : "leafy";
+    const route = location.pathname.replace(/^\/auth/, "") || "/callback";
+    document.getElementById("open-leafy").href = `${scheme}://auth${route}${location.search}${location.hash}`;
+  </script>
+</body>
+</html>

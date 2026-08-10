@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["DF8V5K52QA.com.projectleafy.app"],
+        "components": [
+          { "/": "/auth/*", "comment": "Leafy authentication callbacks" }
+        ]
+      }
+    ]
+  }
+}
