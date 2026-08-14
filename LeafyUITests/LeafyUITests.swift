@@ -551,6 +551,15 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Why Leafy emphasizes trend weight"].waitForExistence(timeout: 2))
         app.buttons["dismissTrendWeightExplanation"].tap()
 
+        let fluctuationInfo = app.buttons["weightFluctuationRangeInfo"]
+        XCTAssertTrue(fluctuationInfo.waitForExistence(timeout: 2))
+        fluctuationInfo.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["fluctuationRangeMeaning"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["fluctuationRangeInside"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["fluctuationRangeOutside"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "smoothed seven-reading trend")).firstMatch.exists)
+        app.buttons["Dismiss fluctuation range explanation"].tap()
+
         let info = app.buttons["weightInsightInfo-pace"]
         for _ in 0..<3 where !info.exists { app.swipeUp() }
         XCTAssertTrue(info.waitForExistence(timeout: 2))
@@ -561,7 +570,9 @@ final class LeafyUITests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH %@", "Compares your observed weekly trend with the weekly change")
         ).firstMatch
         XCTAssertTrue(explanation.waitForExistence(timeout: 2))
-        info.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["weightInsightExplanation-pace"].exists)
+        XCTAssertFalse(app.popovers.firstMatch.exists)
+        app.buttons["dismissWeightInsightExplanation"].tap()
 
         let insightIdentifiers = [
             "totalChange", "latestChange", "daysLogged", "pace",

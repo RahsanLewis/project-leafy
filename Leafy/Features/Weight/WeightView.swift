@@ -60,6 +60,7 @@ struct WeightView: View {
     @State private var showingWeightExplanation = false
     @State private var showingFluctuationExplanation = false
     @State private var showingPlanEditor = false
+    @State private var selectedInsightExplanation: WeightInsightExplanation?
 
     var body: some View {
         List {
@@ -192,6 +193,11 @@ struct WeightView: View {
         }
         .sheet(isPresented: $showingEditor) {
             WeightEntryEditorView(entry: editingEntry)
+        }
+        .sheet(item: $selectedInsightExplanation) { insight in
+            WeightInsightExplanationView(insight: insight)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showingPlanEditor) {
             PlanEditView(onSaved: {})
@@ -377,7 +383,7 @@ struct WeightView: View {
                 goal: app.draft.goal,
                 source: insights.fluctuationRangeSource
             )
-                .presentationDetents([.height(310)])
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -534,31 +540,55 @@ struct WeightView: View {
             WeightStat(
                 label: "Total change",
                 value: actualTotalChangeKG.map(formatChange) ?? "Learning",
-                explanation: "The difference between your first recorded scale weight and your latest reading.",
-                status: actualTotalChangeKG == nil ? "Log at least two weigh-ins to calculate total change." : nil,
-                identifier: "totalChange"
+                identifier: "totalChange",
+                onInfo: {
+                    selectedInsightExplanation = WeightInsightExplanation(
+                        id: "totalChange",
+                        title: "Total change",
+                        explanation: "The difference between your first recorded scale weight and your latest reading.",
+                        status: actualTotalChangeKG == nil ? "Log at least two weigh-ins to calculate total change." : nil
+                    )
+                }
             )
             WeightStat(
                 label: "Latest change",
                 value: actualLatestChangeKG.map(formatChange) ?? "Learning",
-                explanation: "The difference between your two most recent scale readings. Water and digestion can influence this value.",
-                status: actualLatestChangeKG == nil ? "Log at least two weigh-ins to compare readings." : nil,
-                identifier: "latestChange"
+                identifier: "latestChange",
+                onInfo: {
+                    selectedInsightExplanation = WeightInsightExplanation(
+                        id: "latestChange",
+                        title: "Latest change",
+                        explanation: "The difference between your two most recent scale readings. Water and digestion can influence this value.",
+                        status: actualLatestChangeKG == nil ? "Log at least two weigh-ins to compare readings." : nil
+                    )
+                }
             )
             WeightStat(
                 label: "Days logged",
                 value: planLoggingConsistency.map { "\($0.percentage)%" } ?? "Learning",
-                explanation: "The percentage of days since your current plan began that include a weigh-in. Leafy counts no more than one weigh-in per day.",
-                status: planLoggingConsistency.map { "You logged weight on \($0.loggedDayCount) of \($0.totalDayCount) days since this plan began." } ?? "Log your first weight to begin measuring consistency.",
-                identifier: "daysLogged"
+                identifier: "daysLogged",
+                onInfo: {
+                    selectedInsightExplanation = WeightInsightExplanation(
+                        id: "daysLogged",
+                        title: "Days logged",
+                        explanation: "The percentage of days since your current plan began that include a weigh-in. Leafy counts no more than one weigh-in per day.",
+                        status: planLoggingConsistency.map { "You logged weight on \($0.loggedDayCount) of \($0.totalDayCount) days since this plan began." } ?? "Log your first weight to begin measuring consistency."
+                    )
+                }
             )
             WeightStat(
                 label: "Pace",
                 value: paceComparisonLabel,
-                explanation: "Compares your observed weekly trend with the weekly change in your current nutrition plan.",
-                status: paceComparisonDetail,
                 identifier: "pace",
-                valueColor: paceComparisonColor
+                valueColor: paceComparisonColor,
+                onInfo: {
+                    selectedInsightExplanation = WeightInsightExplanation(
+                        id: "pace",
+                        title: "Pace",
+                        explanation: "Compares your observed weekly trend with the weekly change in your current nutrition plan.",
+                        status: paceComparisonDetail
+                    )
+                }
             )
         }
     }
@@ -1048,70 +1078,153 @@ private struct FluctuationRangeExplanationView: View {
     let source: WeightFluctuationRangeSource
 
     var body: some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.medium) {
-            HStack(alignment: .top) {
-                Text(source == .personalized ? "Your typical range" : "Expected range")
-                    .font(LeafyTypography.title2)
-                Spacer(minLength: LeafySpacing.small)
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(LeafyTypography.icon(15))
-                        .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
-                        .contentShape(Rectangle())
+        ScrollView {
+            VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                HStack(alignment: .top) {
+                    Text(source == .personalized ? "Your typical range" : "Expected range")
+                        .font(LeafyTypography.title2)
+                    Spacer(minLength: LeafySpacing.small)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(LeafyTypography.icon(15))
+                            .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss fluctuation range explanation")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss fluctuation range explanation")
-            }
 
-            Text(introduction)
+                explanationSection(
+                    title: "What it means",
+                    text: introduction,
+                    identifier: "fluctuationRangeMeaning"
+                )
+
+                explanationSection(
+                    title: "Inside the range",
+                    text: "A reading inside the shaded area is consistent with ordinary day-to-day movement.",
+                    identifier: "fluctuationRangeInside"
+                )
+
+                explanationSection(
+                    title: "Outside the range",
+                    text: "A reading above or below the shaded area can still be temporary. Look for several readings moving in the same direction before treating it as a change in progress.",
+                    identifier: "fluctuationRangeOutside"
+                )
+
+                explanationSection(
+                    title: "What matters most",
+                    text: goalMessage,
+                    identifier: "fluctuationRangeGoal"
+                )
+
+                Text("Water retention, sodium, carbohydrates, hormones, digestion, exercise, and time of day can all temporarily move the scale without changing your underlying progress.")
+                    .font(LeafyTypography.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("fluctuationRangeFactors")
+            }
+            .padding(LeafyTheme.pageInset)
+        }
+        .background(LeafyTheme.canvas)
+    }
+
+    private func explanationSection(
+        title: String,
+        text: String,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Text(title)
+                .font(LeafyTypography.headline)
+            Text(text)
                 .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Text(goalMessage)
-                .font(LeafyTypography.bodyMedium)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Water, sodium, carbohydrates, hormones, digestion, and time of day can move an individual reading. One point outside the range does not automatically mean your progress changed.")
-                .font(LeafyTypography.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 0)
         }
-        .padding(LeafyTheme.pageInset)
-        .background(LeafyTheme.canvas)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
     }
 
     private var goalMessage: String {
         switch goal {
         case .lose:
-            "Daily readings can move up and down while the range gradually moves lower toward your goal."
+            "For weight loss, look for the shaded range to move lower over time. Individual readings may rise even while your overall progress remains on track."
         case .gain:
-            "Daily readings can move up and down while the range gradually moves higher toward your goal."
+            "For weight gain, look for the shaded range to move higher over time. Individual readings may fall even while your overall progress remains on track."
         case .maintain:
-            "Daily readings can move up and down while the range remains relatively stable over time."
+            "For maintenance, look for the shaded range to remain broadly stable over time. Individual readings can still move above or below it."
         }
     }
 
     private var introduction: String {
         if source == .personalized {
-            return "The shaded area shows where most of your daily scale readings have recently fallen around Leafy’s smoothed seven-reading trend."
+            return "The shaded area shows the amount your weight commonly moves from day to day. Use it as context for a single weigh-in, not as a target you need to stay inside."
         }
-        return "The shaded area is a starting guide around Leafy’s smoothed seven-reading trend. With more check-ins, Leafy will replace it with a range learned from your history."
+        return "The shaded area gives context for day-to-day changes that can happen even when your longer-term direction has not changed. It is not a target you need to stay inside."
+    }
+}
+
+private struct WeightInsightExplanation: Identifiable {
+    let id: String
+    let title: String
+    let explanation: String
+    let status: String?
+}
+
+private struct WeightInsightExplanationView: View {
+    @Environment(\.dismiss) private var dismiss
+    let insight: WeightInsightExplanation
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                HStack(alignment: .top) {
+                    Text(insight.title)
+                        .font(LeafyTypography.title2)
+                    Spacer(minLength: LeafySpacing.small)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(LeafyTypography.icon(15))
+                            .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss \(insight.title.lowercased()) explanation")
+                    .accessibilityIdentifier("dismissWeightInsightExplanation")
+                }
+
+                Text(insight.explanation)
+                    .font(LeafyTypography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("weightInsightExplanation-\(insight.id)")
+
+                if let status = insight.status {
+                    Divider()
+                    Text(status)
+                        .font(LeafyTypography.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("weightInsightStatus-\(insight.id)")
+                }
+            }
+            .padding(LeafyTheme.pageInset)
+        }
+        .background(LeafyTheme.canvas)
     }
 }
 
 private struct WeightStat: View {
     let label: String
     let value: String
-    let explanation: String
-    var status: String? = nil
     let identifier: String
     var valueColor: Color = .primary
-    @State private var showingExplanation = false
+    let onInfo: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
@@ -1122,9 +1235,7 @@ private struct WeightStat: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
-                Button {
-                    showingExplanation = true
-                } label: {
+                Button(action: onInfo) {
                     Image(systemName: "info.circle")
                         .font(LeafyTypography.icon(14))
                         .foregroundStyle(.secondary)
@@ -1134,24 +1245,6 @@ private struct WeightStat: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("About \(label)")
                 .accessibilityIdentifier("weightInsightInfo-\(identifier)")
-                .popover(isPresented: $showingExplanation, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: LeafySpacing.small) {
-                        Text(label)
-                            .font(LeafyTypography.headline)
-                        Text(explanation)
-                            .font(LeafyTypography.subheadline)
-                            .foregroundStyle(.secondary)
-                        if let status {
-                            Divider()
-                            Text(status)
-                                .font(LeafyTypography.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(LeafySpacing.medium)
-                    .frame(width: 280, alignment: .leading)
-                    .presentationCompactAdaptation(.popover)
-                }
             }
 
             Text(value)
