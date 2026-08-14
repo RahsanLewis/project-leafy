@@ -1,4 +1,5 @@
 import Foundation
+import GoogleSignIn
 import Observation
 
 @MainActor @Observable
@@ -7,6 +8,7 @@ final class AppModel {
     enum AuthenticationPurpose: Equatable { case savePlan, accessExistingAccount }
     enum SaveState: Equatable { case idle, creatingAccount, awaitingConfirmation, resendingConfirmation, authenticating, saving, deleting }
     enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
+    private enum MorningCheckInLoggingHandoff { case idle, awaitingLogger, logging }
 
     var route: Route = .launching
     var draft = OnboardingDraft()
@@ -23,9 +25,6 @@ final class AppModel {
     var showMorningCheckIn = false
     var hasMorningCheckInReminder = false
     var planAdjustmentNotice: PlanAdjustmentNotice?
-    var dataContributionStatus: DataContributionStatus?
-    var isDataContributionLoading = false
-    var dataContributionErrorMessage: String?
     var isCheckInMutationInProgress = false
     var checkInErrorMessage: String?
     var isDailyLoading = false
@@ -34,6 +33,9 @@ final class AppModel {
     var productHistory: [ProductSummary] = []
     var isProductLoading = false
     var productErrorMessage: String?
+    var catalogContributions: [CatalogContribution] = []
+    var isCatalogContributionLoading = false
+    var catalogContributionErrorMessage: String?
     var mealEstimate: MealEstimate?
     var mealEstimateActivity: MealEstimateActivity = .idle
     var isMealEstimateLoading: Bool { mealEstimateActivity != .idle }
@@ -44,6 +46,8 @@ final class AppModel {
     var isChatLoading = false
     var chatErrorMessage: String?
     var chatMealLoggingMessageID: UUID?
+    var pendingChatClientMessageID: UUID?
+    var pendingChatText: String?
     var showLogFood = false
     var pendingMealDescription = ""
     private var mealEstimateSessionID: UUID?
@@ -52,7 +56,9 @@ final class AppModel {
     var isWeightLoading = false
     var isWeightMutationInProgress = false
     var weightErrorMessage: String?
+    var weightErrorTitle = "We couldn’t update your weight"
     var weightStatusMessage: String?
+    var weightNutritionContext: WeightNutritionContext?
     var lastWeightOutcome: WeightMutationOutcome?
     var dailyErrorMessage: String?
     var errorMessage: String?
@@ -64,7 +70,20 @@ final class AppModel {
     var showAuthentication = false
     var authenticationPurpose: AuthenticationPurpose = .savePlan
     var isAuthenticated = false
+    var account: LeafyAccount?
+    var termsAccepted = false
+    var privacyAccepted = false
+    var coreDataAccepted = false
+    var showCoreDataAcknowledgment = false
+    var isCoreDataAcknowledgmentLoading = false
+    var coreDataAcknowledgmentError: String?
+    var authFlowState: AuthFlowState = .signedOut
+    var showPasswordRecovery = false
+    let pendingOnboardingCache = PendingOnboardingCache()
+    private var authObserverTask: Task<Void, Never>?
     private var lastPromptedCheckInDay: Date?
+    private var morningCheckInLoggingHandoff = MorningCheckInLoggingHandoff.idle
+    private var logDateBeforeMorningCheckInHandoff: Date?
     var isConfigured: Bool { configuration.isConfigured }
     var isPreviewMode: Bool { isCICOPreview }
     var dailySummary: DailyCalorieSummary {
@@ -95,12 +114,33 @@ final class AppModel {
 
     func restore() async {
         if isCICOPreview { return }
+        if ProcessInfo.processInfo.arguments.contains("-ForceOnboarding") {
+            route = .onboarding
+            return
+        }
+        observeAuthentication()
         guard await service.currentUserID() != nil else {
             isAuthenticated = false
+            if let pending = await pendingOnboardingCache.load() {
+                apply(pending.input)
+                if let stepID = pending.stepID, let step = OnboardingDraft.Step(rawValue: stepID) {
+                    draft.step = step
+                } else if let legacyStep = pending.stepRawValue {
+                    draft.step = OnboardingDraft.Step.legacy(legacyStep, draft: draft)
+                } else {
+                    draft.step = .results
+                }
+                termsAccepted = pending.termsAccepted
+                privacyAccepted = pending.privacyAccepted
+                coreDataAccepted = pending.coreDataAccepted
+                _ = calculatePreview()
+            }
             route = .onboarding
             return
         }
         isAuthenticated = true
+        authFlowState = .authenticated
+        account = try? await service.account()
         if let cloud = try? await service.fetchCloudState() {
             currentPlan = cloud.0; apply(cloud.1); try? await cache.save(cloud.0, input: cloud.1); route = .dashboard
         } else if let cached = await cache.load() {
@@ -111,9 +151,9 @@ final class AppModel {
         if route == .dashboard {
             async let daily: Void = loadDailyLog()
             async let weights: Void = loadWeightHistory()
-            async let contribution: Void = loadDataContributionStatus()
-            _ = await (daily, weights, contribution)
-            await loadMorningCheckIn(presentWhenNeeded: true)
+            _ = await (daily, weights)
+            await refreshCoreDataUseStatus()
+            await loadMorningCheckIn(presentWhenNeeded: !showCoreDataAcknowledgment)
         }
     }
 
@@ -137,6 +177,10 @@ final class AppModel {
     }
 
     func createAccount() async {
+        guard termsAccepted, privacyAccepted, coreDataAccepted else {
+            errorMessage = "Accept the required agreements before creating your account."
+            return
+        }
         guard validateCredentials(confirmPassword: true) else { return }
         await perform(.creatingAccount) {
             let needsConfirmation = try await service.createAccount(
@@ -144,9 +188,10 @@ final class AppModel {
                 password: password
             )
             if needsConfirmation {
+                authFlowState = .awaitingEmailConfirmation(normalizedEmail)
                 saveState = .awaitingConfirmation
             } else {
-                try await saveAuthenticatedDraft()
+                try await saveAuthenticatedDraft(recordLegalAcceptance: true)
             }
         }
     }
@@ -165,7 +210,7 @@ final class AppModel {
     func finishConfirmedAccount() async {
         await perform(.authenticating) {
             let accessToken = try await service.signIn(email: normalizedEmail, password: password)
-            try await saveAuthenticatedDraft(accessToken: accessToken)
+            try await saveAuthenticatedDraft(accessToken: accessToken, recordLegalAcceptance: true)
         }
     }
 
@@ -188,7 +233,7 @@ final class AppModel {
     func saveAfterApple(identityToken: String, nonce: String) async {
         await perform(.authenticating) {
             let accessToken = try await service.signInWithApple(identityToken: identityToken, nonce: nonce)
-            try await saveAuthenticatedDraft(accessToken: accessToken)
+            try await saveAuthenticatedDraft(accessToken: accessToken, recordLegalAcceptance: true)
         }
     }
 
@@ -199,26 +244,48 @@ final class AppModel {
         }
     }
 
-    func saveAuthenticatedDraft(accessToken: String? = nil) async throws {
+    func saveAfterGoogle(identityToken: String) async {
+        await perform(.authenticating) {
+            let accessToken = try await service.signInWithGoogle(identityToken: identityToken)
+            try await saveAuthenticatedDraft(accessToken: accessToken, recordLegalAcceptance: true)
+        }
+    }
+
+    func loadAfterGoogle(identityToken: String) async {
+        await perform(.authenticating) {
+            let accessToken = try await service.signInWithGoogle(identityToken: identityToken)
+            try await loadAuthenticatedAccount(accessToken: accessToken)
+        }
+    }
+
+    func saveAuthenticatedDraft(accessToken: String? = nil, recordLegalAcceptance: Bool = false) async throws {
         saveState = .saving
-        let plan = try await service.savePlan(draft.input, accessToken: accessToken)
+        let plan = try await service.savePlan(draft.input, accessToken: accessToken, recordLegalAcceptance: recordLegalAcceptance)
         try await cache.save(plan, input: draft.input)
         currentPlan = plan
         isAuthenticated = true
+        authFlowState = .authenticated
+        account = try? await service.account()
+        await pendingOnboardingCache.clear()
         preview = nil
         showAuthentication = false
         route = .dashboard
+        showCoreDataAcknowledgment = false
         selectedLogDate = Calendar.current.startOfDay(for: .now)
         await loadDailyLog()
         await loadWeightHistory()
         await loadMorningCheckIn(presentWhenNeeded: true)
     }
 
-    func editPlan() {
-        route = .onboarding
-        preview = nil
-        draft.step = .goal
-        draft.isEditing = true
+    func updateAuthenticatedPlan(input: NutritionPlanInput) async throws {
+        guard await service.currentUserID() != nil else { throw PlanService.ServiceError.notAuthenticated }
+        saveState = .saving
+        defer { saveState = .idle }
+        let plan = try await service.savePlan(input)
+        try await cache.save(plan, input: input)
+        currentPlan = plan
+        if isViewingToday { dailyPlan = plan }
+        apply(input)
     }
 
     func loadDailyLog() async {
@@ -356,6 +423,74 @@ final class AppModel {
         defer { isProductLoading = false }
         do { return try await service.productDetail(foodVersionID: foodVersionID) }
         catch { productErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func loadProductDetail(foodVersionID: UUID) async -> ProductDetail? {
+        isProductLoading = true; productErrorMessage = nil
+        defer { isProductLoading = false }
+        do { return try await service.productDetail(foodVersionID: foodVersionID) }
+        catch { productErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func startCatalogContribution(barcode: String) async -> CatalogContributionStartResponse? {
+        guard !isCICOPreview else { return nil }
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do { return try await service.startCatalogContribution(barcode: barcode) }
+        catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func uploadCatalogPhoto(_ data: Data, contributionID: UUID, assetKind: String) async -> CatalogContribution? {
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do { return try await service.uploadCatalogLabelPhoto(data, contributionID: contributionID, assetKind: assetKind) }
+        catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func extractCatalogContribution(id: UUID) async -> CatalogContribution? {
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do { return try await service.extractCatalogContribution(id: id) }
+        catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func submitCatalogContribution(id: UUID, fields: CatalogContributionFields, nutrients: [CatalogContributionNutrient]) async -> CatalogContributionSubmitResponse? {
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do {
+            let result = try await service.submitCatalogContribution(id: id, fields: fields, nutrients: nutrients)
+            await loadCatalogContributions()
+            return result
+        } catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
+    }
+
+    func loadCatalogContributions() async {
+        guard !isCICOPreview else { catalogContributions = []; return }
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do { catalogContributions = try await service.fetchCatalogContributions() }
+        catch { catalogContributionErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func deleteCatalogContribution(id: UUID) async -> Bool {
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do {
+            try await service.deleteCatalogContribution(id: id)
+            catalogContributions.removeAll { $0.id == id }
+            return true
+        } catch { catalogContributionErrorMessage = userFacingMessage(for: error); return false }
+    }
+
+    func logCatalogContribution(_ contribution: CatalogContribution, grams: Double, consumedAt: Date, mealType: MealType) async -> Bool {
+        isFoodMutationInProgress = true; catalogContributionErrorMessage = nil
+        defer { isFoodMutationInProgress = false }
+        do {
+            let entry = try await service.logCatalogContribution(contribution, grams: grams, consumedAt: consumedAt, localDate: selectedLogDate, mealType: mealType)
+            foodEntries.append(entry); foodEntries.sort { $0.consumedAt < $1.consumedAt }
+            dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
+            return true
+        } catch { catalogContributionErrorMessage = userFacingMessage(for: error); return false }
     }
 
     func loadNutrients(for entry: FoodEntry) async -> [NutrientAmountInput] {
@@ -547,6 +682,8 @@ final class AppModel {
         activeChatThreadID = nil
         chatMessages = []
         chatErrorMessage = nil
+        pendingChatClientMessageID = nil
+        pendingChatText = nil
     }
 
     func loadChatThreads() async {
@@ -567,26 +704,49 @@ final class AppModel {
         } catch { chatErrorMessage = userFacingMessage(for: error) }
     }
 
-    func sendChatMessage(_ text: String) async {
+    func sendChatMessage(_ text: String, clientMessageID: UUID = UUID()) async -> Bool {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty, message.count <= 2_000 else {
             chatErrorMessage = "Keep your question under 2,000 characters."
-            return
+            return false
         }
         isChatLoading = true
         chatErrorMessage = nil
-        defer { isChatLoading = false }
+        pendingChatClientMessageID = clientMessageID
+        pendingChatText = message
+        let temporaryMessage = NutritionChatMessage(
+            id: clientMessageID, role: "user", content: message,
+            sources: [], suggestedLogDescription: nil, createdAt: .now
+        )
+        chatMessages.append(temporaryMessage)
+        defer {
+            isChatLoading = false
+            pendingChatClientMessageID = nil
+            pendingChatText = nil
+        }
         if isCICOPreview {
             let now = Date.now
-            chatMessages.append(NutritionChatMessage(id: UUID(), role: "user", content: message, sources: [], suggestedLogDescription: nil, createdAt: now))
+            if ProcessInfo.processInfo.arguments.contains("-HoldChatResponse") {
+                try? await Task.sleep(for: .seconds(4))
+                if Task.isCancelled {
+                    chatMessages.removeAll { $0.id == clientMessageID }
+                    return false
+                }
+            }
+            let offTopic = message.localizedCaseInsensitiveContains("write code") ||
+                message.localizedCaseInsensitiveContains("stock portfolio")
             let eaten = message.localizedCaseInsensitiveContains("ate")
             let previewEstimate = eaten ? Self.previewMealEstimate(sessionID: UUID(), ready: true) : nil
             chatMessages.append(NutritionChatMessage(
                 id: UUID(), role: "assistant",
-                content: eaten ? "Here’s an estimate based on what you described. Review the portions before logging it." : "Based on your current plan, aim for protein-rich foods you enjoy and use your remaining calorie budget to guide the portion.",
-                sources: [NutritionChatSource(kind: "plan", label: "Your Leafy plan")],
+                content: offTopic
+                    ? "I’m focused on nutrition and health, so I can’t help with that. I can help you plan what to eat or talk through a health question."
+                    : eaten
+                    ? "Here’s an estimate based on what you described. Review the portions before logging it."
+                    : "Based on your current plan, aim for protein-rich foods you enjoy and use your remaining calorie budget to guide the portion.",
+                sources: offTopic ? [] : [NutritionChatSource(kind: "plan", label: "Your Leafy plan")],
                 suggestedLogDescription: nil,
-                mealSuggestion: previewEstimate.map {
+                mealSuggestion: offTopic ? nil : previewEstimate.map {
                     NutritionChatMealSuggestion(
                         sessionID: $0.sessionID, status: .ready,
                         totalCalories: $0.totalCalories, calorieLow: $0.calorieLow,
@@ -596,15 +756,24 @@ final class AppModel {
                 },
                 createdAt: now
             ))
-            return
+            return true
         }
         do {
-            let result = try await service.sendNutritionChatMessage(message, threadID: activeChatThreadID, clientMessageID: UUID())
+            let result = try await service.sendNutritionChatMessage(
+                message, threadID: activeChatThreadID, clientMessageID: clientMessageID
+            )
+            chatMessages.removeAll { $0.id == clientMessageID }
             activeChatThreadID = result.thread.id
             chatMessages.append(contentsOf: [result.userMessage, result.assistantMessage])
             if let index = chatThreads.firstIndex(where: { $0.id == result.thread.id }) { chatThreads[index] = result.thread }
             else { chatThreads.insert(result.thread, at: 0) }
-        } catch { chatErrorMessage = userFacingMessage(for: error) }
+            return true
+        } catch {
+            chatMessages.removeAll { $0.id == clientMessageID }
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return false }
+            chatErrorMessage = userFacingMessage(for: error)
+            return false
+        }
     }
 
     func updateChatMealItem(messageID: UUID, itemID: UUID, name: String, portion: String, calories: Int) {
@@ -620,19 +789,27 @@ final class AppModel {
         chatMessages[index].mealSuggestion?.items.removeAll { $0.id == itemID }
     }
 
-    func confirmChatMeal(messageID: UUID) async -> Bool {
+    func chatMealReviewDraft(messageID: UUID, consumedAt: Date = .now) -> ChatMealReviewDraft? {
+        guard let suggestion = chatMessages.first(where: { $0.id == messageID })?.mealSuggestion,
+              suggestion.status == .ready else { return nil }
+        return ChatMealReviewDraft(
+            messageID: messageID, sessionID: suggestion.sessionID,
+            items: suggestion.items.map(ChatMealReviewItem.init(prediction:)),
+            consumedAt: consumedAt
+        )
+    }
+
+    func confirmChatMeal(_ draft: ChatMealReviewDraft) async -> Bool {
+        let messageID = draft.messageID
         guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageID }),
               let suggestion = chatMessages[messageIndex].mealSuggestion,
-              suggestion.status == .ready, !suggestion.items.isEmpty else { return false }
-        let items = suggestion.items.map {
-            MealConfirmationItem(
-                id: $0.id, name: $0.name, portion: $0.portion, calories: $0.calories,
-                nutrients: $0.nutrients ?? []
+              suggestion.status == .ready, draft.isValid else { return false }
+        let items = draft.items.map {
+            ChatMealConfirmationItem(
+                clientItemID: $0.id, predictionID: $0.predictionID,
+                name: $0.name, portion: $0.portion, calories: $0.calories,
+                nutrients: $0.nutrients, origin: $0.origin
             )
-        }
-        guard items.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains($0.calories) }) else {
-            chatErrorMessage = "Review each food name and calorie estimate before logging."
-            return false
         }
         chatMealLoggingMessageID = messageID
         chatErrorMessage = nil
@@ -643,16 +820,19 @@ final class AppModel {
                 entries = items.map { item in
                     FoodEntry(
                         id: UUID(), userID: UUID(), name: item.name, calories: item.calories,
-                        consumedAt: .now, localDate: PlanService.localDayString(for: .now),
+                        consumedAt: draft.consumedAt, localDate: PlanService.localDayString(for: draft.consumedAt),
                         timeZone: Calendar.current.timeZone.identifier, createdAt: .now, updatedAt: .now,
                         portionDescription: item.portion, confidence: 0.7, userConfirmed: true,
-                        entrySource: "text_ai", calorieMethod: "estimated"
+                        entrySource: "text_ai",
+                        calorieMethod: item.origin == .prediction ? "estimated" : "user_entered"
                     )
                 }
             } else {
-                entries = try await service.confirmMealEstimate(sessionID: suggestion.sessionID, items: items)
+                entries = try await service.confirmChatMealEstimate(
+                    sessionID: suggestion.sessionID, items: items, consumedAt: draft.consumedAt
+                )
             }
-            selectedLogDate = Calendar.current.startOfDay(for: .now)
+            selectedLogDate = Calendar.current.startOfDay(for: draft.consumedAt)
             foodEntries.append(contentsOf: entries)
             foodEntries.sort { $0.consumedAt < $1.consumedAt }
             dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
@@ -678,6 +858,60 @@ final class AppModel {
     func presentMealLogger(description: String = "") {
         pendingMealDescription = description
         showLogFood = true
+    }
+
+    func beginLoggingYesterdayFromMorningCheckIn() {
+        guard let morningCheckIn, morningCheckInLoggingHandoff == .idle else { return }
+        logDateBeforeMorningCheckInHandoff = selectedLogDate
+        selectedLogDate = Calendar.current.startOfDay(for: morningCheckIn.reviewDate)
+        morningCheckInLoggingHandoff = .awaitingLogger
+        showMorningCheckIn = false
+    }
+
+    func morningCheckInSheetDidDismiss() async {
+        guard morningCheckInLoggingHandoff == .awaitingLogger else {
+            dismissMorningCheckIn()
+            return
+        }
+        if isCICOPreview {
+            foodEntries = morningCheckIn?.entries ?? []
+            dailyPlan = currentPlan
+            dailyNutrition = Self.previewDailyNutrition(plan: currentPlan)
+        } else {
+            await loadDailyLog()
+        }
+        morningCheckInLoggingHandoff = .logging
+        showLogFood = true
+    }
+
+    func mealLoggerDidDismiss() async {
+        pendingMealDescription = ""
+        guard morningCheckInLoggingHandoff == .logging else { return }
+
+        if isCICOPreview, let checkIn = morningCheckIn {
+            morningCheckIn = MorningCheckIn(
+                reviewDate: checkIn.reviewDate,
+                entries: foodEntries,
+                intakeDay: checkIn.intakeDay,
+                todayWeight: checkIn.todayWeight
+            )
+        } else {
+            await loadMorningCheckIn(presentWhenNeeded: false)
+        }
+
+        selectedLogDate = logDateBeforeMorningCheckInHandoff
+            ?? Calendar.current.startOfDay(for: .now)
+        logDateBeforeMorningCheckInHandoff = nil
+        morningCheckInLoggingHandoff = .idle
+        selectedLogDate = Calendar.current.startOfDay(for: selectedLogDate)
+        if isCICOPreview {
+            foodEntries = []
+            dailyPlan = currentPlan
+            dailyNutrition = Self.previewDailyNutrition(plan: currentPlan)
+        } else {
+            await loadDailyLog()
+        }
+        showMorningCheckIn = true
     }
 
     func updateFoodEntry(_ entry: FoodEntry, input: FoodEntryInput) async -> Bool {
@@ -759,11 +993,16 @@ final class AppModel {
 
     func loadWeightHistory() async {
         guard route == .dashboard else { return }
+        if isCICOPreview { return }
         isWeightLoading = true
+        weightErrorTitle = "We couldn’t load your weight history"
         weightErrorMessage = nil
         do {
-            let entries = try await service.fetchWeightEntries()
+            async let loadedEntries = service.fetchWeightEntries()
+            async let loadedContext = service.fetchWeightNutritionContext()
+            let entries = try await loadedEntries
             weightEntries = entries.sorted { $0.recordedOn > $1.recordedOn }
+            weightNutritionContext = try? await loadedContext
         } catch {
             weightErrorMessage = userFacingMessage(for: error)
         }
@@ -772,6 +1011,7 @@ final class AppModel {
 
     func loadMorningCheckIn(presentWhenNeeded: Bool) async {
         guard route == .dashboard else { return }
+        guard !showCoreDataAcknowledgment else { return }
         if isCICOPreview { return }
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: .now)
@@ -842,6 +1082,7 @@ final class AppModel {
     }
 
     func presentMorningCheckIn() {
+        guard !showCoreDataAcknowledgment else { return }
         checkInErrorMessage = nil
         showMorningCheckIn = true
     }
@@ -857,6 +1098,8 @@ final class AppModel {
     }
 
     func saveWeightEntry(_ entry: WeightEntry?, weightKG: Double, recordedOn: Date) async -> Bool {
+        guard !isWeightMutationInProgress else { return false }
+        weightErrorTitle = entry == nil ? "We couldn’t add your weight" : "We couldn’t update your weight"
         guard (35...350).contains(weightKG), recordedOn <= .now else {
             weightErrorMessage = "Enter a valid weight and choose today or an earlier date."
             return false
@@ -880,7 +1123,9 @@ final class AppModel {
 
     func deleteWeightEntry(_ entry: WeightEntry) async {
         guard entry.source != .baseline else { return }
+        guard !isWeightMutationInProgress else { return }
         isWeightMutationInProgress = true
+        weightErrorTitle = "We couldn’t delete this weight"
         weightErrorMessage = nil
         do {
             let response = try await service.deleteWeightEntry(id: entry.id)
@@ -891,50 +1136,126 @@ final class AppModel {
         isWeightMutationInProgress = false
     }
 
-    func loadDataContributionStatus() async {
+    func refreshCoreDataUseStatus() async {
         guard isAuthenticated, !isCICOPreview else { return }
-        isDataContributionLoading = true
-        dataContributionErrorMessage = nil
         do {
-            dataContributionStatus = try await service.fetchDataContributionStatus()
+            let status = try await service.coreDataUseStatus(version: AccountLegalDocument.coreDataUseVersion)
+            showCoreDataAcknowledgment = !status.accepted
+            coreDataAccepted = status.accepted
+            coreDataAcknowledgmentError = nil
         } catch {
-            dataContributionErrorMessage = userFacingMessage(for: error)
-        }
-        isDataContributionLoading = false
-    }
-
-    func joinDataContribution(countryCode: String, regionCode: String?) async -> Bool {
-        isDataContributionLoading = true
-        dataContributionErrorMessage = nil
-        do {
-            dataContributionStatus = try await service.joinDataContribution(
-                countryCode: countryCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
-                regionCode: regionCode?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            )
-            isDataContributionLoading = false
-            return true
-        } catch {
-            dataContributionErrorMessage = userFacingMessage(for: error)
-            isDataContributionLoading = false
-            return false
+            showCoreDataAcknowledgment = true
+            coreDataAcknowledgmentError = coreDataUseFailureMessage(for: error)
         }
     }
 
-    func leaveDataContribution() async {
-        isDataContributionLoading = true
-        dataContributionErrorMessage = nil
+    func acceptCoreDataUse() async {
+        isCoreDataAcknowledgmentLoading = true
+        defer { isCoreDataAcknowledgmentLoading = false }
         do {
-            dataContributionStatus = try await service.leaveDataContribution()
+            _ = try await service.acceptCoreDataUse(version: AccountLegalDocument.coreDataUseVersion)
+            coreDataAccepted = true
+            showCoreDataAcknowledgment = false
+            coreDataAcknowledgmentError = nil
+            await loadMorningCheckIn(presentWhenNeeded: true)
         } catch {
-            dataContributionErrorMessage = userFacingMessage(for: error)
+            coreDataAcknowledgmentError = coreDataUseFailureMessage(for: error)
         }
-        isDataContributionLoading = false
+    }
+
+    private func coreDataUseFailureMessage(for error: Error) -> String {
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("session") ||
+            message.localizedCaseInsensitiveContains("unauthorized") {
+            return "Your session has expired. Sign out, then sign in again to continue."
+        }
+        return "We couldn’t save your choice. Check your connection and try again."
     }
 
     func signOut() async {
-        do { try await service.signOut() } catch { errorMessage = error.localizedDescription }
+        do { try await service.signOut(scope: .local) } catch { errorMessage = userFacingMessage(for: error) }
+        GIDSignIn.sharedInstance.signOut()
         await cache.clear()
+        await pendingOnboardingCache.clear()
         resetToOnboarding()
+    }
+
+    func signOutEverywhere() async {
+        do { try await service.signOut(scope: .global) } catch { errorMessage = userFacingMessage(for: error); return }
+        GIDSignIn.sharedInstance.signOut()
+        await cache.clear()
+        await pendingOnboardingCache.clear()
+        resetToOnboarding()
+    }
+
+    func requestPasswordReset(email: String) async -> Bool {
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalized.contains("@") else { errorMessage = "Enter a valid email address."; return false }
+        do {
+            try await service.requestPasswordReset(email: normalized)
+            statusMessage = "If an account exists for that email, a reset link is on its way."
+            return true
+        } catch {
+            // Avoid revealing whether an account exists.
+            statusMessage = "If an account exists for that email, a reset link is on its way."
+            return true
+        }
+    }
+
+    func refreshAccount() async { account = try? await service.account() }
+
+    func changeEmail(to newEmail: String, currentPassword: String) async -> Bool {
+        guard let currentEmail = account?.email, newEmail.contains("@") else {
+            errorMessage = "Enter a valid new email address."; return false
+        }
+        do {
+            _ = try await service.signIn(email: currentEmail, password: currentPassword)
+            try await service.updateEmail(newEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            statusMessage = "Check your new email address to confirm this change."
+            await refreshAccount()
+            return true
+        } catch { errorMessage = userFacingMessage(for: error); return false }
+    }
+
+    func changePassword(to newPassword: String, currentPassword: String) async -> Bool {
+        guard let currentEmail = account?.email, newPassword.count >= 8 else {
+            errorMessage = "Use a new password with at least 8 characters."; return false
+        }
+        do {
+            _ = try await service.signIn(email: currentEmail, password: currentPassword)
+            try await service.updatePassword(newPassword)
+            statusMessage = "Your password was updated."
+            return true
+        } catch { errorMessage = userFacingMessage(for: error); return false }
+    }
+
+    func completePasswordReset(_ newPassword: String) async -> Bool {
+        guard newPassword.count >= 8 else { errorMessage = "Password must be at least 8 characters."; return false }
+        do {
+            try await service.updatePassword(newPassword)
+            try await service.signOut(scope: .global)
+            showPasswordRecovery = false
+            statusMessage = "Password updated. Sign in again on this device."
+            resetToOnboarding()
+            presentAuthentication(.accessExistingAccount)
+            return true
+        } catch { errorMessage = userFacingMessage(for: error); return false }
+    }
+
+    func persistPendingOnboarding() async {
+        try? await pendingOnboardingCache.save(PendingOnboardingState(
+            input: draft.input,
+            stepID: draft.step.rawValue,
+            termsAccepted: termsAccepted,
+            privacyAccepted: privacyAccepted,
+            coreDataAccepted: coreDataAccepted
+        ))
+    }
+
+    func handleIncomingURL(_ url: URL) async {
+        guard let route = AuthLinkRoute.parse(url, configuration: configuration) else { return }
+        service.handleAuthURL(url)
+        if route == .passwordRecovery { showPasswordRecovery = true }
     }
 
     func deleteAccount() async {
@@ -949,14 +1270,17 @@ final class AppModel {
         productSearchResults = []; productHistory = []; productErrorMessage = nil
         clearMealEstimateState()
         morningCheckIn = nil; planAdjustmentNotice = nil; showMorningCheckIn = false
-        dataContributionStatus = nil; dataContributionErrorMessage = nil
+        showCoreDataAcknowledgment = false; coreDataAcknowledgmentError = nil
         isAuthenticated = false
+        account = nil; authFlowState = .signedOut
         draft = OnboardingDraft(); route = .onboarding
     }
 
     private func loadAuthenticatedAccount(accessToken: String) async throws {
         let cloud = try await service.fetchCloudState(accessToken: accessToken)
         isAuthenticated = true
+        authFlowState = .authenticated
+        account = try? await service.account()
         showAuthentication = false
         selectedLogDate = Calendar.current.startOfDay(for: .now)
 
@@ -979,8 +1303,8 @@ final class AppModel {
         route = .dashboard
         async let daily: Void = loadDailyLog()
         async let weights: Void = loadWeightHistory()
-        async let contribution: Void = loadDataContributionStatus()
-        _ = await (daily, weights, contribution)
+        _ = await (daily, weights)
+        await refreshCoreDataUseStatus()
         await loadMorningCheckIn(presentWhenNeeded: true)
     }
 
@@ -1025,6 +1349,9 @@ final class AppModel {
 
     private func userFacingMessage(for error: Error) -> String {
         let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("invalid login") || message.localizedCaseInsensitiveContains("invalid credentials") {
+            return "The email or password is incorrect."
+        }
         if message.localizedCaseInsensitiveContains("email rate limit") {
             return "Leafy’s shared email allowance has been reached. Supabase’s built-in mail service allows only two emails per hour, so try again later or use the most recent confirmation email."
         }
@@ -1032,6 +1359,31 @@ final class AppModel {
             return "Confirm your email using the link we sent, then try again."
         }
         return message
+    }
+
+    private func observeAuthentication() {
+        guard authObserverTask == nil else { return }
+        authObserverTask = Task { [weak self] in
+            guard let self else { return }
+            for await event in service.authEvents {
+                guard !Task.isCancelled else { return }
+                switch event {
+                case .passwordRecovery:
+                    showPasswordRecovery = true
+                    authFlowState = .passwordRecovery
+                case .signedIn, .userUpdated:
+                    isAuthenticated = true
+                    authFlowState = .authenticated
+                    account = try? await service.account()
+                case .signedOut, .userDeleted:
+                    isAuthenticated = false
+                    account = nil
+                    authFlowState = .signedOut
+                case let .initialSession(hasSession):
+                    authFlowState = hasSession ? .authenticated : .signedOut
+                }
+            }
+        }
     }
 
     private var normalizedEmail: String {
@@ -1073,14 +1425,42 @@ final class AppModel {
         )
         currentPlan = plan
         dailyPlan = plan
+        let previewWeightCount = ProcessInfo.processInfo.arguments.contains("-SixWeightReadings") ? 6 : 8
+        weightEntries = (0..<previewWeightCount).map { offset in
+            WeightEntry(
+                id: UUID(),
+                userID: userID,
+                weightKG: 84.0 + Double(offset) * 0.08,
+                recordedOn: calendar.date(byAdding: .day, value: -offset, to: today) ?? today,
+                timeZone: calendar.timeZone.identifier,
+                source: offset == previewWeightCount - 1 ? .baseline : .manual,
+                planID: plan.id,
+                createdAt: .now,
+                updatedAt: .now
+            )
+        }
+        weightNutritionContext = WeightNutritionContext(
+            available: true,
+            confirmedDayCount: 7,
+            elevatedNutrients: []
+        )
         selectedLogDate = today
         route = .dashboard
         isAuthenticated = true
         foodEntries = []
         dailyNutrition = Self.previewDailyNutrition(plan: plan)
-        morningCheckIn = MorningCheckIn(reviewDate: yesterday, entries: [breakfast, dinner], intakeDay: nil, todayWeight: nil)
+        let previewCheckInEntries = ProcessInfo.processInfo.arguments.contains("-EmptyMorningCheckIn")
+            ? []
+            : [breakfast, dinner]
+        morningCheckIn = MorningCheckIn(reviewDate: yesterday, entries: previewCheckInEntries, intakeDay: nil, todayWeight: nil)
         hasMorningCheckInReminder = true
         showMorningCheckIn = !ProcessInfo.processInfo.arguments.contains("-SkipMorningCheckIn")
+        if ProcessInfo.processInfo.arguments.contains("-PlanResultsPreview") {
+            preview = plan
+            draft.step = .results
+            route = .onboarding
+            showMorningCheckIn = false
+        }
     }
 
     private static func previewMealEstimate(sessionID: UUID, ready: Bool = false) -> MealEstimate {

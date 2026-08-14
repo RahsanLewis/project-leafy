@@ -13,6 +13,20 @@
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>NSCameraUsageDescription</key><string>Leafy uses the camera to scan products and photograph meals you choose to estimate.</string>
+    <key>NSFaceIDUsageDescription</key><string>Leafy uses Face ID when you choose to protect your nutrition and weight information.</string>
+    <key>GIDClientID</key><string>$(GOOGLE_IOS_CLIENT_ID)</string>
+    <key>GIDServerClientID</key><string>$(GOOGLE_SERVER_CLIENT_ID)</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>Leafy Auth</string>
+            <key>CFBundleURLSchemes</key><array><string>$(AUTH_URL_SCHEME)</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleURLName</key><string>Google Sign-In</string>
+            <key>CFBundleURLSchemes</key><array><string>$(GOOGLE_REVERSED_CLIENT_ID)</string></array>
+        </dict>
+    </array>
     <key>UIAppFonts</key>
     <array>
         <string>PlusJakartaSans-Regular.ttf</string>
@@ -30,5 +44,11 @@
     <key>PRIVACY_POLICY_URL</key><string>$(PRIVACY_POLICY_URL)</string>
     <key>TERMS_URL</key><string>$(TERMS_URL)</string>
     <key>SUPPORT_URL</key><string>$(SUPPORT_URL)</string>
+    <key>GOOGLE_IOS_CLIENT_ID</key><string>$(GOOGLE_IOS_CLIENT_ID)</string>
+    <key>GOOGLE_SERVER_CLIENT_ID</key><string>$(GOOGLE_SERVER_CLIENT_ID)</string>
+    <key>GOOGLE_REVERSED_CLIENT_ID</key><string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
+    <key>APP_ENVIRONMENT</key><string>$(APP_ENVIRONMENT)</string>
+    <key>AUTH_CALLBACK_URL</key><string>$(AUTH_CALLBACK_URL)</string>
+    <key>AUTH_URL_SCHEME</key><string>$(AUTH_URL_SCHEME)</string>
 </dict>
 </plist>

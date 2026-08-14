@@ -1,6 +1,6 @@
 # Leafy
 
-Leafy is a native iOS nutrition-target planner. This first vertical slice guides an eligible adult through goal setup, previews a versioned calorie/macronutrient plan, authenticates with Apple or email OTP, and saves an authoritative server-calculated revision in Supabase.
+Leafy is a native iOS nutrition and weight-management app. It guides eligible adults through goal setup, creates versioned calorie and nutrient targets, supports food and weight logging, and saves authoritative server-calculated revisions in Supabase.
 
 Leafy uses Plus Jakarta Sans under the SIL Open Font License. The bundled license is available at `Leafy/Resources/Fonts/OFL.txt`.
 
@@ -15,9 +15,9 @@ Leafy uses Plus Jakarta Sans under the SIL Open Font License. The bundled licens
 ## Local setup
 
 1. Run `xcodegen generate` to create `Leafy.xcodeproj`.
-2. Open `Config/Base.xcconfig` and replace the placeholder Supabase URL, publishable key, and hosted legal/support URLs. Never place a service-role key in the app.
-3. Create or link a Supabase project in the U.S. East region, then run `supabase db push`.
-4. Configure passwordless email OTP and the Apple provider in Supabase. Enable Sign in with Apple for the app identifier in the Apple Developer portal.
+2. Debug builds use `Config/Staging.xcconfig`; Release and TestFlight builds use `Config/Production.xcconfig`. Keep their Supabase and Google OAuth clients isolated. Shared public URLs live in `Config/Base.xcconfig`. Never place a service-role key or OAuth client secret in the app.
+3. Link the Supabase staging project before local development, then run `supabase db push`. Deploy production changes deliberately by passing its project reference.
+4. Configure email/password, Apple, and Google providers separately in both Supabase environments. Enable Sign in with Apple for the app identifier in the Apple Developer portal.
 5. Deploy the Edge Functions in `supabase/functions`. For Apple revocation during deletion, configure `APPLE_CLIENT_ID` and a generated `APPLE_CLIENT_SECRET` as function secrets.
 6. Configure `OPENAI_API_KEY` as a Supabase function secret for AI meal photo/text estimates and Ask Leafy. Set `OPENAI_MEAL_MODEL` and `OPENAI_CHAT_MODEL` to the approved model IDs. Keep all secrets server-side; never add them to an xcconfig or the iOS app.
 7. Select the Apple development team in Xcode, build, and run.
@@ -32,9 +32,11 @@ The app intentionally keeps an unsigned onboarding draft in memory. A preview is
 
 ## TestFlight checklist
 
+Deploy production backend changes before uploading the client: apply required migrations, deploy the referenced Edge Functions, then run the release validator. The validator checks production legal-acceptance storage and every Edge Function used by the Release client before Xcode archives the app.
+
 - Replace all placeholder configuration and legal URLs.
 - Supply a real 1024×1024 App Store icon.
-- Confirm Apple and email OTP sign-in using real accounts.
+- Confirm Apple, Google, and email/password sign-in using real accounts.
 - Confirm cross-user reads and direct writes are rejected by RLS.
 - Confirm plan creation, revision history, offline cache, sign out, and permanent deletion.
 - Complete App Store Connect privacy details for user ID, email, physical characteristics, and health/fitness data.

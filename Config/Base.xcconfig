@@ -1,5 +1,5 @@
-SUPABASE_URL = https:/$()/auccbmadpqowyksevygj.supabase.co
-SUPABASE_PUBLISHABLE_KEY = sb_publishable_3rle_NYxAUUOJrDeDi9FXQ_E_16Zh1_
-PRIVACY_POLICY_URL = https:/$()/rahsanlewis.github.io/leafy-legal/privacy/
-TERMS_URL = https:/$()/rahsanlewis.github.io/leafy-legal/terms/
-SUPPORT_URL = https:/$()/rahsanlewis.github.io/leafy-legal/support/
+// Values shared by every Leafy environment. Backend and OAuth identifiers live
+// in Production.xcconfig and Staging.xcconfig so test data never reaches prod.
+PRIVACY_POLICY_URL = https:/$()/projectleafy.app/privacy/
+TERMS_URL = https:/$()/projectleafy.app/terms/
+SUPPORT_URL = https:/$()/projectleafy.app/support/

@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
-import { nutritionScore, type ScoreNutrients } from '../_shared/nutrition-score.ts'
+import { calculateAndPersistPFQS, pfqsAPIResult } from '../_shared/pfqs/persistence.ts'
+import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
 
 type Body = {
   action: 'search' | 'barcode' | 'detail' | 'history' | 'log'
@@ -16,7 +17,7 @@ type Body = {
   record_history?: boolean
 }
 
-const nutrientCodes: Record<number, keyof ScoreNutrients | string> = {
+const nutrientCodes: Record<number, string> = {
   1008: 'energy_kcal', 1003: 'protein_g', 1005: 'carbohydrate_g', 1004: 'fat_g',
   1079: 'fiber_g', 2000: 'sugars_g', 1235: 'added_sugars_g', 1258: 'saturated_fat_g',
   1257: 'trans_fat_g', 1253: 'cholesterol_mg', 1093: 'sodium_mg', 1092: 'potassium_mg',
@@ -88,7 +89,7 @@ Deno.serve(async (request) => {
         local_date: body.local_date, time_zone: body.time_zone, gram_weight: grams,
         amount: grams, amount_unit: 'g', portion_description: `${format(grams)} g`,
         meal_type: body.meal_type ?? 'unspecified', entry_source: 'barcode', calorie_method: 'nutrition_database',
-        canonical_food_version_id: body.food_version_id, confidence: product.score?.confidence ?? 1,
+        canonical_food_version_id: body.food_version_id, confidence: verificationConfidence(product.verification_status),
         user_confirmed: true, provenance: { source: product.source, source_record_id: product.source_record_id, capture_version: 'ios-product-v1' },
       }).select('*').single()
       if (error) throw error
@@ -100,7 +101,7 @@ Deno.serve(async (request) => {
         amount: Number((nutrient.amount_per_100g * grams / 100).toFixed(6)),
         derivation_method: 'calculated',
         source_version: `${product.source}:${product.source_record_id}`,
-        confidence: product.score?.confidence ?? 1,
+        confidence: verificationConfidence(product.verification_status),
       }))
       if (snapshots.length) {
         const snapshotResult = await admin.from('consumption_item_nutrients').upsert(snapshots, { onConflict: 'consumption_item_id,nutrient_code' })
@@ -165,21 +166,44 @@ async function importUSDA(admin: any, fdcID: number) {
   })
   if (nutrients.length) { const result = await admin.from('food_version_nutrients').insert(nutrients); if (result.error) throw result.error }
   if (Number(food.servingSize) > 0 && food.servingSizeUnit) await admin.from('food_portions').insert({ food_version_id: version.id, amount: 1, unit: 'serving', description: food.householdServingFullText ?? 'Serving', gram_weight: food.servingSize, source: 'usda_fdc' })
-  const nutrientObject = Object.fromEntries(nutrients.map((n) => [n.nutrient_code, n.amount_per_100g])) as ScoreNutrients
-  const score = nutritionScore(nutrientObject)
-  await admin.from('food_version_scores').insert({ food_version_id: version.id, algorithm_version: score.algorithm_version, score_100: score.score, label: score.label, raw_points: score.components.raw_points ?? null, confidence: score.confidence, positive_factors: score.positive_factors, limiting_factors: score.limiting_factors, missing_fields: score.missing_fields, components: score.components })
+  const servingAmount = Number(food.servingSize)
+  const servingUnit = String(food.servingSizeUnit ?? '')
+  const labelNutrients = pfqsLabelNutrients(nutrients, servingAmount, servingUnit)
+  if (labelNutrients.length) {
+    const labelWrite = await admin.from('pfqs_label_nutrients').upsert(labelNutrients.map((item) => ({
+      food_version_id: version.id, ...item, source_method: 'source_conversion',
+      source_version: `usda_fdc:${fdcID}`, confidence: 1,
+    })), { onConflict: 'food_version_id,nutrient_code' })
+    if (labelWrite.error) throw labelWrite.error
+  }
+  await calculateAndPersistPFQS(admin, version.id, {
+    product_name: String(food.description ?? ''), jurisdiction: String(food.marketCountry ?? 'US'),
+    assessment_date: new Date().toISOString().slice(0, 10),
+    serving_size: { amount: servingAmount, unit: normalizedServingUnit(servingUnit), description: food.householdServingFullText ?? null },
+    nutrition: Object.fromEntries(labelNutrients.map((item) => [item.nutrient_code, item.amount_per_serving])) as PFQSNutrients,
+    explicitly_reported_nutrients: labelNutrients.filter((item) => item.explicitly_reported).map((item) => item.nutrient_code as PFQSNutrientCode),
+    ingredients_raw: String(food.ingredients ?? ''), verification_status: 'verified', product_type: 'food',
+  })
   return productForVersion(admin, version.id)
 }
 
 // deno-lint-ignore no-explicit-any
 async function productForVersion(admin: any, id: string) {
-  const [{ data: version, error }, { data: nutrients }, { data: portions }, { data: score }] = await Promise.all([
+  const [{ data: version, error }, { data: nutrients }, { data: portions }, { data: release }] = await Promise.all([
     admin.from('food_versions').select('*').eq('id', id).single(),
     admin.from('food_version_nutrients').select('nutrient_code, amount_per_100g').eq('food_version_id', id),
     admin.from('food_portions').select('id, amount, unit, description, gram_weight').eq('food_version_id', id),
-    admin.from('food_version_scores').select('*').eq('food_version_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    admin.from('pfqs_releases').select('model_version,ingredient_taxonomy_version,additive_database_version').eq('status', 'active').maybeSingle(),
   ])
   if (error) throw error
+  const scoreResult = release?.model_version
+    ? await admin.from('pfqs_scores').select('*').eq('food_version_id', id)
+      .eq('model_version', release.model_version)
+      .eq('ingredient_taxonomy_version', release.ingredient_taxonomy_version)
+      .eq('additive_database_version', release.additive_database_version)
+      .eq('score_status', 'complete').order('assessment_date', { ascending: false }).limit(1).maybeSingle()
+    : { data: null }
+  const score = scoreResult.data
   const values = (nutrients ?? []).map((n: Record<string, unknown>) => ({ code: String(n.nutrient_code), amount_per_100g: Number(n.amount_per_100g) }))
   return {
     id, food_version_id: id, fdc_id: version.source_system === 'usda_fdc' ? Number(version.source_record_id) : null,
@@ -188,10 +212,26 @@ async function productForVersion(admin: any, id: string) {
     calories_per_100g: values.find((n: { code: string; amount_per_100g: number }) => n.code === 'energy_kcal')?.amount_per_100g ?? null,
     ingredients: version.ingredients_text, allergens: version.allergens ?? [], image_url: version.image_url,
     verification_status: version.verification_status, nutrients: values, portions: portions ?? [],
-    score: score ? { algorithm_version: score.algorithm_version, score: score.score_100, label: score.label, confidence: Number(score.confidence), positive_factors: score.positive_factors, limiting_factors: score.limiting_factors, missing_fields: score.missing_fields } : null,
+    score: pfqsAPIResult(score),
   }
 }
 
+function normalizedServingUnit(value: string) {
+  return /^(g|gram|grams|grm)$/i.test(value) ? 'g' : /^(ml|milliliter|milliliters)$/i.test(value) ? 'mL' : value
+}
+
+function pfqsLabelNutrients(nutrients: { nutrient_code: string; amount_per_100g: number }[], servingAmount: number, servingUnit: string) {
+  const required = new Set<PFQSNutrientCode>(['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'trans_fat_g', 'protein_g'])
+  const canConvert = Number.isFinite(servingAmount) && servingAmount > 0 && /^(g|gram|grams|grm)$/i.test(servingUnit)
+  return nutrients.filter((item) => required.has(item.nutrient_code as PFQSNutrientCode)).map((item) => ({
+    nutrient_code: item.nutrient_code as PFQSNutrientCode,
+    amount_per_serving: canConvert ? Number((item.amount_per_100g * servingAmount / 100).toFixed(6)) : Number.NaN,
+    unit: item.nutrient_code === 'energy_kcal' ? 'kcal' : item.nutrient_code === 'sodium_mg' ? 'mg' : 'g',
+    explicitly_reported: canConvert,
+  })).filter((item) => Number.isFinite(item.amount_per_serving))
+}
+
 function normalizeBarcode(value: string) { const digits = String(value).replace(/\D/g, ''); return digits.length >= 8 && digits.length <= 14 ? digits : '' }
+function verificationConfidence(value: string | null) { return value === 'verified' ? 1 : value === 'community_confirmed' ? 0.95 : 0.8 }
 function deduplicate(products: Record<string, unknown>[]) { const seen = new Set<string>(); return products.filter((p) => { const key = String(p.barcode ?? p.id); if (seen.has(key)) return false; seen.add(key); return true }) }
 function format(value: number) { return Number.isInteger(value) ? String(value) : value.toFixed(1) }

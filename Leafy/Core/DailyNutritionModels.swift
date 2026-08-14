@@ -234,44 +234,6 @@ enum NutrientCatalog {
     ]
 }
 
-struct DataContributionDocument: Codable, Equatable, Sendable {
-    let title: String
-    let body: String
-    let version: Int
-}
-
-struct DataContributionGrant: Codable, Equatable, Identifiable, Sendable {
-    let id: UUID
-    let purpose: String
-    let jurisdictionCountry: String
-    let jurisdictionRegion: String?
-    let dataScopes: [String]
-    let grantedAt: Date
-    let expiresAt: Date?
-    let revokedAt: Date?
-
-    enum CodingKeys: String, CodingKey {
-        case id, purpose
-        case jurisdictionCountry = "jurisdiction_country"
-        case jurisdictionRegion = "jurisdiction_region"
-        case dataScopes = "data_scopes"
-        case grantedAt = "granted_at"
-        case expiresAt = "expires_at"
-        case revokedAt = "revoked_at"
-    }
-}
-
-struct DataContributionStatus: Codable, Equatable, Sendable {
-    let isParticipating: Bool
-    let grant: DataContributionGrant?
-    let document: DataContributionDocument?
-
-    enum CodingKeys: String, CodingKey {
-        case isParticipating = "is_participating"
-        case grant, document
-    }
-}
-
 enum IntakeDayStatus: String, Codable, Sendable {
     case pending, confirmed, incomplete, fasted
 }

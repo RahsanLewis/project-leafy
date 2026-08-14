@@ -15,17 +15,36 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Beyond Solid" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="brand-label">
-                                <rect key="frame" x="100" y="406" width="193" height="40"/>
-                                <fontDescription key="fontDescription" type="system" weight="bold" pointSize="32"/>
-                                <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                            </label>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="leafy-group">
+                                <rect key="frame" x="140.5" y="255.5" width="112" height="171"/>
+                                <subviews>
+                                    <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LeafyLogo" translatesAutoresizingMaskIntoConstraints="NO" id="leafy-logo">
+                                        <rect key="frame" x="0.0" y="0.0" width="112" height="112"/>
+                                    </imageView>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Leafy" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="leafy-label">
+                                        <rect key="frame" x="9.5" y="128" width="93" height="43"/>
+                                        <fontDescription key="fontDescription" name="PlusJakartaSans-ExtraBold" family="Plus Jakarta Sans" pointSize="36"/>
+                                        <color key="textColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                    </label>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="112" id="leafy-group-width"/>
+                                    <constraint firstAttribute="height" constant="171" id="leafy-group-height"/>
+                                    <constraint firstItem="leafy-logo" firstAttribute="top" secondItem="leafy-group" secondAttribute="top" id="leafy-logo-top"/>
+                                    <constraint firstItem="leafy-logo" firstAttribute="centerX" secondItem="leafy-group" secondAttribute="centerX" id="leafy-logo-center-x"/>
+                                    <constraint firstItem="leafy-logo" firstAttribute="width" constant="112" id="leafy-logo-width"/>
+                                    <constraint firstItem="leafy-logo" firstAttribute="height" constant="112" id="leafy-logo-height"/>
+                                    <constraint firstItem="leafy-label" firstAttribute="top" secondItem="leafy-logo" secondAttribute="bottom" constant="16" id="leafy-spacing"/>
+                                    <constraint firstItem="leafy-label" firstAttribute="centerX" secondItem="leafy-group" secondAttribute="centerX" id="leafy-label-center-x"/>
+                                    <constraint firstAttribute="bottom" secondItem="leafy-label" secondAttribute="bottom" id="leafy-label-bottom"/>
+                                </constraints>
+                            </view>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
-                        <color key="backgroundColor" red="0.025" green="0.028" blue="0.027" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <constraints>
-                            <constraint firstItem="brand-label" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="brand-center-x"/>
-                            <constraint firstItem="brand-label" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="brand-center-y"/>
+                            <constraint firstItem="leafy-group" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="leafy-group-center-x"/>
+                            <constraint firstItem="leafy-group" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" multiplier="0.8" id="leafy-group-position"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -33,4 +52,7 @@
             </objects>
         </scene>
     </scenes>
+    <resources>
+        <image name="LeafyLogo" width="1254" height="1254"/>
+    </resources>
 </document>

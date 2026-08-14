@@ -2,6 +2,37 @@ import XCTest
 @testable import Leafy
 
 final class WeightProgressTests: XCTestCase {
+    func testImperialWeightWheelKeepsWholeValueWhenDecimalChanges() {
+        var selection = WeightWheelSelection(kilograms: 184.5 / 2.2046226218)
+
+        selection.setTenth(7, unitSystem: .imperial)
+
+        XCTAssertEqual(selection.whole(in: .imperial), 184)
+        XCTAssertEqual(selection.tenth(in: .imperial), 7)
+        XCTAssertEqual(selection.displayValue(in: .imperial), 184.7, accuracy: 0.001)
+    }
+
+    func testImperialWeightWheelKeepsDecimalWhenWholeValueChanges() {
+        var selection = WeightWheelSelection(kilograms: 184.5 / 2.2046226218)
+
+        selection.setWhole(190, unitSystem: .imperial)
+
+        XCTAssertEqual(selection.whole(in: .imperial), 190)
+        XCTAssertEqual(selection.tenth(in: .imperial), 5)
+        XCTAssertEqual(selection.displayValue(in: .imperial), 190.5, accuracy: 0.001)
+    }
+
+    func testMetricWeightWheelRoundTripsTenths() {
+        var selection = WeightWheelSelection(kilograms: 83.4)
+
+        selection.setWhole(84, unitSystem: .metric)
+        selection.setTenth(6, unitSystem: .metric)
+
+        XCTAssertEqual(selection.kilograms, 84.6, accuracy: 0.001)
+        XCTAssertEqual(selection.whole(in: .metric), 84)
+        XCTAssertEqual(selection.tenth(in: .metric), 6)
+    }
+
     func testWeightChartRangesUseExpectedCalendarBoundaries() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/New_York")!
@@ -32,19 +63,10 @@ final class WeightProgressTests: XCTestCase {
     }
 
     func testTrendInsightsDescribeObservedLossAcrossSelectedRange() {
-        let entries = [
-            makeEntry(weightKG: 80.0, day: 1),
-            makeEntry(weightKG: 79.7, day: 4),
-            makeEntry(weightKG: 79.4, day: 7),
-            makeEntry(weightKG: 79.1, day: 10),
-            makeEntry(weightKG: 78.8, day: 13),
-            makeEntry(weightKG: 78.5, day: 16),
-            makeEntry(weightKG: 78.2, day: 19),
-            makeEntry(weightKG: 77.9, day: 22),
-        ]
+        let entries = (1...14).map { day in makeEntry(weightKG: 80 - Double(day - 1) * 0.1, day: day) }
         let calendar = Calendar(identifier: .gregorian)
         let periodStart = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
-        let periodEnd = calendar.date(from: DateComponents(year: 2026, month: 1, day: 22))!
+        let periodEnd = calendar.date(from: DateComponents(year: 2026, month: 1, day: 14))!
 
         let insights = WeightTrendInsights(
             entries: entries,
@@ -56,17 +78,20 @@ final class WeightProgressTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(insights.trendWeightKG!, 78.2, accuracy: 0.001)
-        XCTAssertEqual(insights.periodChangeKG!, -2.1, accuracy: 0.001)
+        XCTAssertEqual(insights.trendWeightKG!, 79.0, accuracy: 0.001)
+        XCTAssertEqual(insights.previousTrendWeightKG!, 79.7, accuracy: 0.001)
+        XCTAssertEqual(insights.periodChangeKG!, -0.7, accuracy: 0.001)
         XCTAssertEqual(insights.weeklyPaceKG!, -0.7, accuracy: 0.001)
         XCTAssertEqual(insights.paceComparison, .onPace)
-        XCTAssertEqual(insights.weighInDayCount, 8)
-        XCTAssertEqual(insights.periodDayCount, 22)
-        XCTAssertEqual(insights.consistency!, 8.0 / 22.0, accuracy: 0.001)
+        XCTAssertEqual(insights.currentWindowCount, 7)
+        XCTAssertEqual(insights.previousWindowCount, 7)
+        XCTAssertEqual(insights.weighInDayCount, 14)
+        XCTAssertEqual(insights.periodDayCount, 14)
+        XCTAssertEqual(insights.consistency!, 1, accuracy: 0.001)
         guard case let .date(forecast) = insights.goalForecast else {
             return XCTFail("Expected an observed goal forecast")
         }
-        XCTAssertEqual(forecast, calendar.date(from: DateComponents(year: 2026, month: 1, day: 31)))
+        XCTAssertEqual(forecast, calendar.date(from: DateComponents(year: 2026, month: 2, day: 3)))
     }
 
     func testTrendInsightsStayInLearningStateWithSparseData() {
@@ -86,6 +111,86 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertNil(insights.weeklyPaceKG)
         XCTAssertEqual(insights.paceComparison, .learning)
         XCTAssertEqual(insights.goalForecast, .learning)
+        XCTAssertFalse(insights.hasTrend)
+        XCTAssertNil(insights.trendWeightKG)
+        XCTAssertTrue(insights.trendPoints.isEmpty)
+    }
+
+    func testTrendUnlocksAtSevenDistinctDailyReadings() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = (1...7).map { day in makeEntry(weightKG: 80 - Double(day - 1), day: day) }
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil,
+            periodEnd: calendar.date(from: DateComponents(year: 2026, month: 1, day: 7))!,
+            targetKG: 75, goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertTrue(insights.hasTrend)
+        XCTAssertEqual(insights.distinctReadingCount, 7)
+        XCTAssertEqual(insights.trendWeightKG!, 77, accuracy: 0.001)
+        XCTAssertEqual(insights.trendPoints.count, 1)
+        XCTAssertEqual(insights.trendPoints[0].sampleCount, 7)
+    }
+
+    func testEightReadingsProduceTwoRollingSevenReadingTrendPoints() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = (1...8).map { day in makeEntry(weightKG: Double(day), day: day) }
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil,
+            periodEnd: calendar.date(from: DateComponents(year: 2026, month: 1, day: 8))!,
+            targetKG: 10, goal: .gain, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertEqual(insights.trendPoints.map(\.averageKG), [4, 5])
+        XCTAssertLessThan(insights.trendPoints[0].date, insights.trendPoints[1].date)
+    }
+
+    func testTrendCountsDistinctReadingDaysAndAllowsGaps() {
+        let calendar = Calendar(identifier: .gregorian)
+        var entries = [1, 3, 5, 8, 13, 21, 34].map { day in
+            makeEntry(weightKG: 80, day: day)
+        }
+        entries.append(makeEntry(weightKG: 99, day: 34))
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil,
+            periodEnd: calendar.date(from: DateComponents(year: 2026, month: 2, day: 3))!,
+            targetKG: 75, goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertTrue(insights.hasTrend)
+        XCTAssertEqual(insights.distinctReadingCount, 7)
+        XCTAssertEqual(insights.trendPoints.count, 1)
+    }
+
+    func testWeeklyAveragesRequireFourDistinctDaysInEachWindow() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = [1, 3, 5, 8, 10, 12, 14].map { day in makeEntry(weightKG: 80, day: day) }
+        let end = calendar.date(from: DateComponents(year: 2026, month: 1, day: 14))!
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil, periodEnd: end, targetKG: 75,
+            goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertEqual(insights.currentWindowCount, 4)
+        XCTAssertEqual(insights.previousWindowCount, 3)
+        XCTAssertNil(insights.weeklyPaceKG)
+        XCTAssertEqual(insights.paceComparison, .learning)
+    }
+
+    func testSingleSpikeDoesNotBecomeWeeklyProgressSignal() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = (1...14).map { day in
+            makeEntry(weightKG: day == 14 ? 84 : 80, day: day)
+        }
+        let end = calendar.date(from: DateComponents(year: 2026, month: 1, day: 14))!
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil, periodEnd: end, targetKG: 75,
+            goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertEqual(insights.weeklyPaceKG!, 4.0 / 7.0, accuracy: 0.001)
+        XCTAssertLessThan(insights.weeklyPaceKG!, 1)
+        XCTAssertEqual(insights.trendWeightKG!, 80 + 4.0 / 7.0, accuracy: 0.001)
     }
 
     func testLossProgressUsesStartingLatestAndTargetWeights() {
@@ -117,7 +222,7 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertEqual(progress.changeFromPreviousKG, -1)
     }
 
-    func testImperialChartScaleIncludesRecordedAndTargetWeightsWithPadding() {
+    func testImperialChartScalePrioritizesRecordedRangeOverDistantTarget() {
         let scale = WeightChartScale(
             weightsKG: [184 / 2.20462, 183 / 2.20462],
             targetKG: 141 / 2.20462,
@@ -125,9 +230,9 @@ final class WeightProgressTests: XCTestCase {
             unitSystem: .imperial
         )
 
-        XCTAssertEqual(scale.domain.lowerBound, 136.7, accuracy: 0.01)
-        XCTAssertEqual(scale.domain.upperBound, 188.3, accuracy: 0.01)
-        XCTAssertTrue(scale.domain.contains(141))
+        XCTAssertEqual(scale.domain.lowerBound, 178.5, accuracy: 0.01)
+        XCTAssertEqual(scale.domain.upperBound, 188.5, accuracy: 0.01)
+        XCTAssertFalse(scale.domain.contains(141))
         XCTAssertTrue(scale.domain.contains(184))
     }
 
@@ -166,6 +271,103 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertFalse(scale.domain.contains(60))
         XCTAssertEqual(scale.domain.lowerBound, 78, accuracy: 0.01)
         XCTAssertEqual(scale.domain.upperBound, 83, accuracy: 0.01)
+    }
+
+    func testTotalProgressUsesStartingWeightAndEstablishedTrend() {
+        XCTAssertNil(
+            WeightInsightMetrics.totalProgressKG(
+                startingKG: 90,
+                trendWeightKG: 86.5,
+                currentSampleCount: 4
+            )
+        )
+        XCTAssertNil(
+            WeightInsightMetrics.totalProgressKG(
+                startingKG: 70,
+                trendWeightKG: 72,
+                currentSampleCount: 6
+            )
+        )
+        XCTAssertEqual(
+            WeightInsightMetrics.totalProgressKG(
+                startingKG: 80,
+                trendWeightKG: 80,
+                currentSampleCount: 7
+            ),
+            0
+        )
+    }
+
+    func testTotalProgressWaitsForEstablishedTrend() {
+        XCTAssertNil(
+            WeightInsightMetrics.totalProgressKG(
+                startingKG: 90,
+                trendWeightKG: 89,
+                currentSampleCount: 3
+            )
+        )
+    }
+
+    func testTypicalFluctuationFormattingSupportsBothUnitSystems() {
+        XCTAssertEqual(
+            WeightInsightMetrics.fluctuationRangeLabel(
+                offsetsKG: -0.4...0.5,
+                unitSystem: .metric
+            ),
+            "−0.4 to +0.5 kg"
+        )
+        XCTAssertEqual(
+            WeightInsightMetrics.fluctuationRangeLabel(
+                offsetsKG: -0.4...0.5,
+                unitSystem: .imperial
+            ),
+            "−0.9 to +1.1 lb"
+        )
+        XCTAssertEqual(
+            WeightInsightMetrics.fluctuationRangeLabel(
+                offsetsKG: nil,
+                unitSystem: .imperial
+            ),
+            "Learning"
+        )
+    }
+
+    func testActualWeightInsightsUseChronologicalReadings() {
+        let entries = [
+            makeEntry(weightKG: 79, day: 3),
+            makeEntry(weightKG: 80, day: 1),
+            makeEntry(weightKG: 79.5, day: 2),
+        ]
+
+        XCTAssertEqual(WeightInsightMetrics.actualTotalChangeKG(entries: entries), -1)
+        XCTAssertEqual(WeightInsightMetrics.actualLatestChangeKG(entries: entries), -0.5)
+        XCTAssertEqual(WeightInsightMetrics.actualRangeChangeKG(entries: Array(entries.prefix(2))), -1)
+    }
+
+    func testActualWeightInsightsRequireEnoughReadings() {
+        let entry = makeEntry(weightKG: 80, day: 1)
+
+        XCTAssertNil(WeightInsightMetrics.actualTotalChangeKG(entries: [entry]))
+        XCTAssertNil(WeightInsightMetrics.actualLatestChangeKG(entries: [entry]))
+        XCTAssertNil(WeightInsightMetrics.actualRangeChangeKG(entries: [entry]))
+    }
+
+    func testActualDifferenceFromTrendRequiresEstablishedTrend() {
+        XCTAssertNil(
+            WeightInsightMetrics.actualDifferenceFromTrendKG(
+                actualKG: 80.5,
+                trendKG: 80,
+                currentSampleCount: 6
+            )
+        )
+        XCTAssertEqual(
+            WeightInsightMetrics.actualDifferenceFromTrendKG(
+                actualKG: 80.5,
+                trendKG: 80,
+                currentSampleCount: 7
+            ),
+            0.5
+        )
     }
 
     func testWeightMovementFollowsGoalDirection() {

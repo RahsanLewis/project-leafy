@@ -55,7 +55,11 @@ actor PlanService {
 
     func createAccount(email: String, password: String) async throws -> Bool {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
-        let response = try await supabase.auth.signUp(email: email, password: password)
+        let response = try await supabase.auth.signUp(
+            email: email,
+            password: password,
+            redirectTo: configuration.authCallbackURL.appending(path: "confirm")
+        )
         if case let .session(session) = response {
             activeAccessToken = session.accessToken
             return false
@@ -84,14 +88,116 @@ actor PlanService {
         return session.accessToken
     }
 
-    func signOut() async throws {
-        defer { activeAccessToken = nil }
-        try await supabase.auth.signOut()
+    func signInWithGoogle(identityToken: String, nonce: String? = nil) async throws -> String {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        let session = try await supabase.auth.signInWithIdToken(
+            credentials: OpenIDConnectCredentials(provider: .google, idToken: identityToken, nonce: nonce)
+        )
+        activeAccessToken = session.accessToken
+        return session.accessToken
     }
 
-    func savePlan(_ input: NutritionPlanInput, accessToken: String? = nil) async throws -> NutritionPlan {
-        let data = try encoder.encode(input)
+    nonisolated func handleAuthURL(_ url: URL) {
+        supabase.auth.handle(url)
+    }
+
+    nonisolated var authEvents: AsyncStream<LeafyAuthEvent> {
+        let source = supabase.auth.authStateChanges
+        return AsyncStream { continuation in
+            let task = Task {
+                for await change in source {
+                    let event: LeafyAuthEvent? = switch change.event {
+                    case .initialSession: .initialSession(change.session != nil)
+                    case .signedIn: .signedIn
+                    case .signedOut: .signedOut
+                    case .passwordRecovery: .passwordRecovery
+                    case .userUpdated: .userUpdated
+                    case .userDeleted: .userDeleted
+                    default: nil
+                    }
+                    if let event { continuation.yield(event) }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    func requestPasswordReset(email: String) async throws {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        try await supabase.auth.resetPasswordForEmail(
+            email,
+            redirectTo: configuration.authCallbackURL.appending(path: "reset")
+        )
+    }
+
+    func updatePassword(_ password: String) async throws {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        _ = try await supabase.auth.update(user: UserAttributes(password: password))
+    }
+
+    func updateEmail(_ email: String) async throws {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        _ = try await supabase.auth.update(
+            user: UserAttributes(email: email),
+            redirectTo: configuration.authCallbackURL.appending(path: "email-change")
+        )
+    }
+
+    func account() async throws -> LeafyAccount {
+        guard configuration.isConfigured else { throw ServiceError.notConfigured }
+        let user = try await supabase.auth.user()
+        let identities = (user.identities ?? []).map {
+            AccountIdentity(id: $0.identityId.uuidString, provider: $0.provider, email: user.email)
+        }
+        return LeafyAccount(
+            userID: user.id,
+            email: user.email,
+            emailConfirmed: user.emailConfirmedAt != nil,
+            identities: identities
+        )
+    }
+
+    func signOut(scope: SignOutScope) async throws {
+        defer { if scope != .others { activeAccessToken = nil } }
+        try await supabase.auth.signOut(scope: scope)
+    }
+
+    func signOut() async throws {
+        try await signOut(scope: .local)
+    }
+
+    func savePlan(_ input: NutritionPlanInput, accessToken: String? = nil, recordLegalAcceptance: Bool = false) async throws -> NutritionPlan {
+        let inputData = try encoder.encode(input)
+        var payload = (try JSONSerialization.jsonObject(with: inputData) as? [String: Any]) ?? [:]
+        if recordLegalAcceptance {
+            payload = [
+                "plan_input": payload,
+                "legal_acceptances": [
+                    "terms_version": AccountLegalDocument.termsVersion,
+                    "privacy_version": AccountLegalDocument.privacyVersion,
+                    "core_data_use_version": AccountLegalDocument.coreDataUseVersion,
+                    "locale": Locale.current.identifier,
+                    "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+                ]
+            ]
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload)
         return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
+    }
+
+    func coreDataUseStatus(version: Int) async throws -> CoreDataUseStatus {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "status", "version": version])
+        return try await request(function: "manage-legal-acceptance", body: body, response: CoreDataUseStatus.self)
+    }
+
+    func acceptCoreDataUse(version: Int) async throws -> CoreDataUseStatus {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "accept", "version": version,
+            "locale": Locale.current.identifier,
+            "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        ])
+        return try await request(function: "manage-legal-acceptance", body: body, response: CoreDataUseStatus.self)
     }
 
     func fetchCloudState(accessToken suppliedToken: String? = nil) async throws -> (NutritionPlan, NutritionPlanInput)? {
@@ -157,6 +263,13 @@ actor PlanService {
         return try decoder.decode([WeightEntry].self, from: data)
     }
 
+    func fetchWeightNutritionContext(anchor: Date = .now, calendar: Calendar = .current) async throws -> WeightNutritionContext {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "anchor_date": Self.localDayString(for: anchor, calendar: calendar)
+        ])
+        return try await request(function: "weight-fluctuation-context", body: body, response: WeightNutritionContext.self)
+    }
+
     func fetchIntakeDay(on date: Date, calendar: Calendar = .current) async throws -> DailyIntakeDay? {
         let token = try await resolvedAccessToken()
         let localDate = Self.localDayString(for: date, calendar: calendar)
@@ -214,7 +327,7 @@ actor PlanService {
     func saveWeightEntry(id: UUID?, weightKG: Double, recordedOn: Date, calendar: Calendar = .current) async throws -> WeightMutationResponse {
         let body = try JSONSerialization.data(withJSONObject: [
             "action": "upsert",
-            "id": id?.uuidString as Any,
+            "id": id?.uuidString.lowercased() as Any,
             "weight_kg": weightKG,
             "recorded_on": Self.localDayString(for: recordedOn, calendar: calendar),
             "time_zone": calendar.timeZone.identifier
@@ -223,7 +336,7 @@ actor PlanService {
     }
 
     func deleteWeightEntry(id: UUID) async throws -> WeightMutationResponse {
-        let body = try JSONSerialization.data(withJSONObject: ["action": "delete", "id": id.uuidString])
+        let body = try JSONSerialization.data(withJSONObject: ["action": "delete", "id": id.uuidString.lowercased()])
         return try await request(function: "manage-weight-entry", body: body, response: WeightMutationResponse.self)
     }
 
@@ -231,26 +344,6 @@ actor PlanService {
         let body = try foodEntryBody(input, localDate: localDate, calendar: calendar, action: "create", id: nil)
         let result: FoodEntryResponse = try await request(function: "manage-food-entry", body: body, response: FoodEntryResponse.self)
         return result.entry
-    }
-
-    func fetchDataContributionStatus() async throws -> DataContributionStatus {
-        let body = try JSONSerialization.data(withJSONObject: ["action": "status"])
-        return try await request(function: "manage-data-contribution", body: body, response: DataContributionStatus.self)
-    }
-
-    func joinDataContribution(countryCode: String, regionCode: String?) async throws -> DataContributionStatus {
-        var object: [String: Any] = [
-            "action": "join",
-            "jurisdiction_country": countryCode,
-        ]
-        if let regionCode { object["jurisdiction_region"] = regionCode }
-        let body = try JSONSerialization.data(withJSONObject: object)
-        return try await request(function: "manage-data-contribution", body: body, response: DataContributionStatus.self)
-    }
-
-    func leaveDataContribution() async throws -> DataContributionStatus {
-        let body = try JSONSerialization.data(withJSONObject: ["action": "leave"])
-        return try await request(function: "manage-data-contribution", body: body, response: DataContributionStatus.self)
     }
 
     func updateFoodEntry(id: UUID, input: FoodEntryInput, on localDate: Date, calendar: Calendar = .current) async throws -> FoodEntry {
@@ -311,6 +404,83 @@ actor PlanService {
         let body = try JSONSerialization.data(withJSONObject: ["action": "history"])
         let result: ProductListResponse = try await request(function: "discover-food-product", body: body, response: ProductListResponse.self)
         return result.products
+    }
+
+    func startCatalogContribution(barcode: String, marketCountry: String = "US") async throws -> CatalogContributionStartResponse {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "start", "barcode": barcode, "market_country": marketCountry,
+        ])
+        return try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionStartResponse.self)
+    }
+
+    func fetchCatalogContributions() async throws -> [CatalogContribution] {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "list"])
+        let result: CatalogContributionListResponse = try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionListResponse.self)
+        return result.contributions
+    }
+
+    func fetchCatalogContribution(id: UUID) async throws -> CatalogContribution {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "detail", "contribution_id": id.uuidString.lowercased()])
+        let result: CatalogContributionEnvelope = try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionEnvelope.self)
+        return result.contribution
+    }
+
+    func uploadCatalogLabelPhoto(_ data: Data, contributionID: UUID, assetKind: String) async throws -> CatalogContribution {
+        guard data.count <= 8 * 1024 * 1024 else { throw ServiceError.invalidResponse(413, "Choose a label photo smaller than 8 MB.") }
+        guard let userID = await currentUserID() else { throw ServiceError.notAuthenticated }
+        let token = try await resolvedAccessToken()
+        let path = "\(userID.uuidString.lowercased())/catalog-contributions/\(contributionID.uuidString.lowercased())/\(assetKind)-\(UUID().uuidString.lowercased()).jpg"
+        guard let url = URL(string: "\(configuration.supabaseURL.absoluteString)/storage/v1/object/nutrition-media/\(path)") else { throw ServiceError.notConfigured }
+        var upload = URLRequest(url: url)
+        upload.httpMethod = "POST"; upload.httpBody = data
+        upload.setValue(configuration.supabaseKey, forHTTPHeaderField: "apikey")
+        upload.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        upload.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        upload.setValue("true", forHTTPHeaderField: "x-upsert")
+        let (responseData, response) = try await URLSession.shared.data(for: upload)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw ServiceError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0, Self.apiErrorMessage(from: responseData))
+        }
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "register_asset", "contribution_id": contributionID.uuidString.lowercased(),
+            "asset_kind": assetKind, "object_path": path,
+        ])
+        let result: CatalogContributionEnvelope = try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionEnvelope.self)
+        return result.contribution
+    }
+
+    func extractCatalogContribution(id: UUID) async throws -> CatalogContribution {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "extract", "contribution_id": id.uuidString.lowercased()])
+        let result: CatalogContributionEnvelope = try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionEnvelope.self)
+        return result.contribution
+    }
+
+    func submitCatalogContribution(id: UUID, fields: CatalogContributionFields, nutrients: [CatalogContributionNutrient]) async throws -> CatalogContributionSubmitResponse {
+        let fieldData = try JSONEncoder().encode(fields)
+        let nutrientData = try JSONEncoder().encode(nutrients)
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "submit", "contribution_id": id.uuidString.lowercased(), "consent_version": 1,
+            "confirmed_fields": try JSONSerialization.jsonObject(with: fieldData),
+            "nutrients": try JSONSerialization.jsonObject(with: nutrientData),
+        ])
+        return try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionSubmitResponse.self)
+    }
+
+    func deleteCatalogContribution(id: UUID) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "delete_draft", "contribution_id": id.uuidString.lowercased()])
+        struct Result: Codable { let ok: Bool }
+        _ = try await request(function: "manage-catalog-contribution", body: body, response: Result.self)
+    }
+
+    func logCatalogContribution(_ contribution: CatalogContribution, grams: Double, consumedAt: Date, localDate: Date, mealType: MealType, calendar: Calendar = .current) async throws -> FoodEntry {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "log", "contribution_id": contribution.id.uuidString.lowercased(), "grams": grams,
+            "consumed_at": ISO8601DateFormatter().string(from: consumedAt),
+            "local_date": Self.localDayString(for: localDate, calendar: calendar),
+            "time_zone": calendar.timeZone.identifier, "meal_type": mealType.rawValue,
+        ])
+        let result: ProductLogResponse = try await request(function: "manage-catalog-contribution", body: body, response: ProductLogResponse.self)
+        return result.entry
     }
 
     func logProduct(_ product: ProductDetail, grams: Double, consumedAt: Date, localDate: Date, mealType: MealType, calendar: Calendar = .current) async throws -> FoodEntry {
@@ -383,6 +553,35 @@ actor PlanService {
             "action": "confirm", "session_id": sessionID.uuidString.lowercased(), "items": encodedItems,
         ])
         let result: MealConfirmationResponse = try await request(function: "estimate-meal", body: body, response: MealConfirmationResponse.self)
+        return result.entries
+    }
+
+    func confirmChatMealEstimate(
+        sessionID: UUID,
+        items: [ChatMealConfirmationItem],
+        consumedAt: Date,
+        calendar: Calendar = .current
+    ) async throws -> [FoodEntry] {
+        let encodedItems = items.map { item in
+            [
+                "client_item_id": item.clientItemID.uuidString.lowercased(),
+                "prediction_id": item.predictionID?.uuidString.lowercased() ?? NSNull(),
+                "name": item.name, "portion": item.portion, "calories": item.calories,
+                "origin": item.origin.rawValue,
+                "nutrients": item.nutrients.map { ["code": $0.code, "amount": $0.amount] },
+            ] as [String: Any]
+        }
+        let payload: [String: Any] = [
+            "action": "confirm", "session_id": sessionID.uuidString.lowercased(),
+            "items": encodedItems,
+            "consumed_at": ISO8601DateFormatter().string(from: consumedAt),
+            "local_date": Self.localDayString(for: consumedAt, calendar: calendar),
+            "time_zone": calendar.timeZone.identifier,
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let result: MealConfirmationResponse = try await request(
+            function: "estimate-meal", body: body, response: MealConfirmationResponse.self
+        )
         return result.entries
     }
 

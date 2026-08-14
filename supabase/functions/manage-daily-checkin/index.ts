@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { adaptiveCandidate, adaptiveModelVersion, isPlausible, type DatedWeight } from '../_shared/adaptive-energy.ts'
+import { adaptiveCandidate, adaptiveModelVersion, isPlausible, rollingWeeklyTrend, type DatedWeight } from '../_shared/adaptive-energy.ts'
 import { type Input } from '../_shared/calculator.ts'
 import { cors, json } from '../_shared/http.ts'
 
@@ -76,6 +76,7 @@ async function refreshAdaptiveTarget(admin: any, userID: string, timeZone: strin
 
   const confirmed = (days ?? []).filter((day: any) => day.status === 'confirmed' || day.status === 'fasted')
   const weightRows = (weights ?? []).map((weight: any) => ({ recorded_on: weight.recorded_on, weight_kg: Number(weight.weight_kg) })) as DatedWeight[]
+  const rollingTrend = rollingWeeklyTrend(weightRows)
   const latestManual = (plans ?? []).find((plan: any) => (plan.source ?? 'formula') === 'formula')
   const latestAdaptive = (plans ?? []).find((plan: any) => plan.source === 'adaptive')
   let outcome = 'eligible'
@@ -83,6 +84,8 @@ async function refreshAdaptiveTarget(admin: any, userID: string, timeZone: strin
 
   if (confirmed.length < 24 || weightRows.length < 18) {
     outcome = 'learning'; reason = `Learning: ${confirmed.length}/24 confirmed days and ${weightRows.length}/18 weigh-ins.`
+  } else if (rollingTrend.weeklyChange == null) {
+    outcome = 'learning'; reason = `Learning: rolling weeks contain ${rollingTrend.currentCount}/4 and ${rollingTrend.previousCount}/4 weigh-ins.`
   } else if (latestManual && daysBetween(latestManual.created_at.slice(0, 10), windowEnd) < 28) {
     outcome = 'learning'; reason = 'The current manual plan is less than 28 days old.'
   } else if (latestAdaptive && daysBetween(latestAdaptive.created_at.slice(0, 10), windowEnd) < 7) {
@@ -93,7 +96,7 @@ async function refreshAdaptiveTarget(admin: any, userID: string, timeZone: strin
     birth_date: profile.birth_date,
     calculation_sex: profile.calculation_sex,
     height_cm: Number(profile.height_cm),
-    current_weight_kg: Number(profile.current_weight_kg),
+    current_weight_kg: rollingTrend.currentAverage ?? Number(profile.current_weight_kg),
     target_weight_kg: profile.target_weight_kg == null ? null : Number(profile.target_weight_kg),
     activity_level: profile.activity_level,
     goal: profile.goal,
@@ -101,10 +104,10 @@ async function refreshAdaptiveTarget(admin: any, userID: string, timeZone: strin
     unit_system: profile.unit_system,
   }
   const calories = confirmed.map((day: any) => Number(day.confirmed_calories))
-  const candidate = calories.length && weightRows.length > 1
+  const candidate = calories.length && rollingTrend.weeklyChange != null
     ? adaptiveCandidate(input, Number(currentPlan.calorie_target_kcal), Number(currentPlan.bmr_kcal), calories, weightRows, new Date())
     : null
-  if (outcome === 'eligible' && candidate && !isPlausible(candidate, Number(currentPlan.bmr_kcal), weightRows.at(-1)?.weight_kg ?? input.current_weight_kg)) {
+  if (outcome === 'eligible' && candidate && !isPlausible(candidate, Number(currentPlan.bmr_kcal), rollingTrend.currentAverage ?? input.current_weight_kg)) {
     outcome = 'rejected'; reason = 'The observed trend is outside the model safety range.'
   }
   if (outcome === 'eligible' && candidate && Math.abs(candidate.target - Number(currentPlan.calorie_target_kcal)) < 50) {

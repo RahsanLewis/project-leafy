@@ -28,6 +28,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
 enum LeafyTheme {
     static let green = Color(red: 0.13, green: 0.43, blue: 0.29)
+    static let greenPressed = Color(red: 0.10, green: 0.35, blue: 0.23)
     static let mint = adaptiveColor(
         light: UIColor(red: 0.91, green: 0.97, blue: 0.92, alpha: 1),
         dark: UIColor(red: 0.08, green: 0.19, blue: 0.13, alpha: 1)
@@ -48,9 +49,16 @@ enum LeafyTheme {
         light: .white,
         dark: UIColor(white: 0.14, alpha: 1)
     )
-    static let hairline = Color.primary.opacity(0.10)
+    static let track = adaptiveColor(
+        light: UIColor(white: 0.91, alpha: 1),
+        dark: UIColor(white: 0.18, alpha: 1)
+    )
+    static let hairline = Color.primary.opacity(0.09)
+    static let warning = Color.orange
+    static let danger = Color.red
     static let pageInset: CGFloat = 20
     static let rowMinHeight: CGFloat = 60
+    static let minimumTouchTarget: CGFloat = 44
 
     private static func adaptiveColor(light: UIColor, dark: UIColor) -> Color {
         Color(uiColor: UIColor { traits in
@@ -98,6 +106,19 @@ enum LeafySpacing {
     static let medium: CGFloat = 16
     static let large: CGFloat = 24
     static let xLarge: CGFloat = 32
+    static let xxLarge: CGFloat = 48
+}
+
+enum LeafyRadius {
+    static let control: CGFloat = 14
+    static let prominent: CGFloat = 20
+}
+
+enum LeafyMotion {
+    static let press = Animation.easeOut(duration: 0.14)
+    static let state = Animation.easeInOut(duration: 0.22)
+    static let content = Animation.easeInOut(duration: 0.28)
+    static let directManipulation = Animation.spring(duration: 0.36, bounce: 0.06)
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
@@ -107,7 +128,9 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .foregroundStyle(.white)
-            .background(LeafyTheme.green.opacity(configuration.isPressed ? 0.75 : 1), in: .rect(cornerRadius: 16))
+            .background(configuration.isPressed ? LeafyTheme.greenPressed : LeafyTheme.green, in: .rect(cornerRadius: LeafyRadius.control))
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(LeafyMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -118,8 +141,9 @@ struct SecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .foregroundStyle(LeafyTheme.green.opacity(configuration.isPressed ? 0.7 : 1))
-            .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(LeafyTheme.green.opacity(0.35), lineWidth: 1.5))
+            .background(LeafyTheme.surface, in: .rect(cornerRadius: LeafyRadius.control))
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(LeafyMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -168,20 +192,13 @@ private struct LeafyBorderlessRowsModifier: ViewModifier {
 }
 
 private struct LeafyDetachedBottomControlModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, LeafyTheme.pageInset)
             .padding(.top, LeafySpacing.small)
             .padding(.bottom, LeafySpacing.medium)
-            .compositingGroup()
-            .shadow(
-                color: .black.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                radius: 12,
-                x: 0,
-                y: 5
-            )
+            .frame(maxWidth: .infinity)
+            .background(LeafyTheme.canvas)
     }
 }
 

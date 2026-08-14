@@ -48,6 +48,18 @@ struct WeightMutationResponse: Codable, Sendable {
     }
 }
 
+struct WeightNutritionContext: Codable, Equatable, Sendable {
+    let available: Bool
+    let confirmedDayCount: Int
+    let elevatedNutrients: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case available
+        case confirmedDayCount = "confirmed_day_count"
+        case elevatedNutrients = "elevated_nutrients"
+    }
+}
+
 struct WeightProgress: Equatable, Sendable {
     let latestKG: Double?
     let previousKG: Double?
@@ -123,8 +135,23 @@ enum WeightGoalForecast: Equatable, Sendable {
     case learning, ongoing, notTrendingTowardGoal, date(Date)
 }
 
+struct WeightTrendPoint: Equatable, Identifiable, Sendable {
+    let date: Date
+    let averageKG: Double
+    let sampleCount: Int
+
+    var id: Date { date }
+}
+
+enum WeightFluctuationStatus: Equatable, Sendable {
+    case learning
+    case withinRecentRange
+    case outsideRecentRange
+}
+
 struct WeightTrendInsights: Equatable, Sendable {
     let trendWeightKG: Double?
+    let previousTrendWeightKG: Double?
     let periodChangeKG: Double?
     let weeklyPaceKG: Double?
     let paceComparison: WeightPaceComparison
@@ -132,6 +159,18 @@ struct WeightTrendInsights: Equatable, Sendable {
     let weighInDayCount: Int
     let periodDayCount: Int
     let goalForecast: WeightGoalForecast
+    let currentWindowCount: Int
+    let previousWindowCount: Int
+    let trendPoints: [WeightTrendPoint]
+    let latestDeviationKG: Double?
+    let fluctuationStatus: WeightFluctuationStatus
+    let fluctuationOffsetsKG: ClosedRange<Double>?
+    let distinctReadingCount: Int
+
+    static let minimumWeeklySamples = 4
+    static let minimumTrendReadings = 7
+
+    var hasTrend: Bool { distinctReadingCount >= Self.minimumTrendReadings }
 
     init(
         entries: [WeightEntry],
@@ -144,21 +183,79 @@ struct WeightTrendInsights: Equatable, Sendable {
     ) {
         let dailyEntries = Self.dailyEntries(entries, calendar: calendar)
         let ordered = dailyEntries.sorted { $0.recordedOn < $1.recordedOn }
-        let earliest = ordered.first
+        distinctReadingCount = ordered.count
         let latest = ordered.last
+        let anchor = calendar.startOfDay(for: latest?.recordedOn ?? periodEnd)
+        let currentStart = calendar.date(byAdding: .day, value: -6, to: anchor) ?? anchor
+        let previousEnd = calendar.date(byAdding: .day, value: -7, to: anchor) ?? anchor
+        let previousStart = calendar.date(byAdding: .day, value: -13, to: anchor) ?? previousEnd
+        let currentEntries = ordered.filter { $0.recordedOn >= currentStart && $0.recordedOn <= anchor }
+        let previousEntries = ordered.filter { $0.recordedOn >= previousStart && $0.recordedOn <= previousEnd }
+        currentWindowCount = currentEntries.count
+        previousWindowCount = previousEntries.count
+        let currentWeeklyAverageKG = Self.average(currentEntries)
+        let rollingTrendEntries = Array(ordered.suffix(Self.minimumTrendReadings))
+        let currentTrendWeightKG = ordered.count >= Self.minimumTrendReadings
+            ? Self.average(rollingTrendEntries)
+            : nil
+        let priorTrendWeightKG = Self.average(previousEntries)
+        trendWeightKG = currentTrendWeightKG
+        previousTrendWeightKG = priorTrendWeightKG
 
-        if let latest {
-            let trendStart = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: latest.recordedOn)) ?? .distantPast
-            let trendEntries = ordered.filter { $0.recordedOn >= trendStart && $0.recordedOn <= latest.recordedOn }
-            trendWeightKG = trendEntries.map(\.weightKG).reduce(0, +) / Double(trendEntries.count)
+        if currentEntries.count >= Self.minimumWeeklySamples,
+           previousEntries.count >= Self.minimumWeeklySamples,
+           let current = currentWeeklyAverageKG,
+           let previous = priorTrendWeightKG {
+            weeklyPaceKG = current - previous
+            periodChangeKG = current - previous
         } else {
-            trendWeightKG = nil
+            weeklyPaceKG = nil
+            periodChangeKG = nil
         }
 
-        periodChangeKG = earliest.flatMap { first in latest.map { $0.weightKG - first.weightKG } }
-        weighInDayCount = ordered.count
+        trendPoints = ordered.indices.compactMap { index in
+            guard index + 1 >= Self.minimumTrendReadings else { return nil }
+            let window = Array(ordered[(index + 1 - Self.minimumTrendReadings)...index])
+            guard let average = Self.average(window) else { return nil }
+            return WeightTrendPoint(
+                date: calendar.startOfDay(for: ordered[index].recordedOn),
+                averageKG: average,
+                sampleCount: window.count
+            )
+        }
 
-        let effectiveStart = periodStart ?? earliest?.recordedOn
+        let residualCutoff = calendar.date(byAdding: .day, value: -27, to: anchor) ?? .distantPast
+        let recentEntries = ordered.filter { $0.recordedOn >= residualCutoff && $0.recordedOn <= anchor }
+        let recentIDs = Set(recentEntries.map(\.id))
+        let trendsByDate = Dictionary(uniqueKeysWithValues: trendPoints.map { ($0.date, $0.averageKG) })
+        let residuals = ordered
+            .filter { recentIDs.contains($0.id) }
+            .compactMap { entry in
+                trendsByDate[calendar.startOfDay(for: entry.recordedOn)].map { entry.weightKG - $0 }
+            }
+            .sorted()
+        latestDeviationKG = latest.flatMap { latest in currentTrendWeightKG.map { latest.weightKG - $0 } }
+        if residuals.count >= 14,
+           let lower = Self.quantile(residuals, percentile: 0.10),
+           let upper = Self.quantile(residuals, percentile: 0.90) {
+            fluctuationOffsetsKG = lower...upper
+            if let deviation = latestDeviationKG, deviation >= lower, deviation <= upper {
+                fluctuationStatus = .withinRecentRange
+            } else {
+                fluctuationStatus = .outsideRecentRange
+            }
+        } else {
+            fluctuationOffsetsKG = nil
+            fluctuationStatus = .learning
+        }
+
+        let periodEntries = ordered.filter { entry in
+            guard let periodStart else { return true }
+            return entry.recordedOn >= periodStart && entry.recordedOn <= periodEnd
+        }
+        weighInDayCount = periodEntries.count
+
+        let effectiveStart = periodStart ?? periodEntries.first?.recordedOn
         let effectiveEnd = periodStart == nil ? (latest?.recordedOn ?? periodEnd) : periodEnd
         if let effectiveStart {
             periodDayCount = max(1, Self.daySpan(from: effectiveStart, to: effectiveEnd, calendar: calendar) + 1)
@@ -166,13 +263,6 @@ struct WeightTrendInsights: Equatable, Sendable {
         } else {
             periodDayCount = 0
             consistency = nil
-        }
-
-        let span = earliest.flatMap { first in latest.map { Self.daySpan(from: first.recordedOn, to: $0.recordedOn, calendar: calendar) } } ?? 0
-        if ordered.count >= 3, span >= 7 {
-            weeklyPaceKG = Self.theilSenDailySlope(ordered, calendar: calendar).map { $0 * 7 }
-        } else {
-            weeklyPaceKG = nil
         }
 
         paceComparison = Self.paceComparison(
@@ -183,7 +273,7 @@ struct WeightTrendInsights: Equatable, Sendable {
 
         if goal == .maintain {
             goalForecast = .ongoing
-        } else if ordered.count < 7 || span < 14 || weeklyPaceKG == nil {
+        } else if weeklyPaceKG == nil {
             goalForecast = .learning
         } else if let pace = weeklyPaceKG, let targetKG, let latest {
             let movingTowardGoal = goal == .lose ? pace < 0 : pace > 0
@@ -191,7 +281,8 @@ struct WeightTrendInsights: Equatable, Sendable {
                 goalForecast = .notTrendingTowardGoal
                 return
             }
-            let weeks = abs(targetKG - latest.weightKG) / abs(pace)
+            let referenceWeight = currentTrendWeightKG ?? latest.weightKG
+            let weeks = abs(targetKG - referenceWeight) / abs(pace)
             let days = Int(ceil(weeks * 7 - 1e-9))
             goalForecast = .date(calendar.date(byAdding: .day, value: days, to: periodEnd) ?? periodEnd)
         } else {
@@ -205,23 +296,19 @@ struct WeightTrendInsights: Equatable, Sendable {
             .compactMap { $0.value.last }
     }
 
-    private static func theilSenDailySlope(_ entries: [WeightEntry], calendar: Calendar) -> Double? {
-        var slopes: [Double] = []
-        for firstIndex in entries.indices {
-            for secondIndex in entries.indices where secondIndex > firstIndex {
-                let days = daySpan(
-                    from: entries[firstIndex].recordedOn,
-                    to: entries[secondIndex].recordedOn,
-                    calendar: calendar
-                )
-                guard days > 0 else { continue }
-                slopes.append((entries[secondIndex].weightKG - entries[firstIndex].weightKG) / Double(days))
-            }
-        }
-        guard !slopes.isEmpty else { return nil }
-        slopes.sort()
-        let middle = slopes.count / 2
-        return slopes.count.isMultiple(of: 2) ? (slopes[middle - 1] + slopes[middle]) / 2 : slopes[middle]
+    private static func average(_ entries: [WeightEntry]) -> Double? {
+        guard !entries.isEmpty else { return nil }
+        return entries.map(\.weightKG).reduce(0, +) / Double(entries.count)
+    }
+
+    private static func quantile(_ sorted: [Double], percentile: Double) -> Double? {
+        guard !sorted.isEmpty else { return nil }
+        let position = min(max(percentile, 0), 1) * Double(sorted.count - 1)
+        let lower = Int(position.rounded(.down))
+        let upper = Int(position.rounded(.up))
+        guard lower != upper else { return sorted[lower] }
+        let fraction = position - Double(lower)
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * fraction
     }
 
     private static func paceComparison(
@@ -256,17 +343,76 @@ struct WeightChartScale: Equatable, Sendable {
 
     init(weightsKG: [Double], targetKG: Double?, goal: WeightGoal, unitSystem: UnitSystem) {
         let convert: (Double) -> Double = unitSystem == .imperial ? { $0 * 2.20462 } : { $0 }
-        var values = weightsKG.map(convert)
-        if goal != .maintain, let targetKG { values.append(convert(targetKG)) }
+        let values = weightsKG.map(convert)
 
-        let fallback = targetKG.map(convert) ?? (unitSystem == .imperial ? 170 : 77)
-        let minimum = values.min() ?? fallback
-        let maximum = values.max() ?? fallback
+        let fallback = goal == .maintain ? nil : targetKG.map(convert)
+        let fallbackValue = fallback ?? (unitSystem == .imperial ? 170 : 77)
+        let minimum = values.min() ?? fallbackValue
+        let maximum = values.max() ?? fallbackValue
         let contentSpan = maximum - minimum
         let minimumSpan = unitSystem == .imperial ? 10.0 : 5.0
         let plotSpan = max(contentSpan * 1.2, minimumSpan)
         let midpoint = (minimum + maximum) / 2
 
         domain = (midpoint - plotSpan / 2)...(midpoint + plotSpan / 2)
+    }
+}
+
+struct WeightInsightMetrics {
+    static func totalProgressKG(
+        startingKG: Double?,
+        trendWeightKG: Double?,
+        currentSampleCount: Int
+    ) -> Double? {
+        guard currentSampleCount >= WeightTrendInsights.minimumTrendReadings,
+              let startingKG,
+              let trendWeightKG else { return nil }
+        return trendWeightKG - startingKG
+    }
+
+    static func fluctuationRangeLabel(
+        offsetsKG: ClosedRange<Double>?,
+        unitSystem: UnitSystem
+    ) -> String {
+        guard let offsetsKG else { return "Learning" }
+        let conversion = unitSystem == .imperial ? 2.20462 : 1
+        let unit = unitSystem == .imperial ? "lb" : "kg"
+        return "\(signed(offsetsKG.lowerBound * conversion)) to \(signed(offsetsKG.upperBound * conversion)) \(unit)"
+    }
+
+    static func actualTotalChangeKG(entries: [WeightEntry]) -> Double? {
+        changeAcross(entries: entries)
+    }
+
+    static func actualLatestChangeKG(entries: [WeightEntry]) -> Double? {
+        let ordered = entries.sorted { $0.recordedOn < $1.recordedOn }
+        guard ordered.count >= 2, let previous = ordered.dropLast().last, let latest = ordered.last else { return nil }
+        return latest.weightKG - previous.weightKG
+    }
+
+    static func actualRangeChangeKG(entries: [WeightEntry]) -> Double? {
+        changeAcross(entries: entries)
+    }
+
+    static func actualDifferenceFromTrendKG(
+        actualKG: Double?,
+        trendKG: Double?,
+        currentSampleCount: Int
+    ) -> Double? {
+        guard currentSampleCount >= WeightTrendInsights.minimumTrendReadings,
+              let actualKG,
+              let trendKG else { return nil }
+        return actualKG - trendKG
+    }
+
+    private static func changeAcross(entries: [WeightEntry]) -> Double? {
+        let ordered = entries.sorted { $0.recordedOn < $1.recordedOn }
+        guard ordered.count >= 2, let first = ordered.first, let last = ordered.last else { return nil }
+        return last.weightKG - first.weightKG
+    }
+
+    private static func signed(_ value: Double) -> String {
+        if abs(value) < 0.05 { return "0.0" }
+        return String(format: value > 0 ? "+%.1f" : "−%.1f", abs(value))
     }
 }

@@ -79,3 +79,13 @@ struct MealConfirmationItem: Encodable, Equatable, Sendable {
 }
 
 struct MealConfirmationResponse: Codable, Sendable { let entries: [FoodEntry] }
+
+struct ChatMealConfirmationItem: Equatable, Sendable {
+    let clientItemID: UUID
+    let predictionID: UUID?
+    let name: String
+    let portion: String
+    let calories: Int
+    let nutrients: [NutrientAmountInput]
+    let origin: ChatMealReviewOrigin
+}

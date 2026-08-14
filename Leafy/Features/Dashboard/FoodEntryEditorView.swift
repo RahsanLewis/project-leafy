@@ -8,6 +8,7 @@ struct FoodEntryEditorView: View {
     let logDate: Date
     let embedded: Bool
     let onSaved: (() -> Void)?
+    @Binding private var hasUnsavedDraft: Bool
     @State private var name: String
     @State private var caloriesText: String
     @State private var time: Date
@@ -25,12 +26,14 @@ struct FoodEntryEditorView: View {
         entry: FoodEntry?,
         logDate: Date,
         embedded: Bool = false,
-        onSaved: (() -> Void)? = nil
+        onSaved: (() -> Void)? = nil,
+        hasUnsavedDraft: Binding<Bool> = .constant(false)
     ) {
         self.entry = entry
         self.logDate = logDate
         self.embedded = embedded
         self.onSaved = onSaved
+        _hasUnsavedDraft = hasUnsavedDraft
         _name = State(initialValue: entry?.name ?? "")
         _caloriesText = State(initialValue: entry.map { String($0.calories) } ?? "")
         _time = State(initialValue: entry?.consumedAt ?? .now)
@@ -52,84 +55,102 @@ struct FoodEntryEditorView: View {
     }
 
     private var editorContent: some View {
-        Form {
-                Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+                VStack(alignment: .leading, spacing: 0) {
+                    sectionLabel("What did you eat?")
                     TextField("Food or meal", text: $name)
+                        .font(LeafyTypography.title3)
                         .textInputAutocapitalization(.sentences)
+                        .padding(.vertical, LeafySpacing.medium)
                         .accessibilityIdentifier("foodNameField")
+                    Divider().overlay(LeafyTheme.hairline)
                     HStack {
-                        TextField("Calories", text: $caloriesText)
+                        Text("Calories").font(LeafyTypography.body)
+                        Spacer()
+                        TextField("0", text: $caloriesText)
                             .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .font(LeafyTypography.title3)
+                            .frame(width: 100)
                             .accessibilityIdentifier("foodCaloriesField")
                         Text("Cal").foregroundStyle(.secondary)
                     }
+                    .frame(minHeight: LeafyTheme.rowMinHeight)
+                    Divider().overlay(LeafyTheme.hairline)
                     DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
-                } header: {
-                    Text("What did you eat?")
-                } footer: {
-                    Text("You can edit the name, calories, or time later from your food log.")
+                        .frame(minHeight: LeafyTheme.rowMinHeight)
                 }
 
-                Section {
-                    DisclosureGroup("Add serving details", isExpanded: $showDetails) {
-                        Picker("Meal", selection: $mealType) {
-                            ForEach(MealType.allCases) { type in Text(type.label).tag(type) }
-                        }
-                        HStack {
-                            TextField("Amount", text: $amountText)
-                                .keyboardType(.decimalPad)
-                            Picker("Unit", selection: $amountUnit) {
-                                ForEach(["serving", "g", "oz", "cup", "piece", "tbsp", "tsp"], id: \.self) {
-                                    Text($0).tag($0)
-                                }
+                VStack(alignment: .leading, spacing: LeafySpacing.compact) {
+                    DisclosureGroup("Serving and nutrition", isExpanded: $showDetails) {
+                        VStack(spacing: 0) {
+                            Picker("Meal", selection: $mealType) {
+                                ForEach(MealType.allCases) { type in Text(type.label).tag(type) }
                             }
-                            .labelsHidden()
-                        }
-                        ForEach(Array(NutrientCatalog.items.prefix(3))) { nutrient in
+                            .frame(minHeight: LeafyTheme.rowMinHeight)
+                            Divider().overlay(LeafyTheme.hairline)
                             HStack {
-                                Text(nutrient.name)
+                                Text("Amount")
                                 Spacer()
-                                TextField("0", text: nutrientBinding(nutrient.code))
+                                TextField("1", text: $amountText)
                                     .keyboardType(.decimalPad)
                                     .multilineTextAlignment(.trailing)
-                                    .frame(width: 90)
-                                Text(nutrient.unit).foregroundStyle(.secondary)
+                                    .frame(width: 80)
+                                Picker("Unit", selection: $amountUnit) {
+                                    ForEach(["serving", "g", "oz", "cup", "piece", "tbsp", "tsp"], id: \.self) {
+                                        Text($0).tag($0)
+                                    }
+                                }
+                                .labelsHidden()
                             }
+                            .frame(minHeight: LeafyTheme.rowMinHeight)
+                            ForEach(Array(NutrientCatalog.items.prefix(3))) { nutrient in
+                                Divider().overlay(LeafyTheme.hairline)
+                                HStack {
+                                    Text(nutrient.name)
+                                    Spacer()
+                                    TextField("0", text: nutrientBinding(nutrient.code))
+                                        .keyboardType(.decimalPad)
+                                        .multilineTextAlignment(.trailing)
+                                        .frame(width: 90)
+                                    Text(nutrient.unit).foregroundStyle(.secondary)
+                                }
+                                .frame(minHeight: LeafyTheme.rowMinHeight)
+                            }
+                            Button("Edit all nutrients") { showingNutrientEditor = true }
+                                .font(LeafyTypography.subheadlineSemibold)
+                                .foregroundStyle(LeafyTheme.green)
+                                .frame(minHeight: LeafyTheme.rowMinHeight)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        Button("Edit all nutrients") { showingNutrientEditor = true }
-                            .foregroundStyle(LeafyTheme.green)
+                        .padding(.top, LeafySpacing.small)
                     }
-                } footer: {
-                    Text("Optional serving details make nutrient estimates and your personalized calorie budget more accurate.")
+                    .font(LeafyTypography.headline)
+                    Text("Optional details improve nutrient totals and personalization.")
+                        .font(LeafyTypography.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 if let mismatchMessage {
-                    Section {
-                        Label(mismatchMessage, systemImage: "exclamationmark.triangle")
-                            .font(LeafyTypography.subheadline)
-                            .foregroundStyle(.orange)
-                    }
+                    inlineError(mismatchMessage, symbol: "exclamationmark.triangle")
                 }
-
                 if let message = app.dailyErrorMessage {
-                    Section {
-                        Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(LeafyTypography.subheadline)
-                            .foregroundStyle(.orange)
-                    }
+                    inlineError(message, symbol: "exclamationmark.triangle.fill")
                 }
 
                 if entry != nil {
-                    Section {
-                        Button("Delete from Food Log", role: .destructive) {
-                            confirmingDeletion = true
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    Button("Delete from Food Log", role: .destructive) { confirmingDeletion = true }
+                        .frame(maxWidth: .infinity)
                         .disabled(app.isFoodMutationInProgress)
                         .accessibilityIdentifier("deleteFoodEntryButton")
-                    }
                 }
             }
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.top, LeafySpacing.medium)
+            .padding(.bottom, 112)
+        }
+            .background(LeafyTheme.canvas)
             .navigationTitle(entry == nil ? "Log Food" : "Edit Food")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -144,8 +165,7 @@ struct FoodEntryEditorView: View {
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(!input.isValid || app.isFoodMutationInProgress)
                     .opacity(input.isValid ? 1 : 0.45)
-                    .padding(20)
-                    .background(.regularMaterial)
+                    .leafyDetachedBottomControl()
                     .accessibilityIdentifier("saveFoodButton")
             }
             .interactiveDismissDisabled(app.isFoodMutationInProgress)
@@ -161,14 +181,19 @@ struct FoodEntryEditorView: View {
             }
             .overlay {
                 if app.isFoodMutationInProgress {
-                    ProgressView().padding(18).background(.regularMaterial, in: .rect(cornerRadius: 14))
+                    Rectangle()
+                        .fill(.regularMaterial)
+                        .opacity(0.55)
+                        .ignoresSafeArea()
+                    ProgressView().controlSize(.large)
                 }
             }
             .sheet(isPresented: $showingNutrientEditor) {
                 NutrientEditorView(
                     input: input,
                     values: $nutrientValues,
-                    estimatedCodes: $estimatedNutrientCodes
+                    estimatedCodes: $estimatedNutrientCodes,
+                    loggingContext: embedded && entry == nil
                 )
             }
             .task(id: entry?.id) {
@@ -182,6 +207,24 @@ struct FoodEntryEditorView: View {
                 )
                 loadedExistingNutrients = true
             }
+            .onChange(of: name) { _, _ in updateDraftState() }
+            .onChange(of: caloriesText) { _, _ in updateDraftState() }
+            .onChange(of: amountText) { _, _ in updateDraftState() }
+            .onChange(of: nutrientValues) { _, _ in updateDraftState() }
+            .onAppear { updateDraftState() }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(LeafyTypography.captionSemibold)
+            .foregroundStyle(.secondary)
+            .tracking(0.6)
+    }
+
+    private func inlineError(_ message: String, symbol: String) -> some View {
+        Label(message, systemImage: symbol)
+            .font(LeafyTypography.subheadline)
+            .foregroundStyle(.orange)
     }
 
     private var input: FoodEntryInput {
@@ -243,10 +286,32 @@ struct FoodEntryEditorView: View {
                 didSave = await app.createFoodEntry(input)
             }
             if didSave {
-                if let onSaved { onSaved() }
-                else { dismiss() }
+                if let onSaved {
+                    if entry == nil { resetForAnotherEntry() }
+                    hasUnsavedDraft = false
+                    onSaved()
+                } else { dismiss() }
             }
         }
+    }
+
+    private func updateDraftState() {
+        guard entry == nil else { return }
+        hasUnsavedDraft = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !caloriesText.isEmpty || !amountText.isEmpty || !nutrientValues.isEmpty
+    }
+
+    private func resetForAnotherEntry() {
+        name = ""
+        caloriesText = ""
+        time = .now
+        showDetails = false
+        amountText = ""
+        amountUnit = "serving"
+        mealType = .unspecified
+        nutrientValues = [:]
+        estimatedNutrientCodes = []
+        app.dailyErrorMessage = nil
     }
 
     private func deleteEntry() {

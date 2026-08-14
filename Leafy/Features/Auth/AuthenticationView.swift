@@ -2,91 +2,84 @@ import AuthenticationServices
 import CryptoKit
 import Security
 import SwiftUI
+import UIKit
 
 struct AuthenticationView: View {
-    private enum EmailMode: String, CaseIterable { case create = "Create account", signIn = "Sign in" }
+    private enum Field: Hashable { case email, password }
 
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var focusedField: Field?
     @State private var rawNonce = ""
     @State private var appleErrorMessage: String?
-    @State private var emailMode: EmailMode = .create
-
-    private var isReturningUser: Bool { app.authenticationPurpose == .accessExistingAccount }
 
     var body: some View {
         @Bindable var app = app
         NavigationStack {
             ScrollView {
-              VStack(alignment: .leading, spacing: 20) {
-                Text(!isReturningUser && emailMode == .create ? "Create your account" : "Welcome back")
-                    .font(LeafyTypography.largeTitle)
-                Text(isReturningUser
-                     ? "Sign in to access your saved nutrition plan."
-                     : emailMode == .create
-                     ? "Save your nutrition targets securely and access them when you return."
-                     : "Sign in to save this plan to your existing Leafy account.")
-                    .foregroundStyle(.secondary)
-                SignInWithAppleButton(.signIn) { request in
-                    let nonce = Self.randomNonce(); rawNonce = nonce
-                    request.requestedScopes = [.email]
-                    request.nonce = Self.sha256(nonce)
-                } onCompletion: { result in handleApple(result) }
-                .signInWithAppleButtonStyle(.black).frame(height: 52).clipShape(.rect(cornerRadius: 12))
-#if targetEnvironment(simulator)
-                Label("Test Apple sign-in on a physical iPhone. Email and password work in Simulator.", systemImage: "iphone.gen3")
-                    .font(LeafyTypography.caption)
-                    .foregroundStyle(.secondary)
-#endif
-                HStack { Rectangle().frame(height: 1).foregroundStyle(.quaternary); Text("or").foregroundStyle(.secondary); Rectangle().frame(height: 1).foregroundStyle(.quaternary) }
-
-                if app.saveState == .awaitingConfirmation {
-                    confirmationForm
-                } else {
-                    if !isReturningUser {
-                        Picker("Account action", selection: $emailMode) {
-                            ForEach(EmailMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                    VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                        Text("Welcome back").font(LeafyTypography.largeTitle)
+                        Text("Sign in to access your saved nutrition plan, food log, and weight history.")
+                            .font(LeafyTypography.body)
+                            .foregroundStyle(.secondary)
                     }
 
-                    VStack(spacing: 12) {
-                        TextField("Email address", text: $app.email)
-                            .textContentType(.emailAddress).keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .textFieldStyle(.roundedBorder)
-                        SecureField("Password", text: $app.password)
-                            .textContentType(emailMode == .create ? .newPassword : .password)
-                            .textFieldStyle(.roundedBorder)
-                        if emailMode == .create {
-                            SecureField("Confirm password", text: $app.passwordConfirmation)
-                                .textContentType(.newPassword)
-                                .textFieldStyle(.roundedBorder)
-                            Text("Use at least 8 characters.")
-                                .font(LeafyTypography.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                    providerButtons
+                    AuthDivider()
+
+                    VStack(spacing: 0) {
+                        AuthField(
+                            label: "Email",
+                            placeholder: "Email address",
+                            text: $app.email,
+                            contentType: .emailAddress,
+                            keyboardType: .emailAddress,
+                            isSecure: false,
+                            submitLabel: .next,
+                            onSubmit: { focusedField = .password }
+                        )
+                        .focused($focusedField, equals: .email)
+                        AuthField(
+                            label: "Password",
+                            placeholder: "Password",
+                            text: $app.password,
+                            contentType: .password,
+                            isSecure: true,
+                            submitLabel: .go,
+                            onSubmit: signIn
+                        )
+                        .focused($focusedField, equals: .password)
                     }
 
-                    Button(primaryButtonTitle) {
-                        Task {
-                            if isReturningUser { await app.signInAndLoadAccount() }
-                            else if emailMode == .create { await app.createAccount() }
-                            else { await app.signInAndSave() }
-                        }
+                    NavigationLink("Forgot password?") {
+                        PasswordRecoveryView(initialMode: .request, embedsNavigation: false)
                     }
-                    .buttonStyle(PrimaryButtonStyle())
+                    .font(LeafyTypography.footnote)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+
+                    InlineAuthFeedback(
+                        isLoading: app.saveState == .authenticating,
+                        error: appleErrorMessage ?? app.errorMessage,
+                        status: app.statusMessage
+                    )
+
+                    Button("Sign in", action: signIn)
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(app.saveState != .idle)
+                        .accessibilityIdentifier("signInButton")
+
+                    Text("New to Leafy? Close this sheet and continue to preview your personalized plan before creating an account.")
+                        .font(LeafyTypography.caption)
+                        .foregroundStyle(.secondary)
                 }
-                if app.saveState != .idle && app.saveState != .awaitingConfirmation && app.saveState != .resendingConfirmation {
-                    ProgressView().frame(maxWidth: .infinity)
-                }
-                if let error = appleErrorMessage ?? app.errorMessage {
-                    Label(error, systemImage: "exclamationmark.circle.fill")
-                        .font(LeafyTypography.footnote)
-                        .foregroundStyle(.red)
-                }
-                Text("By continuing, you agree to Leafy’s Terms and acknowledge its Privacy Policy.").font(LeafyTypography.caption).foregroundStyle(.secondary)
-              }.padding(24)
+                .padding(LeafyTheme.pageInset)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .background(LeafyTheme.canvas)
+            .contentShape(.rect)
+            .onTapGesture { focusedField = nil }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
@@ -97,79 +90,53 @@ struct AuthenticationView: View {
                 }
             }
         }
-        .interactiveDismissDisabled(app.saveState == .saving)
+        .interactiveDismissDisabled(app.saveState == .authenticating)
         .onAppear {
             app.errorMessage = nil
             appleErrorMessage = nil
-            if isReturningUser { emailMode = .signIn }
         }
     }
 
-    private var primaryButtonTitle: String {
-        if isReturningUser { return "Sign in" }
-        return emailMode == .create ? "Create account and save" : "Sign in and save"
+    private var providerButtons: some View {
+        VStack(spacing: LeafySpacing.compact) {
+            SignInWithAppleButton(.signIn) { request in
+                let nonce = Self.randomNonce()
+                rawNonce = nonce
+                request.requestedScopes = [.email]
+                request.nonce = Self.sha256(nonce)
+            } onCompletion: { result in handleApple(result) }
+            .signInWithAppleButtonStyle(.black)
+            .frame(height: 52)
+            .clipShape(.rect(cornerRadius: LeafyRadius.control))
+
+            GoogleAuthenticationButton(purpose: .signInAndLoad)
+#if targetEnvironment(simulator)
+            Label("Apple sign-in requires a physical iPhone. Email, password, and Google work in Simulator.", systemImage: "iphone.gen3")
+                .font(LeafyTypography.caption)
+                .foregroundStyle(.secondary)
+#endif
+        }
     }
 
-    private var confirmationForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Check your email", systemImage: "envelope.badge")
-                .font(LeafyTypography.title2).foregroundStyle(.tint)
-            Text("We created your account and sent a confirmation link to **\(app.email)**. Tap the link in that email, then return here to finish saving your plan.")
-                .foregroundStyle(.secondary)
-            Label("After confirming, come back to Leafy—even if the browser opens a blank or localhost page.", systemImage: "arrow.uturn.backward.circle")
-                .font(LeafyTypography.footnote)
-                .foregroundStyle(.secondary)
-            Button("I've confirmed my email") { Task { await app.finishConfirmedAccount() } }
-                .buttonStyle(PrimaryButtonStyle())
-            Button {
-                Task { await app.resendAccountConfirmation() }
-            } label: {
-                if app.saveState == .resendingConfirmation {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Sending…")
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    Text("Resend confirmation email").frame(maxWidth: .infinity)
-                }
-            }
-            .disabled(app.saveState == .resendingConfirmation)
-            if let message = app.statusMessage {
-                Label(message, systemImage: "checkmark.circle.fill")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.green)
-            }
-            Button("Use a different email") {
-                app.saveState = .idle
-                app.errorMessage = nil
-                app.statusMessage = nil
-            }
-            .frame(maxWidth: .infinity)
-        }
+    private func signIn() {
+        focusedField = nil
+        Task { await app.signInAndLoadAccount() }
     }
 
     private func handleApple(_ result: Result<ASAuthorization, any Error>) {
         switch result {
         case let .failure(error):
-            let authorizationError = error as? ASAuthorizationError
-            if authorizationError?.code == .canceled { return }
-#if targetEnvironment(simulator)
-            appleErrorMessage = "Sign in with Apple isn’t available in this simulator. Use email verification below or test it on your iPhone."
-#else
-            appleErrorMessage = "Apple couldn’t complete sign-in. Try again or use email verification below."
-#endif
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                appleErrorMessage = "Apple couldn’t complete sign-in. Please try again."
+            }
         case let .success(authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                  let data = credential.identityToken, let token = String(data: data, encoding: .utf8), !rawNonce.isEmpty
-            else { app.errorMessage = "Apple did not return a valid identity token."; return }
-            Task {
-                if isReturningUser {
-                    await app.loadAfterApple(identityToken: token, nonce: rawNonce)
-                } else {
-                    await app.saveAfterApple(identityToken: token, nonce: rawNonce)
-                }
+                  let data = credential.identityToken,
+                  let token = String(data: data, encoding: .utf8), !rawNonce.isEmpty else {
+                appleErrorMessage = "Apple didn’t return a valid sign-in credential."
+                return
             }
+            Task { await app.loadAfterApple(identityToken: token, nonce: rawNonce) }
         }
     }
 
@@ -180,9 +147,79 @@ struct AuthenticationView: View {
     private static func randomNonce(length: Int = 32) -> String {
         let characters = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
         return String((0..<length).map { _ in
-            var byte: UInt8 = 0; let status = SecRandomCopyBytes(kSecRandomDefault, 1, &byte)
-            precondition(status == errSecSuccess)
+            var byte: UInt8 = 0
+            precondition(SecRandomCopyBytes(kSecRandomDefault, 1, &byte) == errSecSuccess)
             return characters[Int(byte) % characters.count]
         })
+    }
+}
+
+struct AuthField: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    var contentType: UITextContentType?
+    var keyboardType: UIKeyboardType = .default
+    let isSecure: Bool
+    var submitLabel: SubmitLabel = .next
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Text(label).font(LeafyTypography.caption).foregroundStyle(.secondary)
+            Group {
+                if isSecure {
+                    SecureField(placeholder, text: $text)
+                } else {
+                    TextField(placeholder, text: $text)
+                        .keyboardType(keyboardType)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+            }
+            .font(LeafyTypography.body)
+            .textContentType(contentType)
+            .submitLabel(submitLabel)
+            .onSubmit(onSubmit)
+            Rectangle().fill(LeafyTheme.hairline).frame(height: 1)
+        }
+        .padding(.vertical, LeafySpacing.compact)
+    }
+}
+
+struct AuthDivider: View {
+    var body: some View {
+        HStack(spacing: LeafySpacing.compact) {
+            Rectangle().fill(LeafyTheme.hairline).frame(height: 1)
+            Text("or").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+            Rectangle().fill(LeafyTheme.hairline).frame(height: 1)
+        }
+    }
+}
+
+struct InlineAuthFeedback: View {
+    let isLoading: Bool
+    let error: String?
+    let status: String?
+
+    var body: some View {
+        if isLoading {
+            HStack(spacing: LeafySpacing.small) {
+                ProgressView()
+                Text("Working securely…")
+            }
+            .font(LeafyTypography.footnote)
+            .foregroundStyle(.secondary)
+        } else if let error {
+            Label(error, systemImage: "exclamationmark.circle.fill")
+                .font(LeafyTypography.footnote)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let status {
+            Label(status, systemImage: "checkmark.circle.fill")
+                .font(LeafyTypography.footnote)
+                .foregroundStyle(LeafyTheme.green)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

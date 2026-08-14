@@ -12,9 +12,31 @@ Deno.serve(async (request) => {
     const authClient = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
     const { data: { user }, error: authError } = await authClient.auth.getUser()
     if (authError || !user) return json({ error: 'Unauthorized' }, 401)
-    const input = await request.json() as Input
+    const payload = await request.json() as Input & {
+      plan_input?: Input
+      legal_acceptances?: { terms_version?: number; privacy_version?: number; core_data_use_version?: number; locale?: string; app_version?: string }
+    }
+    const input = payload.plan_input ?? payload
     const result = calculate(input)
     const admin = createClient(url, secret)
+    if (payload.legal_acceptances) {
+      const legal = payload.legal_acceptances
+      const rows = [
+        { document_key: 'terms_of_use', document_version: Number(legal.terms_version ?? 0) },
+        { document_key: 'privacy_policy', document_version: Number(legal.privacy_version ?? 0) },
+        { document_key: 'core_data_use', document_version: Number(legal.core_data_use_version ?? 0) },
+      ]
+      if (rows.some((row) => !Number.isInteger(row.document_version) || row.document_version < 1)) {
+        return json({ error: 'Current legal and core data-use acceptance is required.' }, 400)
+      }
+      const accepted = await admin.from('account_legal_acceptances').upsert(rows.map((row) => ({
+        user_id: user.id,
+        ...row,
+        locale: String(legal.locale ?? 'en-US').slice(0, 35),
+        app_version: String(legal.app_version ?? 'unknown').slice(0, 40),
+      })), { onConflict: 'user_id,document_key,document_version', ignoreDuplicates: true })
+      if (accepted.error) throw accepted.error
+    }
     const { data, error } = await admin.rpc('persist_nutrition_plan', { p_user_id: user.id, p_input: input, p_result: result }).single()
     if (error) throw error
     return json(data)
@@ -22,4 +44,3 @@ Deno.serve(async (request) => {
     return json({ error: error instanceof Error ? error.message : 'Unable to save plan' }, 400)
   }
 })
-

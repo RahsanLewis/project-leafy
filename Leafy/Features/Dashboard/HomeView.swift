@@ -44,24 +44,7 @@ struct HomeView: View {
                     Button {
                         app.presentMorningCheckIn()
                     } label: {
-                        HStack(spacing: LeafySpacing.medium) {
-                            Image(systemName: "sunrise.fill")
-                                .font(.title2)
-                                .foregroundStyle(LeafyTheme.green)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Finish your morning check-in")
-                                    .font(LeafyTypography.headline)
-                                    .foregroundStyle(.primary)
-                                Text("Review yesterday and add today’s weight.")
-                                    .font(LeafyTypography.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(LeafySpacing.medium)
-                        .background(LeafyTheme.mint, in: .rect(cornerRadius: 18))
+                        MorningCheckInReminder()
                     }
                     .buttonStyle(.plain)
                     .listRowInsets(.init(
@@ -91,14 +74,36 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
 
+                HStack {
+                    Spacer(minLength: 0)
+                    Button {
+                        app.presentMealLogger()
+                    } label: {
+                        Label("Log Food", systemImage: "plus")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 230)
+                    .clipShape(Capsule())
+                    .accessibilityIdentifier("logFoodButton")
+                    Spacer(minLength: 0)
+                }
+                .listRowInsets(.init(
+                    top: LeafySpacing.large,
+                    leading: LeafyTheme.pageInset,
+                    bottom: LeafySpacing.small,
+                    trailing: LeafyTheme.pageInset
+                ))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
                 if let nutrition = app.dailyNutrition {
                     NavigationLink {
                         DailyNutritionView()
                     } label: {
-                        MacroNutritionSummary(summary: nutrition, plan: app.dailyPlan, showsDisclosure: true)
+                        TodayMacroSummary(summary: nutrition, plan: app.dailyPlan)
                     }
                     .buttonStyle(.plain)
-                    .listRowInsets(.init(top: LeafySpacing.large, leading: 0, bottom: 0, trailing: 0))
+                    .listRowInsets(.init(top: LeafySpacing.xLarge, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .accessibilityIdentifier("openDailyNutrition")
@@ -134,8 +139,11 @@ struct HomeView: View {
                     }
                 }
             } header: {
-                HStack {
+                HStack(alignment: .firstTextBaseline) {
                     Text("Food log")
+                        .font(LeafyTypography.title3)
+                        .foregroundStyle(.primary)
+                        .textCase(nil)
                     Spacer()
                     Text("\(app.foodEntries.count) \(app.foodEntries.count == 1 ? "item" : "items")")
                         .font(LeafyTypography.caption)
@@ -173,18 +181,9 @@ struct HomeView: View {
             }
         }
         .leafyBorderlessList()
-        .listSectionSpacing(LeafySpacing.xLarge)
-        .contentMargins(.top, LeafySpacing.medium, for: .scrollContent)
+        .listSectionSpacing(LeafySpacing.xxLarge)
+        .contentMargins(.top, LeafySpacing.small, for: .scrollContent)
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .bottom) {
-            Button("Log Food") {
-                app.presentMealLogger()
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .clipShape(Capsule())
-            .leafyDetachedBottomControl()
-            .accessibilityIdentifier("logFoodButton")
-        }
         .sheet(item: $editorEntry) { entry in
             FoodEntryEditorView(entry: entry, logDate: app.selectedLogDate)
         }
@@ -244,6 +243,39 @@ struct HomeView: View {
     }
 }
 
+private struct MorningCheckInReminder: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        HStack(spacing: LeafySpacing.medium) {
+            Image(systemName: "sunrise.fill")
+                .font(LeafyTypography.icon(22, relativeTo: .headline))
+                .foregroundStyle(LeafyTheme.green)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(dynamicTypeSize.isAccessibilitySize ? "Morning check-in" : "Finish your morning check-in")
+                    .font(LeafyTypography.headline)
+                    .foregroundStyle(.primary)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Text("Review yesterday and add today’s weight.")
+                        .font(LeafyTypography.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: LeafySpacing.small)
+            Image(systemName: "chevron.right")
+                .font(LeafyTypography.icon(15, relativeTo: .headline))
+                .foregroundStyle(.secondary)
+        }
+        .padding(LeafySpacing.medium)
+        .background(LeafyTheme.mint, in: .rect(cornerRadius: LeafyRadius.prominent))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Finish your morning check-in")
+        .accessibilityHint("Review yesterday and add today’s weight")
+    }
+}
+
 private struct AdaptiveTargetNotice: View {
     @Environment(AppModel.self) private var app
     let notice: PlanAdjustmentNotice
@@ -292,43 +324,49 @@ private struct DateNavigator: View {
     let move: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 18) {
-            Button { move(-1) } label: {
-                Image(systemName: "chevron.left")
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(isChangingDay)
-            .accessibilityLabel("Previous day")
-            .accessibilityIdentifier("previousDayButton")
-
-            VStack(spacing: 2) {
+        HStack(alignment: .center, spacing: LeafySpacing.medium) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(app.isViewingToday ? "Today" : app.selectedLogDate.formatted(.dateTime.weekday(.wide)))
-                    .font(LeafyTypography.title2)
+                    .font(LeafyTypography.largeTitle)
                     .accessibilityIdentifier("selectedLogDayTitle")
                 Text(app.selectedLogDate.formatted(date: .abbreviated, time: .omitted))
                     .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("selectedLogDate")
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .opacity(valueOpacity)
 
-            Button { move(1) } label: {
-                Image(systemName: "chevron.right")
-                    .frame(width: 44, height: 44)
+            HStack(spacing: LeafySpacing.xSmall) {
+                Button { move(-1) } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isChangingDay)
+                .accessibilityLabel("Previous day")
+                .accessibilityIdentifier("previousDayButton")
+
+                Button { move(1) } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(app.isViewingToday || isChangingDay)
+                .accessibilityLabel("Next day")
+                .accessibilityIdentifier("nextDayButton")
             }
-            .buttonStyle(.plain)
-            .disabled(app.isViewingToday || isChangingDay)
-            .accessibilityLabel("Next day")
-            .accessibilityIdentifier("nextDayButton")
         }
+        .padding(.horizontal, LeafyTheme.pageInset)
         .tint(LeafyTheme.green)
     }
 }
 
 private struct CalorieBudgetCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let summary: DailyCalorieSummary
     let supportingValueOpacity: Double
     let isChangingDay: Bool
@@ -336,13 +374,13 @@ private struct CalorieBudgetCard: View {
     let move: (Int) -> Void
 
     var body: some View {
-        VStack(spacing: LeafySpacing.large) {
+        VStack(spacing: LeafySpacing.xLarge) {
             ZStack {
                 Circle()
-                    .stroke(Color(.systemGray5), lineWidth: 20)
+                    .stroke(LeafyTheme.track, lineWidth: 18)
                 Circle()
                     .trim(from: 0, to: summary.progress)
-                    .stroke(progressColor, style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                    .stroke(progressColor, style: StrokeStyle(lineWidth: 18, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(
                         reduceMotion ? nil : .spring(duration: 0.44, bounce: 0.06),
@@ -351,7 +389,7 @@ private struct CalorieBudgetCard: View {
 
                 VStack(spacing: LeafySpacing.xSmall) {
                     Text(heroValue)
-                        .font(LeafyTypography.metric(48, extraBold: true))
+                        .font(LeafyTypography.metric(54, extraBold: true))
                         .monospacedDigit()
                         .minimumScaleFactor(0.65)
                         .lineLimit(1)
@@ -378,24 +416,27 @@ private struct CalorieBudgetCard: View {
                 }
                 .padding(.horizontal, LeafySpacing.large)
             }
-            .frame(width: 220, height: 220)
+            .frame(width: ringSize, height: ringSize)
             .contentShape(Circle())
             .accessibilityHidden(true)
 
-            HStack(spacing: LeafySpacing.xLarge) {
-                BudgetMetric(
-                    title: "Eaten",
-                    value: "\(summary.consumed)",
-                    unit: "Cal",
-                    valueOpacity: supportingValueOpacity
-                )
-                BudgetMetric(
-                    title: "Daily budget",
-                    value: formattedBudget,
-                    unit: "Cal",
-                    valueOpacity: supportingValueOpacity
-                )
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: LeafySpacing.medium) {
+                        eatenMetric
+                        budgetMetric
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        eatenMetric
+                        Rectangle()
+                            .fill(LeafyTheme.hairline)
+                            .frame(width: 1, height: 38)
+                        budgetMetric
+                    }
+                }
             }
+            .padding(.horizontal, LeafyTheme.pageInset)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, LeafySpacing.small)
@@ -425,6 +466,13 @@ private struct CalorieBudgetCard: View {
         return summary.isOverBudget ? "calories over" : "calories remaining"
     }
     private var formattedBudget: String { summary.budget?.formatted() ?? "—" }
+    private var ringSize: CGFloat { dynamicTypeSize.isAccessibilitySize ? 268 : 244 }
+    private var eatenMetric: some View {
+        BudgetMetric(title: "Eaten", value: "\(summary.consumed)", unit: "Cal", valueOpacity: supportingValueOpacity)
+    }
+    private var budgetMetric: some View {
+        BudgetMetric(title: "Daily budget", value: formattedBudget, unit: "Cal", valueOpacity: supportingValueOpacity)
+    }
     private var progressColor: Color {
         guard summary.budget != nil else { return .secondary }
         return summary.isOverBudget ? .red : LeafyTheme.green
@@ -495,10 +543,87 @@ private struct FoodEntryRow: View {
                 .font(LeafyTypography.subheadlineSemibold).monospacedDigit()
                 .opacity(valueOpacity)
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, LeafySpacing.small)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("foodEntryRow-\(entry.id.uuidString)")
         .accessibilityHint("Double tap for nutrition details. Swipe left for edit or delete actions.")
+    }
+}
+
+private struct TodayMacroSummary: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let summary: DailyNutritionSummary
+    let plan: NutritionPlan?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.medium) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Nutrition")
+                    .font(LeafyTypography.title3)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("Details")
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+            }
+
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: LeafySpacing.medium) {
+                    macro("Protein", code: "protein_g", target: plan.map { Double($0.proteinG) })
+                    macro("Carbs", code: "carbohydrate_g", target: plan.map { Double($0.carbohydrateG) })
+                    macro("Fat", code: "fat_g", target: plan.map { Double($0.fatG) })
+                }
+            } else {
+                HStack(alignment: .top, spacing: LeafySpacing.medium) {
+                    macro("Protein", code: "protein_g", target: plan.map { Double($0.proteinG) })
+                    macro("Carbs", code: "carbohydrate_g", target: plan.map { Double($0.carbohydrateG) })
+                    macro("Fat", code: "fat_g", target: plan.map { Double($0.fatG) })
+                }
+            }
+
+            if let coverage = summary.macroCoverage, coverage < 0.999 {
+                Text("Macro details available for \(coverage.formatted(.percent.precision(.fractionLength(0)))) of logged calories")
+                    .font(LeafyTypography.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, LeafyTheme.pageInset)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("homeMacroSummary")
+    }
+
+    private func macro(_ title: String, code: String, target: Double?) -> some View {
+        let amount = summary.nutrient(code)?.amount ?? 0
+        let progress = target.map { target in
+            guard target.isFinite, target > 0, amount.isFinite else { return 0 }
+            return min(max(amount / target, 0), 1)
+        } ?? 0
+
+        return VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Text(title)
+                .font(LeafyTypography.caption)
+                .foregroundStyle(.secondary)
+            Text("\(format(amount))g")
+                .font(LeafyTypography.headline)
+                .monospacedDigit()
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(LeafyTheme.track)
+                    Capsule().fill(LeafyTheme.green).frame(width: max(proxy.size.width, 0) * progress)
+                }
+            }
+            .frame(height: 4)
+            Text(target.map { "of \(format($0))g" } ?? "No target")
+                .font(LeafyTypography.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(format(amount)) grams, target \(target.map(format) ?? "unavailable") grams")
+    }
+
+    private func format(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...1)))
     }
 }
 

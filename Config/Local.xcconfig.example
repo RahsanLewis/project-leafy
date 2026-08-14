@@ -1,7 +1,11 @@
-// Copy values into Base.xcconfig locally or configure them in CI.
+// Copy environment-specific values into Staging.xcconfig or
+// Production.xcconfig, or configure them in CI.
 SUPABASE_URL = https:/$()/your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY = sb_publishable_your_key
 PRIVACY_POLICY_URL = https:/$()/your-domain.com/privacy
 TERMS_URL = https:/$()/your-domain.com/terms
 SUPPORT_URL = https:/$()/your-domain.com/support
-
+APP_ENVIRONMENT = staging
+AUTH_CALLBACK_URL = https:/$()/auth-staging.your-domain.com/auth/callback
+AUTH_ASSOCIATED_DOMAIN = applinks:auth-staging.your-domain.com
+AUTH_URL_SCHEME = leafy-staging

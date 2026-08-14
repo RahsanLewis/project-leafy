@@ -7,6 +7,7 @@ struct AIMealView: View {
     let onSaved: () -> Void
     let embedded: Bool
     let logDay: Date
+    @Binding private var hasUnsavedDraft: Bool
     @State private var description: String
     @State private var selectedImage: UIImage?
     @State private var photoData: Data?
@@ -19,12 +20,20 @@ struct AIMealView: View {
     @State private var showingAnalysisWait = false
     @State private var waitStartedAt = Date.now
     @State private var waitEstimateSeconds = 12.0
+    @State private var showingMealDetails = false
     @FocusState private var descriptionIsFocused: Bool
 
-    init(logDate: Date = .now, embedded: Bool = false, initialDescription: String = "", onSaved: @escaping () -> Void) {
+    init(
+        logDate: Date = .now,
+        embedded: Bool = false,
+        initialDescription: String = "",
+        onSaved: @escaping () -> Void,
+        hasUnsavedDraft: Binding<Bool> = .constant(false)
+    ) {
         self.onSaved = onSaved
         self.embedded = embedded
         self.logDay = logDate
+        _hasUnsavedDraft = hasUnsavedDraft
         _description = State(initialValue: initialDescription)
         _mealDate = State(initialValue: Self.logDate(logDate, usingTimeFrom: .now))
     }
@@ -34,8 +43,10 @@ struct AIMealView: View {
             VStack(alignment: .leading, spacing: LeafySpacing.large) {
                 if let estimate = app.mealEstimate {
                     review(estimate)
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 } else {
                     composer
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
             }
             .padding(.horizontal, 20)
@@ -43,8 +54,15 @@ struct AIMealView: View {
             .padding(.bottom, 120)
         }
         .background(LeafyTheme.canvas)
+        .animation(LeafyMotion.content, value: app.mealEstimate != nil)
         .navigationTitle(embedded ? "Log Food" : (app.mealEstimate == nil ? "AI Meal" : "Review estimate"))
         .navigationBarTitleDisplayMode(embedded ? .inline : .large)
+        .safeAreaInset(edge: .bottom) {
+            if app.mealEstimate == nil || app.mealEstimate?.status == .ready {
+                primaryAction
+                    .leafyDetachedBottomControl()
+            }
+        }
         .sheet(isPresented: $showingCamera) {
             MealCameraPicker { image in setImage(image) }
                 .ignoresSafeArea()
@@ -67,6 +85,9 @@ struct AIMealView: View {
                 setImage(image)
             }
         }
+        .onChange(of: description) { _, _ in updateDraftState() }
+        .onChange(of: photoData) { _, _ in updateDraftState() }
+        .onAppear { updateDraftState() }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -76,84 +97,109 @@ struct AIMealView: View {
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.large) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+            VStack(alignment: .leading, spacing: LeafySpacing.small) {
                 Text("Tell Leafy what you ate")
                     .font(LeafyTypography.title2)
-                Text("Describe the foods, portions, and extras you remember. Add a photo if it helps.")
+                Text("Include portions, sauces, drinks, and anything else you remember.")
                     .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("WHAT DID YOU EAT?").font(LeafyTypography.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                Text("DESCRIPTION")
+                    .font(LeafyTypography.captionSemibold)
+                    .foregroundStyle(.secondary)
+                    .tracking(0.6)
                 TextEditor(text: $description)
                     .focused($descriptionIsFocused)
-                    .frame(minHeight: 105)
-                    .padding(12)
+                    .frame(minHeight: 132)
+                    .padding(.vertical, LeafySpacing.small)
                     .scrollContentBackground(.hidden)
-                    .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
                     .overlay(alignment: .topLeading) {
                         if description.isEmpty {
                             Text("Example: Two chicken tacos with cheese, salsa, and a small horchata")
-                                .foregroundStyle(.tertiary).padding(.horizontal, 17).padding(.vertical, 20)
+                                .font(LeafyTypography.body)
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 16)
+                                .padding(.leading, 5)
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
                         }
                     }
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(descriptionIsFocused ? LeafyTheme.green : LeafyTheme.hairline)
+                            .frame(height: descriptionIsFocused ? 2 : 1)
+                            .animation(LeafyMotion.state, value: descriptionIsFocused)
+                    }
                     .accessibilityIdentifier("aiMealDescription")
+
+                photoInput
             }
 
-            photoInput
-            mealDetails
+            DisclosureGroup("Meal details", isExpanded: $showingMealDetails) {
+                mealDetails.padding(.top, LeafySpacing.small)
+            }
+            .font(LeafyTypography.headline)
+            .tint(LeafyTheme.green)
 
             if let message = app.mealEstimateErrorMessage {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(LeafyTypography.subheadline).foregroundStyle(.orange)
-                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(LeafyTheme.surface, in: .rect(cornerRadius: 14))
+                    .font(LeafyTypography.subheadline)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Text("AI estimates can be inaccurate. You’ll review every item before it is added to your calorie budget.")
                 .font(LeafyTypography.footnote).foregroundStyle(.secondary)
 
-            Button { analyze() } label: {
-                if app.isMealEstimateLoading { ProgressView().tint(.white) }
-                else { Text("Estimate calories") }
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canAnalyze || app.isMealEstimateLoading)
-            .opacity(canAnalyze ? 1 : 0.45)
-            .accessibilityIdentifier("analyzeMealButton")
         }
     }
 
     private var photoInput: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("PHOTO · OPTIONAL").font(LeafyTypography.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
             if let selectedImage {
-                HStack(spacing: 14) {
-                    Image(uiImage: selectedImage).resizable().scaledToFill()
-                        .frame(width: 82, height: 82).clipShape(.rect(cornerRadius: 14))
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: LeafySpacing.compact) {
+                    Image(uiImage: selectedImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 72, height: 72)
+                        .clipShape(.rect(cornerRadius: LeafyRadius.control))
+                    VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
                         Text("Photo added").font(LeafyTypography.headline)
-                        Text("Used together with your description")
-                            .font(LeafyTypography.caption).foregroundStyle(.secondary)
+                        Text("Leafy will use it with your description")
+                            .font(LeafyTypography.caption)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button("Remove", role: .destructive) { clearPhoto() }
+                        .font(LeafyTypography.subheadlineSemibold)
                 }
             } else {
-                HStack(spacing: 12) {
+                Menu {
                     Button { showingCamera = true } label: {
-                        Label("Take photo", systemImage: "camera.fill").frame(maxWidth: .infinity)
-                    }.buttonStyle(AIMealInputButtonStyle())
+                        Label("Take Photo", systemImage: "camera")
+                    }
                     PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label("Choose photo", systemImage: "photo.fill").frame(maxWidth: .infinity)
-                    }.buttonStyle(AIMealInputButtonStyle())
+                        Label("Choose from Library", systemImage: "photo.on.rectangle")
+                    }
+                } label: {
+                    HStack {
+                        Label("Add a photo", systemImage: "camera")
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(LeafyTypography.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+                    .frame(minHeight: LeafyTheme.rowMinHeight)
+                    .contentShape(.rect)
                 }
             }
         }
+        .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
     }
 
     private var mealDetails: some View {
@@ -161,12 +207,12 @@ struct AIMealView: View {
             Picker("Meal", selection: $mealType) {
                 ForEach(MealType.allCases) { type in Text(type.label).tag(type) }
             }
-            .padding(14)
-            Divider().padding(.leading, 14)
+            .frame(minHeight: LeafyTheme.rowMinHeight)
+            Divider()
             DatePicker("Date and time", selection: $mealDate, in: ...Date.now)
-                .padding(14)
+                .frame(minHeight: LeafyTheme.rowMinHeight)
         }
-        .background(LeafyTheme.surface, in: .rect(cornerRadius: 16))
+        .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
     }
 
     @ViewBuilder private func review(_ estimate: MealEstimate) -> some View {
@@ -180,7 +226,7 @@ struct AIMealView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Estimated meal")
                     .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
-                Text("\(estimate.reviewedTotal) calories")
+                Text("\(estimate.reviewedTotal) Cal")
                     .font(LeafyTypography.metric(42, extraBold: true))
                 Text("Likely \(estimate.calorieLow)–\(estimate.calorieHigh) Cal")
                     .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
@@ -192,8 +238,9 @@ struct AIMealView: View {
                         .font(LeafyTypography.headline).foregroundStyle(LeafyTheme.green)
                     Text(followUp.question).font(LeafyTypography.title3)
                     TextField("Your answer", text: $followUpAnswer, axis: .vertical)
-                        .lineLimit(2...4).padding(13)
-                        .background(LeafyTheme.elevatedSurface, in: .rect(cornerRadius: 12))
+                        .lineLimit(2...4)
+                        .padding(.vertical, LeafySpacing.small)
+                        .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
                     HStack {
                         Button("Skip") { refineEstimate(answer: nil, skip: true) }
                         Spacer()
@@ -202,11 +249,16 @@ struct AIMealView: View {
                             followUpAnswer = ""
                             refineEstimate(answer: answer, skip: false)
                         }
-                        .buttonStyle(.borderedProminent).tint(LeafyTheme.green)
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(LeafyTheme.green)
                         .disabled(followUpAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                .padding(18).background(LeafyTheme.mint, in: .rect(cornerRadius: 20))
+                .padding(.leading, LeafySpacing.medium)
+                .padding(.vertical, LeafySpacing.small)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(LeafyTheme.green).frame(width: 3)
+                }
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -248,18 +300,12 @@ struct AIMealView: View {
             Text("This is an AI estimate for general wellness, not a measurement or medical advice.")
                 .font(LeafyTypography.footnote).foregroundStyle(.secondary)
 
-            if estimate.status == .ready {
-                Button { confirm() } label: {
-                    if app.isMealEstimateLoading { ProgressView().tint(.white) }
-                    else { Text("Log \(estimate.reviewedTotal) calories") }
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(estimate.items.isEmpty || app.isMealEstimateLoading)
-                .accessibilityIdentifier("confirmMealEstimateButton")
-            }
-
             Button("Start over", role: .destructive) {
-                Task { await app.discardMealEstimate(); resetInputs() }
+                Task {
+                    await app.discardMealEstimate()
+                    resetInputs()
+                    hasUnsavedDraft = false
+                }
             }
             .frame(maxWidth: .infinity)
         }
@@ -268,6 +314,27 @@ struct AIMealView: View {
 
     private var canAnalyze: Bool {
         photoData != nil || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    @ViewBuilder private var primaryAction: some View {
+        if let estimate = app.mealEstimate, estimate.status == .ready {
+            Button { confirm() } label: {
+                if app.isMealEstimateLoading { ProgressView().tint(.white) }
+                else { Text("Log \(estimate.reviewedTotal) calories") }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(estimate.items.isEmpty || app.isMealEstimateLoading)
+            .accessibilityIdentifier("confirmMealEstimateButton")
+        } else if app.mealEstimate == nil {
+            Button { analyze() } label: {
+                if app.isMealEstimateLoading { ProgressView().tint(.white) }
+                else { Text("Estimate calories") }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!canAnalyze || app.isMealEstimateLoading)
+            .opacity(canAnalyze ? 1 : 0.45)
+            .accessibilityIdentifier("analyzeMealButton")
+        }
     }
 
     private func setImage(_ image: UIImage) {
@@ -329,6 +396,7 @@ struct AIMealView: View {
         Task {
             if await app.confirmMealEstimate() {
                 resetInputs()
+                hasUnsavedDraft = false
                 onSaved()
             }
         }
@@ -337,6 +405,10 @@ struct AIMealView: View {
     private func resetInputs() {
         description = ""; selectedImage = nil; photoData = nil; photoItem = nil
         followUpAnswer = ""; mealDate = Self.logDate(logDay, usingTimeFrom: .now); mealType = .unspecified
+    }
+
+    private func updateDraftState() {
+        hasUnsavedDraft = photoData != nil || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private static func logDate(_ day: Date, usingTimeFrom time: Date) -> Date {
@@ -351,6 +423,7 @@ struct AIMealView: View {
 }
 
 private struct MealEstimateItemCard: View {
+    @Environment(AppModel.self) private var app
     let item: MealEstimateItem
     let onChange: (String, String, Int) -> Void
     let onRemove: () -> Void
@@ -390,19 +463,21 @@ private struct MealEstimateItemCard: View {
                     macro("Fat", code: "fat_g", nutrients: nutrients)
                 }
                 .padding(.top, LeafySpacing.xSmall)
-                NavigationLink {
-                    AIItemImpactView(item: item)
-                } label: {
-                    HStack {
-                        Text("View food impact")
-                        Spacer()
-                        Image(systemName: "chevron.right")
+                if app.configuration.isFoodImpactEnabled {
+                    NavigationLink {
+                        AIItemImpactView(item: item)
+                    } label: {
+                        HStack {
+                            Text("View food impact")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(LeafyTheme.green)
+                        .padding(.top, LeafySpacing.small)
                     }
-                    .font(LeafyTypography.subheadlineSemibold)
-                    .foregroundStyle(LeafyTheme.green)
-                    .padding(.top, LeafySpacing.small)
+                    .accessibilityIdentifier("aiItemFoodImpact")
                 }
-                .accessibilityIdentifier("aiItemFoodImpact")
             }
         }
         .padding(.vertical, LeafySpacing.medium)
@@ -453,14 +528,5 @@ private struct AIItemImpactView: View {
         .background(LeafyTheme.canvas)
         .navigationTitle(item.name.capitalized)
         .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct AIMealInputButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(LeafyTypography.button).foregroundStyle(LeafyTheme.green).padding(.vertical, 14)
-            .background(LeafyTheme.surface, in: .rect(cornerRadius: 14))
-            .opacity(configuration.isPressed ? 0.65 : 1)
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AppModel.self) private var app
-    @State private var selection: DashboardTab = .home
+    @State private var selection: DashboardTab = .today
 
     var body: some View {
         @Bindable var app = app
@@ -10,14 +10,14 @@ struct DashboardView: View {
             NavigationStack {
                 HomeView()
             }
-            .tabItem { Label("Home", systemImage: "house.fill") }
-            .tag(DashboardTab.home)
+            .tabItem { Label("Today", systemImage: "calendar") }
+            .tag(DashboardTab.today)
 
             NavigationStack {
                 WeightView()
             }
-            .tabItem { Label("Weight", systemImage: "chart.line.uptrend.xyaxis") }
-            .tag(DashboardTab.weight)
+            .tabItem { Label("Progress", systemImage: "chart.line.uptrend.xyaxis") }
+            .tag(DashboardTab.progress)
 
             NavigationStack {
                 AskLeafyView()
@@ -38,13 +38,17 @@ struct DashboardView: View {
             .tag(DashboardTab.settings)
         }
         .tint(LeafyTheme.green)
-        .sheet(isPresented: $app.showMorningCheckIn, onDismiss: app.dismissMorningCheckIn) {
+        .sheet(isPresented: $app.showMorningCheckIn, onDismiss: {
+            Task { await app.morningCheckInSheetDidDismiss() }
+        }) {
             MorningCheckInView()
         }
-        .sheet(isPresented: $app.showLogFood, onDismiss: { app.pendingMealDescription = "" }) {
+        .sheet(isPresented: $app.showLogFood, onDismiss: {
+            Task { await app.mealLoggerDidDismiss() }
+        }) {
             LogFoodView(initialMethod: app.pendingMealDescription.isEmpty ? .search : .ai, initialAIDescription: app.pendingMealDescription)
         }
     }
 }
 
-private enum DashboardTab: Hashable { case home, weight, ai, scan, settings }
+private enum DashboardTab: Hashable { case today, progress, ai, scan, settings }

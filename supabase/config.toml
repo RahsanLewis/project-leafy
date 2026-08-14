@@ -12,8 +12,8 @@ major_version = 17
 
 [auth]
 enabled = true
-site_url = "leafy://auth"
-additional_redirect_urls = ["leafy://auth"]
+site_url = "https://auth.projectleafy.app/auth/callback"
+additional_redirect_urls = ["https://auth.projectleafy.app/auth/**", "leafy://auth/**"]
 enable_signup = true
 
 [functions.save-nutrition-plan]
@@ -26,6 +26,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.discover-food-product]
+verify_jwt = false
+
+[functions.manage-catalog-contribution]
+verify_jwt = false
+
+[functions.review-catalog-contribution]
 verify_jwt = false
 
 [functions.estimate-meal]
@@ -41,4 +47,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.manage-food-entry]
+verify_jwt = false
+
+[functions.weight-fluctuation-context]
+verify_jwt = false
+
+[functions.manage-legal-acceptance]
 verify_jwt = false

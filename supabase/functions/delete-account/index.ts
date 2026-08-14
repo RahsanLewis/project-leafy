@@ -32,7 +32,13 @@ Deno.serve(async (request) => {
     const { data: mediaRows, error: mediaError } = await admin.from('nutrition_media_assets')
       .select('object_path').eq('user_id', user.id).is('deleted_at', null)
     if (mediaError && mediaError.code !== '42P01') throw mediaError
-    const objectPaths = (mediaRows ?? []).map((row) => row.object_path)
+    const { data: labelRows, error: labelError } = await admin.from('product_label_assets')
+      .select('object_path').eq('user_id', user.id)
+    if (labelError && labelError.code !== '42P01') throw labelError
+    const objectPaths = [
+      ...(mediaRows ?? []).map((row) => row.object_path),
+      ...(labelRows ?? []).map((row) => row.object_path),
+    ]
     if (objectPaths.length) {
       const { error: storageError } = await admin.storage.from('nutrition-media').remove(objectPaths)
       if (storageError) throw storageError

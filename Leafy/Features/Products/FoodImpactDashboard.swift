@@ -5,6 +5,7 @@ struct FoodImpactDashboard: View {
     let input: FoodImpactInput
     @Binding var servingScale: Double
     let servingDescription: (Double) -> String
+    var showsHeader = true
 
     private var summary: FoodImpactSummary {
         FoodImpactCalculator.calculate(
@@ -18,7 +19,7 @@ struct FoodImpactDashboard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.large) {
-            header
+            if showsHeader { header }
             carbohydrateImpact
             Divider()
             dailyFit

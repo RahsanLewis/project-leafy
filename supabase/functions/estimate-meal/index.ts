@@ -17,7 +17,7 @@ type Body = {
   meal_type?: string
   answer?: string
   skip?: boolean
-  items?: { id: string; name: string; portion: string; calories: number; nutrients?: { code: string; amount: number }[] }[]
+  items?: { id?: string; client_item_id?: string; prediction_id?: string | null; origin?: 'prediction' | 'user_added'; name: string; portion: string; calories: number; nutrients?: { code: string; amount: number }[] }[]
   food_entry_id?: string
 }
 
@@ -50,14 +50,26 @@ Deno.serve(async (request) => {
     if (body.action === 'confirm') {
       if (!Array.isArray(body.items) || !body.items.length) return json({ error: 'Choose at least one item to log.' }, 400)
       const normalized = body.items.map((item) => ({
-        id: String(item.id), name: String(item.name ?? '').trim().slice(0, 120),
+        id: String(item.prediction_id ?? item.id ?? ''),
+        client_item_id: String(item.client_item_id ?? item.id ?? ''),
+        origin: item.origin === 'user_added' ? 'user_added' : 'prediction',
+        name: String(item.name ?? '').trim().slice(0, 120),
         portion: String(item.portion ?? '').trim().slice(0, 240), calories: Math.round(Number(item.calories)),
+        nutrients: Array.isArray(item.nutrients) ? item.nutrients : [],
       }))
-      if (normalized.some((item) => !isUUID(item.id) || !item.name || item.calories < 1 || item.calories > 10000)) {
+      if (normalized.some((item) => !isUUID(item.client_item_id) || (item.origin === 'prediction' && !isUUID(item.id)) || !item.name || item.calories < 1 || item.calories > 10000)) {
         return json({ error: 'Review each food name and calorie estimate before saving.' }, 400)
+      }
+      const suppliedTiming = body.consumed_at || body.local_date || body.time_zone
+      if (suppliedTiming && (!body.consumed_at || !/^\d{4}-\d{2}-\d{2}$/.test(body.local_date ?? '') || !body.time_zone)) {
+        return json({ error: 'A valid meal date and time are required.' }, 400)
       }
       const { data, error } = await admin.rpc('confirm_ai_meal', {
         p_user_id: user.id, p_session_id: body.session_id, p_items: normalized,
+        ...(suppliedTiming ? {
+          p_consumed_at: body.consumed_at, p_local_date: body.local_date,
+          p_time_zone: String(body.time_zone).slice(0, 80),
+        } : {}),
       })
       if (error) throw error
       await persistConfirmedNutrients(admin, user.id, body.session_id, normalized)

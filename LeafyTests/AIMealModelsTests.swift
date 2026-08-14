@@ -49,6 +49,29 @@ final class AIMealModelsTests: XCTestCase {
         XCTAssertEqual(suggestion.reviewedTotal, 630)
     }
 
+    func testChatMealReviewSupportsPredictedAndUserAddedItems() {
+        let prediction = item(calories: 280)
+        var draft = ChatMealReviewDraft(
+            messageID: UUID(), sessionID: UUID(),
+            items: [ChatMealReviewItem(prediction: prediction)], consumedAt: .now
+        )
+        draft.items.append(ChatMealReviewItem(name: "Avocado", portion: "half", calories: 120))
+
+        XCTAssertTrue(draft.isValid)
+        XCTAssertEqual(draft.totalCalories, 400)
+        XCTAssertEqual(draft.items[0].origin, .prediction)
+        XCTAssertEqual(draft.items[1].origin, .userAdded)
+        XCTAssertNil(draft.items[1].predictionID)
+    }
+
+    func testChatMealReviewRejectsIncompleteAddedFood() {
+        let draft = ChatMealReviewDraft(
+            messageID: UUID(), sessionID: UUID(),
+            items: [ChatMealReviewItem(name: "", portion: "one", calories: 100)], consumedAt: .now
+        )
+        XCTAssertFalse(draft.isValid)
+    }
+
     private func item(calories: Int, confidence: Double = 0.7) -> MealEstimateItem {
         MealEstimateItem(
             id: UUID(), name: "Food", portion: "one serving", estimatedGrams: nil,

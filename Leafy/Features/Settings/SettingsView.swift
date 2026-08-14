@@ -3,53 +3,46 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(DailyReminderCoordinator.self) private var reminders
-    @State private var confirmDeletion = false
     @AppStorage(AppearanceMode.storageKey) private var appearanceRawValue = AppearanceMode.light.rawValue
+    @State private var browser: SafariDestination?
+
     var body: some View {
         List {
-            Section("Account") {
-                if app.isPreviewMode {
-                    Label("Simulator preview — no account session", systemImage: "hammer")
-                        .foregroundStyle(.secondary)
-                } else if app.isAuthenticated {
-                    Button("Sign out") { Task { await app.signOut() } }
-                    Button("Delete account", role: .destructive) { confirmDeletion = true }
+            Section {
+                if app.isAuthenticated || app.isPreviewMode {
+                    NavigationLink { AccountCenterView() } label: { identityHeader }
                 } else {
-                    Button("Sign in") { app.presentAuthentication(.accessExistingAccount) }
+                    Button { app.presentAuthentication(.accessExistingAccount) } label: { identityHeader }
                 }
             }
-            .leafyBorderlessRows()
-            Section("Appearance") {
-                Picker("Theme", selection: $appearanceRawValue) {
-                    ForEach(AppearanceMode.allCases) { mode in
-                        Text(mode.title).tag(mode.rawValue)
-                    }
-                }
-                .pickerStyle(.navigationLink)
-                .accessibilityIdentifier("appearancePicker")
+            .leafyBorderlessRows(separators: false)
 
-                Text("Light is Leafy’s default. Follow System matches your iPhone’s current appearance.")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .leafyBorderlessRows()
-            Section("Personalized targets") {
+            Section("Plan & preferences") {
                 NavigationLink {
                     PlanView()
                 } label: {
-                    LabeledContent("Nutrition plan", value: app.currentPlan.map { "\($0.calorieTargetKcal) Cal" } ?? "Unavailable")
+                    SettingsValueRow(
+                        title: "Nutrition plan",
+                        value: app.currentPlan.map { "\($0.calorieTargetKcal) Cal" } ?? "Unavailable",
+                        symbol: "target"
+                    )
                 }
-                Label("Leafy uses your confirmed food logs and weight history to learn how your calorie budget fits your body over time.", systemImage: "wand.and.stars")
-                Text("Your data personalizes your targets only. Leafy does not show an estimated daily calories-burned number, and weekly budget changes are limited to 100 calories.")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .leafyBorderlessRows()
-            Section("Daily reminder") {
-                Toggle("Morning check-in", isOn: Binding(
+                .accessibilityIdentifier("nutritionPlanLink")
+
+                Picker(selection: $appearanceRawValue) {
+                    ForEach(AppearanceMode.allCases) { Text($0.title).tag($0.rawValue) }
+                } label: {
+                    Label("Appearance", systemImage: "circle.lefthalf.filled")
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("appearancePicker")
+
+                Toggle(isOn: Binding(
                     get: { reminders.preferences.isEnabled },
                     set: { enabled in Task { await reminders.setEnabled(enabled) } }
-                ))
+                )) {
+                    Label("Morning check-in", systemImage: "bell")
+                }
                 .accessibilityIdentifier("morningReminderToggle")
 
                 if reminders.preferences.isEnabled {
@@ -64,60 +57,83 @@ struct SettingsView: View {
                 }
 
                 if reminders.authorizationState == .denied {
-                    Button("Open iOS Settings") { reminders.openSystemSettings() }
-                }
-
-                Text(reminders.authorizationState.description)
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
-
-                if let reminderError = reminders.errorMessage {
-                    Text(reminderError)
-                        .font(LeafyTypography.footnote)
-                        .foregroundStyle(.orange)
+                    Button("Open notification settings") { reminders.openSystemSettings() }
                 }
             }
             .leafyBorderlessRows()
-            Section("Your data") {
+
+            Section("Privacy & support") {
                 NavigationLink {
-                    DataContributionView()
+                    DataPrivacyView()
                 } label: {
-                    LabeledContent("Nutrition data program") {
-                        if app.isDataContributionLoading {
-                            ProgressView()
-                        } else {
-                            Text(app.dataContributionStatus?.isParticipating == true ? "Joined" : "Not joined")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Label("Data & Privacy", systemImage: "hand.raised")
                 }
-                Text("Commercial data participation is optional and separate from personalized targets.")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
+
+                Button { browser = SafariDestination(url: app.configuration.termsURL) } label: {
+                    Label("Terms of Use", systemImage: "doc.text")
+                }
+                Button { browser = SafariDestination(url: app.configuration.supportURL) } label: {
+                    Label("Support", systemImage: "questionmark.circle")
+                }
             }
             .leafyBorderlessRows()
-            Section("Legal and support") {
-                Link("Privacy Policy", destination: app.configuration.privacyURL)
-                Link("Terms of Use", destination: app.configuration.termsURL)
-                Link("Support", destination: app.configuration.supportURL)
+
+            Section {
+                VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                    Text("Leafy provides general wellness estimates and is not a substitute for medical care.")
+                    Text(versionText)
+                }
+                .font(LeafyTypography.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, LeafySpacing.medium)
             }
-            .leafyBorderlessRows()
-            Section { Text("Leafy provides general wellness estimates and is not a substitute for medical care.").font(LeafyTypography.footnote) }
-                .leafyBorderlessRows(separators: false)
+            .leafyBorderlessRows(separators: false)
         }
         .leafyBorderlessList()
         .listSectionSpacing(LeafySpacing.large)
         .navigationTitle("Settings")
-        .task {
-            async let contribution: Void = app.loadDataContributionStatus()
-            async let reminder: Void = reminders.refresh()
-            _ = await (contribution, reminder)
+        .navigationBarTitleDisplayMode(.large)
+        .task { await reminders.refresh() }
+        .sheet(item: $browser) { SafariWebView(url: $0.url).ignoresSafeArea() }
+        .overlay {
+            if app.saveState == .deleting {
+                ProgressView("Deleting account…").padding().background(.regularMaterial, in: .rect(cornerRadius: LeafyRadius.control))
+            }
         }
-        .confirmationDialog("Permanently delete your Leafy account and all plan history?", isPresented: $confirmDeletion, titleVisibility: .visible) {
-            Button("Delete account", role: .destructive) { Task { await app.deleteAccount() } }
-            Button("Cancel", role: .cancel) {}
+        .alert("Something went wrong", isPresented: Binding(
+            get: { app.errorMessage != nil },
+            set: { if !$0 { app.errorMessage = nil } }
+        )) { Button("OK") {} } message: { Text(app.errorMessage ?? "") }
+    }
+
+    private var identityHeader: some View {
+        HStack(spacing: LeafySpacing.medium) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(LeafyTypography.icon(42, relativeTo: .title))
+                .foregroundStyle(LeafyTheme.green)
+            VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
+                Text(app.account?.email ?? (app.isPreviewMode ? "Simulator preview" : "Sign in to Leafy"))
+                    .font(LeafyTypography.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(identitySubtitle)
+                    .font(LeafyTypography.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .overlay { if app.saveState == .deleting { ProgressView("Deleting account…").padding().background(.regularMaterial, in: .rect(cornerRadius: 16)) } }
-        .alert("Deletion failed", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) { Button("OK") {} } message: { Text(app.errorMessage ?? "") }
+        .padding(.vertical, LeafySpacing.small)
+    }
+
+    private var identitySubtitle: String {
+        if app.isPreviewMode { return "Preview account" }
+        guard app.isAuthenticated else { return "Access your saved nutrition history" }
+        let provider = app.account?.identities.first?.displayName ?? "Leafy account"
+        return app.account?.emailConfirmed == true ? "Verified · \(provider)" : "Verification pending · \(provider)"
+    }
+
+    private var versionText: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "Leafy \(version) (\(build))"
     }
 }

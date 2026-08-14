@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { type Input } from '../_shared/calculator.ts'
 import { cors, json } from '../_shared/http.ts'
+import { findWeightEntryIndex } from '../_shared/weight-entry.ts'
 
 type WeightRow = {
   id: string
@@ -53,7 +54,7 @@ Deno.serve(async (request) => {
       if (!zone || date > localDate(new Date(), zone)) throw new Error('Weight cannot be logged for a future date.')
 
       const index = body.id
-        ? simulated.findIndex((entry) => entry.id === body.id)
+        ? findWeightEntryIndex(simulated, body.id)
         : simulated.findIndex((entry) => entry.recorded_on === date)
       if (body.id && index < 0) throw new Error('Weight entry not found')
       if (body.id && simulated.some((entry, candidate) => candidate !== index && entry.recorded_on === date)) {
@@ -69,7 +70,7 @@ Deno.serve(async (request) => {
       if (index >= 0) simulated[index] = replacement
       else simulated.push(replacement)
     } else {
-      const index = simulated.findIndex((entry) => entry.id === body.id)
+      const index = findWeightEntryIndex(simulated, body.id)
       if (index < 0) throw new Error('Weight entry not found')
       if (simulated[index].source === 'baseline') throw new Error('Starting weight cannot be deleted')
       simulated.splice(index, 1)

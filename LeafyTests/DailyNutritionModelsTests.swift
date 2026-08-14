@@ -71,6 +71,31 @@ final class DailyNutritionModelsTests: XCTestCase {
         XCTAssertGreaterThan(nutrient.percentOfTarget ?? 0, 1)
     }
 
+    func testNutritionFocusRanksWellCoveredGoalsByLowestProgress() {
+        let nutrients = [
+            presentationNutrient(code: "fiber_g", kind: .goal, percent: 0.60, coverage: 0.95, order: 1),
+            presentationNutrient(code: "vitamin_d_mcg", kind: .goal, percent: 0.20, coverage: 0.90, order: 2),
+            presentationNutrient(code: "iron_mg", kind: .goal, percent: 0.10, coverage: 0.40, order: 3),
+            presentationNutrient(code: "calcium_mg", kind: .goal, percent: 0.40, coverage: 0.85, order: 4),
+            presentationNutrient(code: "protein_g", kind: .goal, percent: 0.15, coverage: 1, order: 0)
+        ]
+
+        XCTAssertEqual(
+            NutritionPresentation.focusNutrients(from: nutrients).map(\.code),
+            ["vitamin_d_mcg", "calcium_mg", "fiber_g"]
+        )
+    }
+
+    func testNutritionLimitsOnlySurfaceWithCoverageNearThreshold() {
+        let nutrients = [
+            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 0.85, coverage: 0.90, order: 1),
+            presentationNutrient(code: "added_sugars_g", kind: .limit, percent: 0.95, coverage: 0.60, order: 2),
+            presentationNutrient(code: "cholesterol_mg", kind: .limit, percent: 0.70, coverage: 1, order: 3)
+        ]
+
+        XCTAssertEqual(NutritionPresentation.limitNutrients(from: nutrients).map(\.code), ["sodium_mg"])
+    }
+
     func testFoodEntryDecodesLinkedCatalogVersion() throws {
         let versionID = UUID(uuidString: "FCE5542D-F6AA-44DA-A61B-A254B823A72A")!
         let json = """
@@ -108,6 +133,30 @@ final class DailyNutritionModelsTests: XCTestCase {
             timeZone: "America/New_York",
             createdAt: .now,
             updatedAt: .now
+        )
+    }
+
+    private func presentationNutrient(
+        code: String,
+        kind: NutrientTargetKind,
+        percent: Double,
+        coverage: Double,
+        order: Int
+    ) -> DailyNutrient {
+        DailyNutrient(
+            code: code,
+            name: code,
+            unit: "g",
+            nutrientClass: code.contains("vitamin") ? "vitamin" : "test",
+            displayOrder: order,
+            targetKind: kind,
+            amount: percent * 100,
+            targetAmount: 100,
+            percentOfTarget: percent,
+            coverage: coverage,
+            estimatedAmount: 0,
+            verifiedAmount: percent * 100,
+            confidence: 1
         )
     }
 }

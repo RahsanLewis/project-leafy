@@ -79,3 +79,54 @@ struct NutritionChatSendResponse: Codable, Sendable {
         case assistantMessage = "assistant_message"
     }
 }
+
+enum ChatMealReviewOrigin: String, Codable, Equatable, Sendable {
+    case prediction
+    case userAdded = "user_added"
+}
+
+struct ChatMealReviewItem: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let predictionID: UUID?
+    var name: String
+    var portion: String
+    var calories: Int
+    var nutrients: [NutrientAmountInput]
+    let origin: ChatMealReviewOrigin
+
+    init(prediction: MealEstimateItem) {
+        id = prediction.id
+        predictionID = prediction.id
+        name = prediction.name
+        portion = prediction.portion
+        calories = prediction.calories
+        nutrients = prediction.nutrients ?? []
+        origin = .prediction
+    }
+
+    init(id: UUID = UUID(), name: String = "", portion: String = "", calories: Int = 0) {
+        self.id = id
+        predictionID = nil
+        self.name = name
+        self.portion = portion
+        self.calories = calories
+        nutrients = []
+        origin = .userAdded
+    }
+
+    var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains(calories)
+    }
+}
+
+struct ChatMealReviewDraft: Identifiable, Equatable, Sendable {
+    let messageID: UUID
+    let sessionID: UUID
+    var items: [ChatMealReviewItem]
+    var consumedAt: Date
+
+    var id: UUID { messageID }
+
+    var totalCalories: Int { items.reduce(0) { $0 + $1.calories } }
+    var isValid: Bool { !items.isEmpty && items.allSatisfy(\.isValid) }
+}

@@ -75,14 +75,17 @@ struct AIMealLoadingView: View {
             .padding(.horizontal, 34)
 
             Spacer()
-            Button("Cancel", role: .cancel, action: onCancel)
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.horizontal, LeafyTheme.pageInset)
-                .padding(.bottom, LeafySpacing.large)
-                .accessibilityIdentifier("cancelMealAnalysisButton")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(LeafyTheme.canvas.ignoresSafeArea())
+        .safeAreaInset(edge: .bottom) {
+            Button("Cancel", role: .cancel, action: onCancel)
+                .font(LeafyTypography.button)
+                .foregroundStyle(LeafyTheme.green)
+                .frame(minHeight: LeafyTheme.minimumTouchTarget)
+                .leafyDetachedBottomControl()
+                .accessibilityIdentifier("cancelMealAnalysisButton")
+        }
         .interactiveDismissDisabled()
         .task {
             while !Task.isCancelled {

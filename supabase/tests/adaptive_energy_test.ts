@@ -1,5 +1,5 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1'
-import { adaptiveCandidate, isPlausible, theilSenSlope } from '../functions/_shared/adaptive-energy.ts'
+import { adaptiveCandidate, isPlausible, rollingWeeklyTrend, theilSenSlope } from '../functions/_shared/adaptive-energy.ts'
 import type { Input } from '../functions/_shared/calculator.ts'
 
 const input: Input = {
@@ -18,6 +18,32 @@ Deno.test('Theil-Sen slope resists one isolated scale outlier', () => {
   ])
   assert(slope < 0)
   assert(Math.abs(slope) < 0.15)
+})
+
+Deno.test('rolling weekly trend requires four weigh-ins in both windows', () => {
+  const trend = rollingWeeklyTrend([
+    { recorded_on: '2026-07-01', weight_kg: 80 },
+    { recorded_on: '2026-07-03', weight_kg: 80 },
+    { recorded_on: '2026-07-05', weight_kg: 80 },
+    { recorded_on: '2026-07-08', weight_kg: 79.8 },
+    { recorded_on: '2026-07-10', weight_kg: 79.8 },
+    { recorded_on: '2026-07-12', weight_kg: 79.8 },
+    { recorded_on: '2026-07-14', weight_kg: 79.8 },
+  ])
+  assertEquals(trend.currentCount, 4)
+  assertEquals(trend.previousCount, 3)
+  assertEquals(trend.weeklyChange, null)
+})
+
+Deno.test('rolling weekly trend compares consecutive seven-day averages', () => {
+  const weights = Array.from({ length: 14 }, (_, index) => ({
+    recorded_on: `2026-07-${String(index + 1).padStart(2, '0')}`,
+    weight_kg: index < 7 ? 80 : 79.5,
+  }))
+  const trend = rollingWeeklyTrend(weights)
+  assertEquals(trend.currentAverage, 79.5)
+  assertEquals(trend.previousAverage, 80)
+  assertEquals(trend.weeklyChange, -0.5)
 })
 
 Deno.test('adaptive target is capped to 100 calories per update', () => {

@@ -51,7 +51,35 @@ struct ProductDetail: Codable, Identifiable, Hashable, Sendable {
         case caloriesPer100G = "calories_per_100g", imageURL = "image_url"
         case verificationStatus = "verification_status"
     }
-    var defaultGrams: Double { portions.first?.gramWeight ?? servingSize ?? 100 }
+    var defaultGrams: Double {
+        if let grams = portions.first?.gramWeight, grams > 0 { return grams }
+        if let servingSize, servingSize > 0,
+           ["g", "gram", "grams"].contains(servingUnit?.lowercased() ?? "") {
+            return servingSize
+        }
+        return 100
+    }
+}
+
+enum ProductServingQuantity {
+    static let allowedRange = 0.25...100.0
+    static let step = 0.5
+
+    static func count(from text: String) -> Double? {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        guard let value = Double(normalized), allowedRange.contains(value) else { return nil }
+        return value
+    }
+
+    static func grams(servings: Double, servingGrams: Double) -> Double {
+        servings * servingGrams
+    }
+
+    static func formatted(_ servings: Double) -> String {
+        servings.formatted(.number.precision(.fractionLength(0...2)))
+    }
 }
 
 struct ProductNutrient: Codable, Hashable, Sendable {
@@ -70,18 +98,121 @@ struct ProductPortion: Codable, Identifiable, Hashable, Sendable {
 }
 
 struct ProductNutritionScore: Codable, Hashable, Sendable {
-    let algorithmVersion: String
+    let modelVersion: String
+    let ingredientTaxonomyVersion: String
+    let additiveDatabaseVersion: String
     let score: Int?
-    let label: String?
-    let confidence: Double
-    let positiveFactors: [String]
-    let limitingFactors: [String]
+    let rating: String?
+    let scoreStatus: String
+    let baseScore: Int?
+    let additivePenalty: Int
+    let components: [String: ProductScoreComponent]
+    let additives: [ProductScoreAdditive]
+    let flags: ProductScoreFlags
+    let strengths: [String]
+    let weaknesses: [String]
+    let explanation: [String]
     let missingFields: [String]
+    let unavailableReasons: [String]
+    let jurisdiction: String
+    let assessmentDate: String
     enum CodingKeys: String, CodingKey {
-        case score, label, confidence
-        case algorithmVersion = "algorithm_version", positiveFactors = "positive_factors"
-        case limitingFactors = "limiting_factors", missingFields = "missing_fields"
+        case score, rating, components, additives, flags, strengths, weaknesses, explanation, jurisdiction
+        case modelVersion = "model_version", ingredientTaxonomyVersion = "ingredient_taxonomy_version"
+        case additiveDatabaseVersion = "additive_database_version", scoreStatus = "score_status"
+        case baseScore = "base_score", additivePenalty = "additive_penalty"
+        case missingFields = "missing_fields", unavailableReasons = "unavailable_reasons"
+        case assessmentDate = "assessment_date"
+        case legacyAlgorithmVersion = "algorithm_version"
     }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        modelVersion = try values.decodeIfPresent(String.self, forKey: .modelVersion)
+            ?? values.decodeIfPresent(String.self, forKey: .legacyAlgorithmVersion)
+            ?? "legacy"
+        ingredientTaxonomyVersion = try values.decodeIfPresent(String.self, forKey: .ingredientTaxonomyVersion) ?? ""
+        additiveDatabaseVersion = try values.decodeIfPresent(String.self, forKey: .additiveDatabaseVersion) ?? ""
+        score = try values.decodeIfPresent(Int.self, forKey: .score)
+        rating = try values.decodeIfPresent(String.self, forKey: .rating)
+        scoreStatus = try values.decodeIfPresent(String.self, forKey: .scoreStatus) ?? "legacy"
+        baseScore = try values.decodeIfPresent(Int.self, forKey: .baseScore)
+        additivePenalty = try values.decodeIfPresent(Int.self, forKey: .additivePenalty) ?? 0
+        components = try values.decodeIfPresent([String: ProductScoreComponent].self, forKey: .components) ?? [:]
+        additives = try values.decodeIfPresent([ProductScoreAdditive].self, forKey: .additives) ?? []
+        flags = try values.decodeIfPresent(ProductScoreFlags.self, forKey: .flags) ?? .empty
+        strengths = try values.decodeIfPresent([String].self, forKey: .strengths) ?? []
+        weaknesses = try values.decodeIfPresent([String].self, forKey: .weaknesses) ?? []
+        explanation = try values.decodeIfPresent([String].self, forKey: .explanation) ?? []
+        missingFields = try values.decodeIfPresent([String].self, forKey: .missingFields) ?? []
+        unavailableReasons = try values.decodeIfPresent([String].self, forKey: .unavailableReasons) ?? []
+        jurisdiction = try values.decodeIfPresent(String.self, forKey: .jurisdiction) ?? ""
+        assessmentDate = try values.decodeIfPresent(String.self, forKey: .assessmentDate) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(modelVersion, forKey: .modelVersion)
+        try values.encode(ingredientTaxonomyVersion, forKey: .ingredientTaxonomyVersion)
+        try values.encode(additiveDatabaseVersion, forKey: .additiveDatabaseVersion)
+        try values.encodeIfPresent(score, forKey: .score)
+        try values.encodeIfPresent(rating, forKey: .rating)
+        try values.encode(scoreStatus, forKey: .scoreStatus)
+        try values.encodeIfPresent(baseScore, forKey: .baseScore)
+        try values.encode(additivePenalty, forKey: .additivePenalty)
+        try values.encode(components, forKey: .components)
+        try values.encode(additives, forKey: .additives)
+        try values.encode(flags, forKey: .flags)
+        try values.encode(strengths, forKey: .strengths)
+        try values.encode(weaknesses, forKey: .weaknesses)
+        try values.encode(explanation, forKey: .explanation)
+        try values.encode(missingFields, forKey: .missingFields)
+        try values.encode(unavailableReasons, forKey: .unavailableReasons)
+        try values.encode(jurisdiction, forKey: .jurisdiction)
+        try values.encode(assessmentDate, forKey: .assessmentDate)
+    }
+
+    var isAvailable: Bool { modelVersion == "PFQS-1.0" && scoreStatus == "complete" && score != nil }
+}
+
+struct ProductScoreComponent: Codable, Hashable, Sendable {
+    let score: Int
+    let max: Int
+    let normalizedValue: Double?
+    let unit: String?
+    let method: String?
+    enum CodingKeys: String, CodingKey {
+        case score, max, unit, method
+        case normalizedValue = "normalized_value"
+    }
+}
+
+struct ProductScoreAdditive: Codable, Hashable, Sendable, Identifiable {
+    let name: String
+    let canonicalID: String
+    let family: String?
+    let tier: Int?
+    let penalty: Int
+    let status: String
+    let reason: String
+    let matchedAlias: String
+    var id: String { canonicalID }
+    enum CodingKeys: String, CodingKey {
+        case name, family, tier, penalty, status, reason
+        case canonicalID = "canonical_id", matchedAlias = "matched_alias"
+    }
+}
+
+struct ProductScoreFlags: Codable, Hashable, Sendable {
+    let tier4AdditivePresent: Bool
+    let scoreCeilingApplied: Bool
+    let regulatoryFlag: Bool
+    enum CodingKeys: String, CodingKey {
+        case tier4AdditivePresent = "tier_4_additive_present"
+        case scoreCeilingApplied = "score_ceiling_applied"
+        case regulatoryFlag = "regulatory_flag"
+    }
+    static let empty = ProductScoreFlags(tier4AdditivePresent: false, scoreCeilingApplied: false, regulatoryFlag: false)
 }
 
 struct ProductListResponse: Codable, Sendable { let products: [ProductSummary] }
