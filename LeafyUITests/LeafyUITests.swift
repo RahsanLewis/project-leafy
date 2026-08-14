@@ -551,27 +551,32 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Why Leafy emphasizes trend weight"].waitForExistence(timeout: 2))
         app.buttons["dismissTrendWeightExplanation"].tap()
 
-        let info = app.buttons["weightInsightInfo-weeklyTrend"]
+        let info = app.buttons["weightInsightInfo-pace"]
         for _ in 0..<3 where !info.exists { app.swipeUp() }
         XCTAssertTrue(info.waitForExistence(timeout: 2))
 
-        XCTAssertTrue(app.staticTexts["Weekly trend"].exists)
-        XCTAssertFalse(app.staticTexts["Observed trend"].exists)
+        XCTAssertTrue(app.staticTexts["Pace"].exists)
         info.tap()
         let explanation = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Your current seven-day average compared with the preceding seven-day average.")
+            NSPredicate(format: "label BEGINSWITH %@", "Compares your observed weekly trend with the weekly change")
         ).firstMatch
         XCTAssertTrue(explanation.waitForExistence(timeout: 2))
         info.tap()
 
         let insightIdentifiers = [
-            "totalProgress", "weeklyTrend", "goalPace",
-            "daysLogged", "typicalFluctuation", "projectedGoal",
+            "totalChange", "latestChange", "daysLogged", "pace",
         ]
         for identifier in insightIdentifiers {
             let control = app.buttons["weightInsightInfo-\(identifier)"]
             for _ in 0..<4 where !control.exists { app.swipeUp() }
             XCTAssertTrue(control.exists, "Missing insight control \(identifier)")
+        }
+
+        for removedIdentifier in [
+            "totalProgress", "weeklyTrend", "goalPace", "typicalFluctuation",
+            "projectedGoal", "actualRangeChange", "actualVersusTrend",
+        ] {
+            XCTAssertFalse(app.buttons["weightInsightInfo-\(removedIdentifier)"].exists)
         }
     }
 
@@ -586,7 +591,6 @@ final class LeafyUITests: XCTestCase {
         XCTAssertFalse(app.buttons["weightDisplayMenu"].exists)
         XCTAssertFalse(app.staticTexts["Trend"].exists)
         XCTAssertFalse(app.staticTexts["Seven-day trend"].exists)
-        XCTAssertFalse(app.buttons["weightInsightInfo-weeklyTrend"].exists)
     }
 
     @MainActor

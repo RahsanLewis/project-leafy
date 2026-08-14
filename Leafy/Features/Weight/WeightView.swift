@@ -76,21 +76,6 @@ struct WeightView: View {
             }
             .leafyBorderlessRows(separators: false)
 
-            if let status = app.weightStatusMessage, let outcome = app.lastWeightOutcome {
-                Section {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label(status, systemImage: statusIcon(outcome))
-                            .font(LeafyTypography.headline)
-                            .foregroundStyle(outcome == .reviewRequired ? .orange : LeafyTheme.green)
-                        if outcome == .reviewRequired {
-                            Button("Review Plan") { showingPlanEditor = true }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .leafyBorderlessRows(separators: false)
-            }
-
             Section {
                 VStack(alignment: .leading, spacing: LeafySpacing.medium) {
                     HStack {
@@ -214,6 +199,10 @@ struct WeightView: View {
         .navigationDestination(isPresented: $showingHistory) {
             WeightHistoryView()
         }
+        .overlay(alignment: .top) {
+            weightStatusBanner
+        }
+        .animation(LeafyMotion.state, value: app.weightStatusMessage)
         .onChange(of: chartRange) { _, _ in selectedChartDate = nil }
         .onChange(of: insights.hasTrend, initial: true) { _, hasTrend in
             if !hasTrend { displayModeRawValue = DisplayMode.actual.rawValue }
@@ -266,25 +255,8 @@ struct WeightView: View {
                 .contentTransition(.numericText())
                 .padding(.top, LeafySpacing.small)
                 .padding(.bottom, -10)
-            if let supportingWeightKG {
-                HStack(alignment: .firstTextBaseline, spacing: LeafySpacing.small) {
-                    Text(supportingMetricLabel)
-                        .font(LeafyTypography.footnote)
-                        .foregroundStyle(.secondary)
-                    Text(formatWeight(supportingWeightKG))
-                        .font(LeafyTypography.subheadlineSemibold)
-                        .monospacedDigit()
-                    if let supportingMetricDate, selectedChartDate == nil {
-                        Text(supportingMetricDate.formatted(date: .abbreviated, time: .omitted))
-                            .font(LeafyTypography.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
+            rangeChangeSummaryView
                 .padding(.top, 12)
-
-            }
             if selectedChartDate == nil, let context = fluctuationContextMessage {
                 Label(context, systemImage: "drop.fill")
                     .font(LeafyTypography.footnote)
@@ -386,7 +358,7 @@ struct WeightView: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(LeafyTheme.green.opacity(0.12))
                             .frame(width: 24, height: 10)
-                        Text("Typical range")
+                        Text(fluctuationRangeTitle)
                             .font(LeafyTypography.caption)
                             .foregroundStyle(.secondary)
                         Image(systemName: "info.circle")
@@ -401,7 +373,10 @@ struct WeightView: View {
             }
         }
         .sheet(isPresented: $showingFluctuationExplanation) {
-            FluctuationRangeExplanationView(goal: app.draft.goal)
+            FluctuationRangeExplanationView(
+                goal: app.draft.goal,
+                source: insights.fluctuationRangeSource
+            )
                 .presentationDetents([.height(310)])
                 .presentationDragIndicator(.visible)
         }
@@ -428,7 +403,7 @@ struct WeightView: View {
     private var weightChart: some View {
         Chart {
             if let offsets = insights.fluctuationOffsetsKG {
-                ForEach(filteredTrendPoints) { point in
+                ForEach(fluctuationBandPoints) { point in
                     AreaMark(
                         x: .value("Date", point.date),
                         yStart: .value("Recent range low", displayValue(point.averageKG + offsets.lowerBound)),
@@ -513,7 +488,7 @@ struct WeightView: View {
             lastHapticChartDate = selectedDataDate
             UISelectionFeedbackGenerator().selectionChanged()
         }
-        .accessibilityLabel("Recorded weight chart with a personalized typical fluctuation range")
+        .accessibilityLabel(weightChartAccessibilityLabel)
         .accessibilityIdentifier("weightChart")
     }
 
@@ -556,93 +531,36 @@ struct WeightView: View {
             alignment: .leading,
             spacing: LeafySpacing.large
         ) {
-            if displayMode == .trend {
-                WeightStat(
-                    label: "Total progress",
-                    value: totalProgressKG.map(formatChange) ?? "Learning",
-                    explanation: "The difference between your starting weight and your current trend weight. This measures progress across your full history rather than one scale reading.",
-                    status: totalProgressKG == nil ? "Log enough weigh-ins to establish a trend weight." : nil,
-                    identifier: "totalProgress"
-                )
-                WeightStat(
-                    label: "Weekly trend",
-                    value: insights.weeklyPaceKG.map { "\(formatChange($0))/week" } ?? "Learning",
-                    explanation: "Your current seven-day average compared with the preceding seven-day average. Averaging reduces the influence of any single scale reading.",
-                    status: weeklyLearningDetail,
-                    identifier: "weeklyTrend"
-                )
-                WeightStat(
-                    label: "Goal pace",
-                    value: paceComparisonLabel,
-                    explanation: "Compares your observed weekly trend with the weekly change in your nutrition plan. A pace within 20% of the plan is considered on pace.",
-                    status: paceComparisonDetail,
-                    identifier: "goalPace",
-                    valueColor: paceComparisonColor
-                )
-                commonDaysLoggedStat
-                commonFluctuationStat
-                WeightStat(
-                    label: "Projected goal",
-                    value: forecastLabel,
-                    explanation: "An estimated date for reaching your target if your observed weekly trend continues. It is a projection, not a deadline or guarantee.",
-                    status: forecastDetail,
-                    identifier: "projectedGoal"
-                )
-            } else {
-                WeightStat(
-                    label: "Total change",
-                    value: actualTotalChangeKG.map(formatChange) ?? "Learning",
-                    explanation: "The difference between your first recorded scale weight and your latest reading.",
-                    status: actualTotalChangeKG == nil ? "Log at least two weigh-ins to calculate total change." : nil,
-                    identifier: "actualTotalChange"
-                )
-                WeightStat(
-                    label: "Latest change",
-                    value: actualLatestChangeKG.map(formatChange) ?? "Learning",
-                    explanation: "The difference between your two most recent scale readings. Water and digestion can influence this value.",
-                    status: actualLatestChangeKG == nil ? "Log at least two weigh-ins to compare readings." : nil,
-                    identifier: "actualLatestChange"
-                )
-                WeightStat(
-                    label: "Selected change",
-                    value: actualRangeChangeKG.map(formatChange) ?? "Learning",
-                    explanation: "The difference between the first and last actual readings in the selected chart range.",
-                    status: actualRangeChangeKG == nil ? "Choose a range containing at least two weigh-ins." : nil,
-                    identifier: "actualRangeChange"
-                )
-                commonDaysLoggedStat
-                if insights.hasTrend {
-                    commonFluctuationStat
-                    WeightStat(
-                        label: "Versus trend",
-                        value: actualDifferenceFromTrendKG.map(formatChange) ?? "Learning",
-                        explanation: "How far your latest scale reading is above or below your current seven-reading trend.",
-                        status: actualDifferenceFromTrendKG == nil ? "Leafy is still learning this comparison." : nil,
-                        identifier: "actualVersusTrend"
-                    )
-                }
-            }
+            WeightStat(
+                label: "Total change",
+                value: actualTotalChangeKG.map(formatChange) ?? "Learning",
+                explanation: "The difference between your first recorded scale weight and your latest reading.",
+                status: actualTotalChangeKG == nil ? "Log at least two weigh-ins to calculate total change." : nil,
+                identifier: "totalChange"
+            )
+            WeightStat(
+                label: "Latest change",
+                value: actualLatestChangeKG.map(formatChange) ?? "Learning",
+                explanation: "The difference between your two most recent scale readings. Water and digestion can influence this value.",
+                status: actualLatestChangeKG == nil ? "Log at least two weigh-ins to compare readings." : nil,
+                identifier: "latestChange"
+            )
+            WeightStat(
+                label: "Days logged",
+                value: planLoggingConsistency.map { "\($0.percentage)%" } ?? "Learning",
+                explanation: "The percentage of days since your current plan began that include a weigh-in. Leafy counts no more than one weigh-in per day.",
+                status: planLoggingConsistency.map { "You logged weight on \($0.loggedDayCount) of \($0.totalDayCount) days since this plan began." } ?? "Log your first weight to begin measuring consistency.",
+                identifier: "daysLogged"
+            )
+            WeightStat(
+                label: "Pace",
+                value: paceComparisonLabel,
+                explanation: "Compares your observed weekly trend with the weekly change in your current nutrition plan.",
+                status: paceComparisonDetail,
+                identifier: "pace",
+                valueColor: paceComparisonColor
+            )
         }
-    }
-
-    private var commonDaysLoggedStat: some View {
-        WeightStat(
-            label: "Days logged",
-            value: insights.consistency.map { "\(Int(($0 * 100).rounded()))%" } ?? "Learning",
-            explanation: "The percentage of days in the selected range that include a weigh-in. Leafy counts no more than one weigh-in per day.",
-            status: insights.periodDayCount > 0 ? "You logged weight on \(insights.weighInDayCount) of \(insights.periodDayCount) days." : "Log your first weight to begin measuring consistency.",
-            identifier: "daysLogged"
-        )
-    }
-
-    private var commonFluctuationStat: some View {
-        WeightStat(
-            label: "Typical fluctuation",
-            value: typicalFluctuationLabel,
-            explanation: "The middle range of day-to-day differences between your scale readings and rolling trend during the last four weeks. It helps put a single higher or lower reading in context.",
-            status: insights.fluctuationOffsetsKG == nil ? "Leafy needs at least 14 recent weigh-ins to estimate your typical range." : nil,
-            identifier: "typicalFluctuation"
-        )
     }
 
     private var insights: WeightTrendInsights {
@@ -681,8 +599,8 @@ struct WeightView: View {
     private var paceComparisonColor: Color {
         switch insights.paceComparison {
         case .onPace: LeafyTheme.green
-        case .fasterThanPlan: .orange
-        case .learning, .slowerThanPlan, .movingAway: .primary
+        case .fasterThanPlan, .slowerThanPlan, .movingAway: LeafyTheme.danger
+        case .learning: .secondary
         }
     }
 
@@ -737,20 +655,75 @@ struct WeightView: View {
         }
     }
 
-    private var supportingWeightKG: Double? {
-        if selectedActualEntry != nil { return selectedTrendPoint?.averageKG }
-        switch displayMode {
-        case .trend: return selectedActualEntry?.weightKG ?? latestEntry?.weightKG
-        case .actual: return selectedTrendPoint?.averageKG ?? insights.trendWeightKG
+    @ViewBuilder
+    private var rangeChangeSummaryView: some View {
+        if let change = displayedRangeChangeKG {
+            HStack(spacing: LeafySpacing.xSmall) {
+                Text(rangeChangePrimaryText(change))
+                    .foregroundStyle(rangeChangeColor(change))
+                Text(rangeChangeSuffix)
+                    .foregroundStyle(.secondary)
+            }
+            .font(LeafyTypography.subheadlineSemibold)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .accessibilityElement(children: .combine)
+        } else {
+            Text("Add another weigh-in to see \(rangeChangeSuffix) change")
+                .font(LeafyTypography.subheadlineSemibold)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
         }
     }
 
-    private var supportingMetricLabel: String {
-        displayMode == .trend ? "Actual reading" : "Seven-day trend"
+    private var rangeChangeSuffix: String {
+        switch chartRange {
+        case .yearToDate: "YTD"
+        case .all: "all time"
+        default: "in \(chartRange.rawValue)"
+        }
     }
 
-    private var supportingMetricDate: Date? {
-        displayMode == .trend ? latestEntry?.recordedOn : filteredTrendPoints.last?.date
+    private func rangeChangePrimaryText(_ changeKG: Double) -> String {
+        let value = displayValue(changeKG)
+        guard abs(value) >= 0.05 else { return "No change" }
+        return "\(value < 0 ? "Down" : "Up") \(String(format: "%.1f", abs(value))) \(unitLabel)"
+    }
+
+    private func rangeChangeColor(_ changeKG: Double) -> Color {
+        let displayedChange = displayValue(changeKG)
+        if abs(displayedChange) < 0.05 {
+            return app.draft.goal == .maintain ? LeafyTheme.green : .secondary
+        }
+        return switch WeightDashboardStats.movement(
+            for: changeKG,
+            relativeTo: displayedRangeStartKG,
+            goal: app.draft.goal
+        ) {
+        case .towardGoal: LeafyTheme.green
+        case .awayFromGoal: LeafyTheme.danger
+        case .neutral: .secondary
+        }
+    }
+
+    private var displayedRangeChangeKG: Double? {
+        switch displayMode {
+        case .trend:
+            return WeightInsightMetrics.trendRangeChangeKG(points: filteredTrendPoints)
+        case .actual:
+            return actualRangeChangeKG
+        }
+    }
+
+    private var displayedRangeStartKG: Double? {
+        switch displayMode {
+        case .trend:
+            return filteredTrendPoints.sorted { $0.date < $1.date }.first?.averageKG
+        case .actual:
+            return chartActualEntries.first?.weightKG
+        }
     }
 
     private var latestEntry: WeightEntry? {
@@ -760,6 +733,21 @@ struct WeightView: View {
     private var filteredTrendPoints: [WeightTrendPoint] {
         guard let cutoff = chartRange.startDate(relativeTo: .now, calendar: .current) else { return insights.trendPoints }
         return insights.trendPoints.filter { $0.date >= cutoff }
+    }
+
+    private var fluctuationBandPoints: [WeightTrendPoint] {
+        let points = filteredTrendPoints.sorted { $0.date < $1.date }
+        guard points.count == 1,
+              let point = points.first,
+              let firstDate = chartActualEntries.first?.recordedOn,
+              let lastDate = chartActualEntries.last?.recordedOn,
+              firstDate < lastDate else {
+            return points
+        }
+        return [
+            WeightTrendPoint(date: firstDate, averageKG: point.averageKG, sampleCount: point.sampleCount),
+            WeightTrendPoint(date: lastDate, averageKG: point.averageKG, sampleCount: point.sampleCount),
+        ]
     }
 
     private var displayedRemainingKG: Double? {
@@ -785,6 +773,15 @@ struct WeightView: View {
 
     private var actualLatestChangeKG: Double? {
         WeightInsightMetrics.actualLatestChangeKG(entries: app.weightEntries)
+    }
+
+    private var planLoggingConsistency: WeightInsightMetrics.LoggingConsistency? {
+        let start = app.currentPlan?.createdAt ?? app.weightEntries.map(\.recordedOn).min()
+        return WeightInsightMetrics.loggingConsistency(
+            entries: app.weightEntries,
+            planStartedAt: start,
+            now: .now
+        )
     }
 
     private var actualRangeChangeKG: Double? {
@@ -865,22 +862,36 @@ struct WeightView: View {
 
     private var chartDateDomain: ClosedRange<Date> {
         let now = Date.now
-        if let start = chartRange.startDate(relativeTo: now, calendar: .current) {
-            let end: Date
-            end = now
-            return start...max(end, start.addingTimeInterval(60))
-        }
+        let plottedDates = chartActualEntries.map(\.recordedOn) + fluctuationBandPoints.map(\.date)
+        return WeightChartDateDomain.fitted(
+            to: plottedDates,
+            fallbackStart: chartRange.startDate(relativeTo: now, calendar: .current),
+            now: now,
+            calendar: .current
+        )
+    }
 
-        let dates = filteredEntries.map(\.recordedOn)
-        guard let earliest = dates.min(), let latest = dates.max() else {
-            return Calendar.current.date(byAdding: .day, value: -30, to: now)!...now
+    private var fluctuationRangeTitle: String {
+        insights.fluctuationRangeSource == .personalized ? "Typical range" : "Expected range"
+    }
+
+    private var fluctuationRangeExplanation: String {
+        switch insights.fluctuationRangeSource {
+        case .unavailable:
+            "After seven daily readings, Leafy can show an expected range around your rolling average to put ordinary day-to-day changes in context."
+        case .expected:
+            "This starting range shows how daily readings can move around your rolling seven-reading average. Leafy will replace it with a range learned from your own history after enough consistent check-ins."
+        case .personalized:
+            "This range contains the middle portion of recent differences between your scale readings and rolling trend. It helps put one higher or lower reading in context."
         }
-        guard earliest != latest else {
-            let start = Calendar.current.date(byAdding: .day, value: -1, to: earliest) ?? earliest.addingTimeInterval(-86_400)
-            let end = Calendar.current.date(byAdding: .day, value: 1, to: latest) ?? latest.addingTimeInterval(86_400)
-            return start...end
+    }
+
+    private var weightChartAccessibilityLabel: String {
+        switch insights.fluctuationRangeSource {
+        case .unavailable: "Recorded weight chart"
+        case .expected: "Recorded weight chart with an expected daily fluctuation range"
+        case .personalized: "Recorded weight chart with your typical daily fluctuation range"
         }
-        return earliest...latest
     }
 
     private var xAxisLabelCount: Int {
@@ -916,6 +927,65 @@ struct WeightView: View {
         case .planUpdated: "arrow.triangle.2.circlepath.circle.fill"
         case .goalReached: "trophy.fill"
         case .reviewRequired: "exclamationmark.triangle.fill"
+        }
+    }
+
+    @ViewBuilder
+    private var weightStatusBanner: some View {
+        if !showingEditor,
+           !showingPlanEditor,
+           let status = app.weightStatusMessage,
+           let outcome = app.lastWeightOutcome {
+            HStack(spacing: LeafySpacing.compact) {
+                Image(systemName: statusIcon(outcome))
+                    .font(LeafyTypography.icon(18))
+                    .foregroundStyle(outcome == .reviewRequired ? .orange : LeafyTheme.green)
+
+                Text(status)
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+
+                if outcome == .reviewRequired {
+                    Button("Review") {
+                        dismissWeightStatus()
+                        showingPlanEditor = true
+                    }
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(LeafyTheme.green)
+                }
+            }
+            .padding(.horizontal, LeafySpacing.medium)
+            .padding(.vertical, LeafySpacing.compact)
+            .background(.regularMaterial, in: .rect(cornerRadius: LeafyRadius.control))
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.top, LeafySpacing.small)
+            .transition(
+                reduceMotion
+                    ? .opacity
+                    : .move(edge: .top).combined(with: .opacity)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("weightStatusBanner")
+            .task(id: status) {
+                let presentedStatus = status
+                do {
+                    try await Task.sleep(for: .seconds(2.2))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, app.weightStatusMessage == presentedStatus else { return }
+                dismissWeightStatus()
+            }
+        }
+    }
+
+    private func dismissWeightStatus() {
+        withAnimation(LeafyMotion.state) {
+            app.weightStatusMessage = nil
+            app.lastWeightOutcome = nil
         }
     }
 }
@@ -975,11 +1045,12 @@ private struct WeightExplanationView: View {
 private struct FluctuationRangeExplanationView: View {
     @Environment(\.dismiss) private var dismiss
     let goal: WeightGoal
+    let source: WeightFluctuationRangeSource
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             HStack(alignment: .top) {
-                Text("Your typical range")
+                Text(source == .personalized ? "Your typical range" : "Expected range")
                     .font(LeafyTypography.title2)
                 Spacer(minLength: LeafySpacing.small)
                 Button {
@@ -991,10 +1062,10 @@ private struct FluctuationRangeExplanationView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss typical range explanation")
+                .accessibilityLabel("Dismiss fluctuation range explanation")
             }
 
-            Text("The shaded area shows where most of your daily scale readings typically fall around Leafy’s smoothed seven-reading trend.")
+            Text(introduction)
                 .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1023,6 +1094,13 @@ private struct FluctuationRangeExplanationView: View {
         case .maintain:
             "Daily readings can move up and down while the range remains relatively stable over time."
         }
+    }
+
+    private var introduction: String {
+        if source == .personalized {
+            return "The shaded area shows where most of your daily scale readings have recently fallen around Leafy’s smoothed seven-reading trend."
+        }
+        return "The shaded area is a starting guide around Leafy’s smoothed seven-reading trend. With more check-ins, Leafy will replace it with a range learned from your history."
     }
 }
 

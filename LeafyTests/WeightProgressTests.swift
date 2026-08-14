@@ -116,7 +116,7 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertTrue(insights.trendPoints.isEmpty)
     }
 
-    func testTrendUnlocksAtSevenDistinctDailyReadings() {
+    func testTrendUnlocksAtSevenDistinctDailyReadings() throws {
         let calendar = Calendar(identifier: .gregorian)
         let entries = (1...7).map { day in makeEntry(weightKG: 80 - Double(day - 1), day: day) }
         let insights = WeightTrendInsights(
@@ -130,6 +130,74 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertEqual(insights.trendWeightKG!, 77, accuracy: 0.001)
         XCTAssertEqual(insights.trendPoints.count, 1)
         XCTAssertEqual(insights.trendPoints[0].sampleCount, 7)
+        XCTAssertEqual(insights.fluctuationRangeSource, .expected)
+        XCTAssertEqual(
+            try XCTUnwrap(insights.fluctuationOffsetsKG).upperBound,
+            WeightTrendInsights.expectedFluctuationHalfWidthKG,
+            accuracy: 0.0001
+        )
+    }
+
+    func testFluctuationRangeIsUnavailableBeforeSevenReadings() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = (1...6).map { day in makeEntry(weightKG: 80, day: day) }
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil,
+            periodEnd: calendar.date(from: DateComponents(year: 2026, month: 1, day: 6))!,
+            targetKG: 75, goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertEqual(insights.fluctuationRangeSource, .unavailable)
+        XCTAssertNil(insights.fluctuationOffsetsKG)
+    }
+
+    func testFluctuationRangePersonalizesAfterFourteenUsableResiduals() {
+        let calendar = Calendar(identifier: .gregorian)
+        let entries = (1...20).map { day in
+            makeEntry(weightKG: 80 - Double(day) * 0.08 + (day.isMultiple(of: 2) ? 0.15 : -0.1), day: day)
+        }
+        let insights = WeightTrendInsights(
+            entries: entries, periodStart: nil,
+            periodEnd: calendar.date(from: DateComponents(year: 2026, month: 1, day: 20))!,
+            targetKG: 75, goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
+        XCTAssertEqual(insights.fluctuationRangeSource, .personalized)
+        XCTAssertNotNil(insights.fluctuationOffsetsKG)
+    }
+
+    func testYearChartDomainFitsOneMonthOfAvailableData() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 14, hour: 10))!
+        let earliest = calendar.date(from: DateComponents(year: 2026, month: 7, day: 28, hour: 8))!
+        let latest = calendar.date(from: DateComponents(year: 2026, month: 8, day: 14, hour: 8))!
+        let yearStart = calendar.date(byAdding: .day, value: -365, to: now)!
+
+        let domain = WeightChartDateDomain.fitted(
+            to: [earliest, latest],
+            fallbackStart: yearStart,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertLessThan(domain.upperBound.timeIntervalSince(domain.lowerBound), 21 * 86_400)
+        XCTAssertLessThan(domain.lowerBound, earliest)
+        XCTAssertGreaterThan(domain.upperBound, latest)
+    }
+
+    func testChartDomainCentersASingleReading() {
+        let calendar = Calendar(identifier: .gregorian)
+        let reading = calendar.date(from: DateComponents(year: 2026, month: 8, day: 14))!
+        let domain = WeightChartDateDomain.fitted(
+            to: [reading],
+            fallbackStart: nil,
+            now: reading.addingTimeInterval(3_600),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(domain.lowerBound, calendar.date(byAdding: .day, value: -1, to: reading))
+        XCTAssertEqual(domain.upperBound, calendar.date(byAdding: .day, value: 1, to: reading))
     }
 
     func testEightReadingsProduceTwoRollingSevenReadingTrendPoints() {
@@ -352,6 +420,21 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertNil(WeightInsightMetrics.actualRangeChangeKG(entries: [entry]))
     }
 
+    func testTrendRangeChangeUsesChronologicalPoints() {
+        let points = [
+            WeightTrendPoint(date: makeEntry(weightKG: 78.5, day: 3).recordedOn, averageKG: 78.5, sampleCount: 7),
+            WeightTrendPoint(date: makeEntry(weightKG: 80, day: 1).recordedOn, averageKG: 80, sampleCount: 7),
+            WeightTrendPoint(date: makeEntry(weightKG: 79.25, day: 2).recordedOn, averageKG: 79.25, sampleCount: 7),
+        ]
+
+        XCTAssertEqual(WeightInsightMetrics.trendRangeChangeKG(points: points), -1.5)
+    }
+
+    func testTrendRangeChangeRequiresTwoPoints() {
+        let point = WeightTrendPoint(date: Date(), averageKG: 80, sampleCount: 7)
+        XCTAssertNil(WeightInsightMetrics.trendRangeChangeKG(points: [point]))
+    }
+
     func testActualDifferenceFromTrendRequiresEstablishedTrend() {
         XCTAssertNil(
             WeightInsightMetrics.actualDifferenceFromTrendKG(
@@ -376,6 +459,79 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertEqual(WeightDashboardStats.movement(for: 1, goal: .gain), .towardGoal)
         XCTAssertEqual(WeightDashboardStats.movement(for: -1, goal: .gain), .awayFromGoal)
         XCTAssertEqual(WeightDashboardStats.movement(for: -1, goal: .maintain), .neutral)
+    }
+
+    func testMaintenanceMovementUsesOnePercentOfRangeStart() {
+        XCTAssertEqual(
+            WeightDashboardStats.movement(for: 1, relativeTo: 100, goal: .maintain),
+            .towardGoal
+        )
+        XCTAssertEqual(
+            WeightDashboardStats.movement(for: -1, relativeTo: 100, goal: .maintain),
+            .towardGoal
+        )
+        XCTAssertEqual(
+            WeightDashboardStats.movement(for: 1.01, relativeTo: 100, goal: .maintain),
+            .awayFromGoal
+        )
+        XCTAssertEqual(
+            WeightDashboardStats.movement(for: 1, relativeTo: nil, goal: .maintain),
+            .neutral
+        )
+    }
+
+    func testLoggingConsistencyCountsDistinctDaysSinceCurrentPlanBegan() {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = makeEntry(weightKG: 80, day: 1).recordedOn
+        let end = makeEntry(weightKG: 79, day: 5).recordedOn
+        let entries = [
+            makeEntry(weightKG: 80, day: 1),
+            makeEntry(weightKG: 79.8, day: 3),
+            makeEntry(weightKG: 79.7, day: 3),
+            makeEntry(weightKG: 79.5, day: 5),
+        ]
+
+        let result = WeightInsightMetrics.loggingConsistency(
+            entries: entries,
+            planStartedAt: start,
+            now: end,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result?.loggedDayCount, 3)
+        XCTAssertEqual(result?.totalDayCount, 5)
+        XCTAssertEqual(result?.percentage, 60)
+    }
+
+    func testLoggingConsistencyIgnoresEntriesBeforePlanAndRejectsInvalidStart() {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = makeEntry(weightKG: 80, day: 3).recordedOn
+        let end = makeEntry(weightKG: 79, day: 5).recordedOn
+        let result = WeightInsightMetrics.loggingConsistency(
+            entries: [makeEntry(weightKG: 81, day: 1), makeEntry(weightKG: 80, day: 3)],
+            planStartedAt: start,
+            now: end,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(result?.loggedDayCount, 1)
+        XCTAssertEqual(result?.totalDayCount, 3)
+        XCTAssertNil(
+            WeightInsightMetrics.loggingConsistency(
+                entries: [],
+                planStartedAt: nil,
+                now: end,
+                calendar: calendar
+            )
+        )
+        XCTAssertNil(
+            WeightInsightMetrics.loggingConsistency(
+                entries: [],
+                planStartedAt: end.addingTimeInterval(86_400),
+                now: end,
+                calendar: calendar
+            )
+        )
     }
 
     func testDashboardStatsUseFirstAndLatestEntries() {

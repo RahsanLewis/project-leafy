@@ -117,8 +117,18 @@ struct WeightDashboardStats: Equatable, Sendable {
         self.estimatedGoalDate = goal == .maintain ? nil : estimatedGoalDate
     }
 
-    static func movement(for changeKG: Double?, goal: WeightGoal) -> WeightMovement {
-        guard let changeKG, abs(changeKG) > 0.0001, goal != .maintain else { return .neutral }
+    static func movement(
+        for changeKG: Double?,
+        relativeTo startingKG: Double? = nil,
+        goal: WeightGoal,
+        maintenanceToleranceFraction: Double = 0.01
+    ) -> WeightMovement {
+        guard let changeKG else { return .neutral }
+        if goal == .maintain {
+            guard let startingKG, startingKG > 0 else { return .neutral }
+            return abs(changeKG) <= startingKG * maintenanceToleranceFraction ? .towardGoal : .awayFromGoal
+        }
+        guard abs(changeKG) > 0.0001 else { return .neutral }
         switch goal {
         case .lose: return changeKG < 0 ? .towardGoal : .awayFromGoal
         case .gain: return changeKG > 0 ? .towardGoal : .awayFromGoal
@@ -149,6 +159,12 @@ enum WeightFluctuationStatus: Equatable, Sendable {
     case outsideRecentRange
 }
 
+enum WeightFluctuationRangeSource: Equatable, Sendable {
+    case unavailable
+    case expected
+    case personalized
+}
+
 struct WeightTrendInsights: Equatable, Sendable {
     let trendWeightKG: Double?
     let previousTrendWeightKG: Double?
@@ -165,10 +181,12 @@ struct WeightTrendInsights: Equatable, Sendable {
     let latestDeviationKG: Double?
     let fluctuationStatus: WeightFluctuationStatus
     let fluctuationOffsetsKG: ClosedRange<Double>?
+    let fluctuationRangeSource: WeightFluctuationRangeSource
     let distinctReadingCount: Int
 
     static let minimumWeeklySamples = 4
     static let minimumTrendReadings = 7
+    static let expectedFluctuationHalfWidthKG = 1.5 / 2.20462
 
     var hasTrend: Bool { distinctReadingCount >= Self.minimumTrendReadings }
 
@@ -239,13 +257,20 @@ struct WeightTrendInsights: Equatable, Sendable {
            let lower = Self.quantile(residuals, percentile: 0.10),
            let upper = Self.quantile(residuals, percentile: 0.90) {
             fluctuationOffsetsKG = lower...upper
+            fluctuationRangeSource = .personalized
             if let deviation = latestDeviationKG, deviation >= lower, deviation <= upper {
                 fluctuationStatus = .withinRecentRange
             } else {
                 fluctuationStatus = .outsideRecentRange
             }
+        } else if ordered.count >= Self.minimumTrendReadings {
+            let width = Self.expectedFluctuationHalfWidthKG
+            fluctuationOffsetsKG = (-width)...width
+            fluctuationRangeSource = .expected
+            fluctuationStatus = .learning
         } else {
             fluctuationOffsetsKG = nil
+            fluctuationRangeSource = .unavailable
             fluctuationStatus = .learning
         }
 
@@ -338,6 +363,34 @@ struct WeightTrendInsights: Equatable, Sendable {
     }
 }
 
+enum WeightChartDateDomain {
+    static func fitted(
+        to plottedDates: [Date],
+        fallbackStart: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> ClosedRange<Date> {
+        let dates = plottedDates.filter { date in
+            date <= now && fallbackStart.map { date >= $0 } != false
+        }
+
+        guard let earliest = dates.min(), let latest = dates.max() else {
+            let start = fallbackStart ?? calendar.date(byAdding: .day, value: -30, to: now) ?? now.addingTimeInterval(-30 * 86_400)
+            return start...max(now, start.addingTimeInterval(60))
+        }
+
+        guard earliest != latest else {
+            let start = calendar.date(byAdding: .day, value: -1, to: earliest) ?? earliest.addingTimeInterval(-86_400)
+            let end = calendar.date(byAdding: .day, value: 1, to: latest) ?? latest.addingTimeInterval(86_400)
+            return start...end
+        }
+
+        let span = latest.timeIntervalSince(earliest)
+        let padding = max(12 * 3_600, span * 0.06)
+        return earliest.addingTimeInterval(-padding)...latest.addingTimeInterval(padding)
+    }
+}
+
 struct WeightChartScale: Equatable, Sendable {
     let domain: ClosedRange<Double>
 
@@ -359,6 +412,16 @@ struct WeightChartScale: Equatable, Sendable {
 }
 
 struct WeightInsightMetrics {
+    struct LoggingConsistency: Equatable, Sendable {
+        let loggedDayCount: Int
+        let totalDayCount: Int
+
+        var percentage: Int {
+            guard totalDayCount > 0 else { return 0 }
+            return Int((Double(loggedDayCount) / Double(totalDayCount) * 100).rounded())
+        }
+    }
+
     static func totalProgressKG(
         startingKG: Double?,
         trendWeightKG: Double?,
@@ -392,6 +455,34 @@ struct WeightInsightMetrics {
 
     static func actualRangeChangeKG(entries: [WeightEntry]) -> Double? {
         changeAcross(entries: entries)
+    }
+
+    static func trendRangeChangeKG(points: [WeightTrendPoint]) -> Double? {
+        let ordered = points.sorted { $0.date < $1.date }
+        guard ordered.count >= 2, let first = ordered.first, let last = ordered.last else { return nil }
+        return last.averageKG - first.averageKG
+    }
+
+    static func loggingConsistency(
+        entries: [WeightEntry],
+        planStartedAt: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> LoggingConsistency? {
+        guard let planStartedAt else { return nil }
+        let start = calendar.startOfDay(for: planStartedAt)
+        let end = calendar.startOfDay(for: now)
+        guard start <= end else { return nil }
+
+        let loggedDays = Set(entries.compactMap { entry -> Date? in
+            let day = calendar.startOfDay(for: entry.recordedOn)
+            return day >= start && day <= end ? day : nil
+        })
+        let elapsedDays = calendar.dateComponents([.day], from: start, to: end).day ?? 0
+        return LoggingConsistency(
+            loggedDayCount: min(loggedDays.count, elapsedDays + 1),
+            totalDayCount: elapsedDays + 1
+        )
     }
 
     static func actualDifferenceFromTrendKG(
