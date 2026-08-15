@@ -66,11 +66,13 @@ struct LeafyAnalysisLoadingView: View {
     var body: some View {
         VStack(spacing: LeafySpacing.xLarge) {
             Spacer()
-            ZStack {
-                Circle().stroke(LeafyTheme.green.opacity(0.16), lineWidth: 10)
-                ProgressView().controlSize(.large).tint(LeafyTheme.green)
-            }
-            .frame(width: 92, height: 92)
+            ProgressView()
+                .controlSize(.large)
+                .tint(LeafyTheme.green)
+                .scaleEffect(1.45)
+                .frame(width: 72, height: 72)
+                .accessibilityLabel("Analyzing nutrition")
+                .accessibilityIdentifier("aiMealLoadingIndicator")
 
             VStack(spacing: LeafySpacing.small) {
                 Text(title)

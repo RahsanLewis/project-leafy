@@ -194,16 +194,40 @@ final class LeafyUITests: XCTestCase {
         app.buttons["Done"].tap()
         app.buttons["analyzeMealButton"].tap()
 
-        XCTAssertTrue(app.staticTexts["More detail needed"].waitForExistence(timeout: 3))
-        app.textFields["Your answer"].tap()
-        app.textFields["Your answer"].typeText("One bowl")
-        app.buttons["Update estimate"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["mealClarificationScreen"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Nutrition review"].exists)
+        let answer = app.descendants(matching: .any)["mealClarificationAnswer"]
+        answer.tap()
+        answer.typeText("One bowl")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["submitMealClarificationButton"].isEnabled)
+        app.buttons["submitMealClarificationButton"].tap()
         XCTAssertTrue(app.buttons["confirmMealEstimateButton"].waitForExistence(timeout: 3))
         app.buttons["confirmMealEstimateButton"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["foodLogSuccessMessage"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.textFields["aiMealDescription"].exists)
         app.navigationBars["Log Food"].buttons["Done"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testAIMealClarificationCanContinueWithoutAnAnswerPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launch()
+
+        app.buttons["logFoodButton"].tap()
+        let description = app.textFields["aiMealDescription"]
+        XCTAssertTrue(description.waitForExistence(timeout: 3))
+        description.tap()
+        description.typeText("A bowl of homemade soup")
+        app.buttons["Done"].tap()
+        app.buttons["analyzeMealButton"].tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["mealClarificationScreen"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["skipMealClarificationButton"].exists)
+        app.buttons["skipMealClarificationButton"].tap()
+        XCTAssertTrue(app.buttons["confirmMealEstimateButton"].waitForExistence(timeout: 3))
     }
 
     @MainActor
@@ -384,10 +408,12 @@ final class LeafyUITests: XCTestCase {
         description.typeText("Apple")
         app.buttons["Done"].tap()
         app.buttons["analyzeMealButton"].tap()
-        XCTAssertTrue(app.textFields["Your answer"].waitForExistence(timeout: 3))
-        app.textFields["Your answer"].tap()
-        app.textFields["Your answer"].typeText("One medium apple")
-        app.buttons["Update estimate"].tap()
+        let answer = app.descendants(matching: .any)["mealClarificationAnswer"]
+        XCTAssertTrue(answer.waitForExistence(timeout: 3))
+        answer.tap()
+        answer.typeText("One medium apple")
+        app.buttons["Done"].tap()
+        app.buttons["submitMealClarificationButton"].tap()
         XCTAssertTrue(app.buttons["confirmMealEstimateButton"].waitForExistence(timeout: 3))
         app.buttons["confirmMealEstimateButton"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["foodLogSuccessMessage"].waitForExistence(timeout: 3))

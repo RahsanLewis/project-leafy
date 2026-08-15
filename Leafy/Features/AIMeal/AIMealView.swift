@@ -34,6 +34,7 @@ struct AIMealView: View {
     @State private var openContributionAfterUnknownProduct = false
     @State private var reopenScannerAfterUnknownProduct = false
     @FocusState private var descriptionIsFocused: Bool
+    @FocusState private var clarificationIsFocused: Bool
     @Environment(\.openURL) private var openURL
 
     init(
@@ -54,16 +55,7 @@ struct AIMealView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                if let selectedProduct {
-                    knownProductReview(selectedProduct)
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                } else if let estimate = app.mealEstimate {
-                    review(estimate)
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                } else {
-                    composer
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
-                }
+                flowContent
             }
             .padding(.horizontal, 20)
             .padding(.top, LeafySpacing.medium)
@@ -74,10 +66,8 @@ struct AIMealView: View {
         .navigationTitle(embedded ? "Log Food" : (app.mealEstimate == nil ? "Describe Food" : "Review nutrition"))
         .navigationBarTitleDisplayMode(embedded ? .inline : .large)
         .safeAreaInset(edge: .bottom) {
-            if app.mealEstimate == nil || app.mealEstimate?.status == .ready {
-                primaryAction
-                    .leafyDetachedBottomControl()
-            }
+            primaryAction
+                .leafyDetachedBottomControl()
         }
         .sheet(isPresented: $showingCamera) {
             MealCameraPicker { image in setImage(image) }
@@ -139,6 +129,10 @@ struct AIMealView: View {
         .onChange(of: photoData) { _, _ in updateDraftState() }
         .onChange(of: servingAmount) { _, _ in updateDraftState() }
         .onChange(of: servingUnit) { _, _ in updateDraftState() }
+        .onChange(of: app.mealEstimate?.followUp?.id) { _, _ in
+            followUpAnswer = ""
+            clarificationIsFocused = false
+        }
         .onAppear { updateDraftState() }
         .task { await app.loadRecentLoggingFoods() }
         .task(id: description.trimmingCharacters(in: .whitespacesAndNewlines)) {
@@ -154,8 +148,30 @@ struct AIMealView: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") { descriptionIsFocused = false }
+                Button("Done") {
+                    descriptionIsFocused = false
+                    clarificationIsFocused = false
+                }
             }
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    @ViewBuilder private var flowContent: some View {
+        if let selectedProduct {
+            knownProductReview(selectedProduct)
+        } else if let estimate = app.mealEstimate {
+            estimateContent(estimate)
+        } else {
+            composer
+        }
+    }
+
+    @ViewBuilder private func estimateContent(_ estimate: MealEstimate) -> some View {
+        if estimate.status == .needsClarification {
+            clarification(estimate)
+        } else {
+            review(estimate)
         }
     }
 
@@ -587,34 +603,6 @@ struct AIMealView: View {
                     .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
             }
 
-            if let followUp = estimate.followUp, estimate.status == .needsClarification {
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("More detail needed", systemImage: "questionmark.bubble.fill")
-                        .font(LeafyTypography.headline).foregroundStyle(LeafyTheme.green)
-                    Text(followUp.question).font(LeafyTypography.title3)
-                    TextField("Your answer", text: $followUpAnswer, axis: .vertical)
-                        .lineLimit(2...4)
-                        .padding(.vertical, LeafySpacing.small)
-                        .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
-                    HStack {
-                        Spacer()
-                        Button("Update estimate") {
-                            let answer = followUpAnswer
-                            followUpAnswer = ""
-                            refineEstimate(answer: answer, skip: false)
-                        }
-                        .font(LeafyTypography.subheadlineSemibold)
-                        .foregroundStyle(LeafyTheme.green)
-                        .disabled(followUpAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                .padding(.leading, LeafySpacing.medium)
-                .padding(.vertical, LeafySpacing.small)
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(LeafyTheme.green).frame(width: 3)
-                }
-            }
-
             VStack(alignment: .leading, spacing: 12) {
                 Text("ITEMS").font(LeafyTypography.caption).foregroundStyle(.secondary)
                 VStack(spacing: 0) {
@@ -668,6 +656,54 @@ struct AIMealView: View {
         .overlay { if app.isMealEstimateLoading { ProgressView().controlSize(.large) } }
     }
 
+    @ViewBuilder private func clarification(_ estimate: MealEstimate) -> some View {
+        if let followUp = estimate.followUp {
+            VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+                VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                    Label("One quick detail", systemImage: "questionmark.bubble.fill")
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(LeafyTheme.green)
+                    Text("Help Leafy narrow the estimate")
+                        .font(LeafyTypography.title2)
+                        .accessibilityIdentifier("mealClarificationScreen")
+                    Text("Your answer will be used to update the nutrition estimate before you review or log anything.")
+                        .font(LeafyTypography.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                    Text(followUp.question)
+                        .font(LeafyTypography.title3)
+                        .accessibilityIdentifier("mealClarificationQuestion")
+
+                    TextField("Type your answer", text: $followUpAnswer, axis: .vertical)
+                        .focused($clarificationIsFocused)
+                        .lineLimit(2...5)
+                        .font(LeafyTypography.body)
+                        .padding(.vertical, LeafySpacing.small)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(clarificationIsFocused ? LeafyTheme.green : LeafyTheme.hairline)
+                                .frame(height: clarificationIsFocused ? 2 : 1)
+                                .animation(LeafyMotion.state, value: clarificationIsFocused)
+                        }
+                        .accessibilityIdentifier("mealClarificationAnswer")
+                }
+
+                if let message = app.mealEstimateErrorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(LeafyTypography.subheadline)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .background {
+                Color.clear
+                    .contentShape(.rect)
+                    .onTapGesture { clarificationIsFocused = false }
+            }
+        }
+    }
+
     private var canAnalyze: Bool {
         photoData != nil || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -695,14 +731,39 @@ struct AIMealView: View {
             .disabled(app.isFoodMutationInProgress || validProductServingCount == nil)
             .opacity(validProductServingCount == nil ? 0.45 : 1)
             .accessibilityIdentifier("confirmKnownFoodButton")
-        } else if let estimate = app.mealEstimate, estimate.status == .ready {
-            Button { confirm() } label: {
-                if app.isMealEstimateLoading { ProgressView().tint(.white) }
-                else { Text("Log \(estimate.reviewedTotal) calories") }
+        } else if let estimate = app.mealEstimate {
+            if estimate.status == .needsClarification {
+                VStack(spacing: LeafySpacing.compact) {
+                    Button {
+                        clarificationIsFocused = false
+                        refineEstimate(answer: followUpAnswer, skip: false)
+                    } label: {
+                        Text("Continue")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(trimmedFollowUpAnswer.isEmpty || app.isMealEstimateLoading)
+                    .opacity(trimmedFollowUpAnswer.isEmpty ? 0.45 : 1)
+                    .accessibilityIdentifier("submitMealClarificationButton")
+
+                    Button("I’m not sure") {
+                        clarificationIsFocused = false
+                        refineEstimate(answer: nil, skip: true)
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+                    .frame(minHeight: LeafyTheme.minimumTouchTarget)
+                    .disabled(app.isMealEstimateLoading)
+                    .accessibilityIdentifier("skipMealClarificationButton")
+                }
+            } else {
+                Button { confirm() } label: {
+                    if app.isMealEstimateLoading { ProgressView().tint(.white) }
+                    else { Text("Log \(estimate.reviewedTotal) calories") }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(estimate.items.isEmpty || app.isMealEstimateLoading)
+                .accessibilityIdentifier("confirmMealEstimateButton")
             }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(estimate.items.isEmpty || app.isMealEstimateLoading)
-            .accessibilityIdentifier("confirmMealEstimateButton")
         } else if app.mealEstimate == nil {
             Button { analyze() } label: {
                 if app.isMealEstimateLoading { ProgressView().tint(.white) }
@@ -740,10 +801,13 @@ struct AIMealView: View {
     }
 
     private func refineEstimate(answer: String?, skip: Bool) {
-        followUpAnswer = ""
         beginAnalysis(hasPhoto: photoData != nil) {
             await app.answerMealFollowUp(answer, skip: skip)
         }
+    }
+
+    private var trimmedFollowUpAnswer: String {
+        followUpAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func beginAnalysis(hasPhoto: Bool, operation: @escaping @MainActor () async -> Bool) {
