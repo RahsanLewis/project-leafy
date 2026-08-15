@@ -72,7 +72,7 @@ struct MyContributionsView: View {
         switch status {
         case .accepted: LeafyTheme.green
         case .needsReview, .rejected: .orange
-        case .draft, .pendingReview: .secondary
+        case .draft, .processing, .pendingReview: .secondary
         }
     }
 }

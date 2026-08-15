@@ -461,6 +461,31 @@ final class AppModel {
         }
     }
 
+    func enqueueCatalogContribution(
+        id: UUID,
+        servingCount: Double?,
+        consumedAt: Date?,
+        mealType: MealType?
+    ) async -> CatalogContributionSubmitResponse? {
+        isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
+        defer { isCatalogContributionLoading = false }
+        do {
+            let result = try await service.enqueueCatalogContribution(
+                id: id,
+                servingCount: servingCount,
+                consumedAt: consumedAt,
+                localDate: servingCount == nil ? nil : selectedLogDate,
+                mealType: mealType
+            )
+            await loadCatalogContributions()
+            return result
+        } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return nil }
+            catalogContributionErrorMessage = userFacingMessage(for: error)
+            return nil
+        }
+    }
+
     func submitCatalogContribution(id: UUID, fields: CatalogContributionFields, nutrients: [CatalogContributionNutrient]) async -> CatalogContributionSubmitResponse? {
         isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
         defer { isCatalogContributionLoading = false }

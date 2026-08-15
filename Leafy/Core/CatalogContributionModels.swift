@@ -2,6 +2,7 @@ import Foundation
 
 enum CatalogContributionStatus: String, Codable, CaseIterable, Sendable {
     case draft
+    case processing
     case pendingReview = "pending_review"
     case accepted
     case needsReview = "needs_review"
@@ -10,6 +11,7 @@ enum CatalogContributionStatus: String, Codable, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .draft: "Draft"
+        case .processing: "Processing"
         case .pendingReview: "Under Review"
         case .accepted: "Accepted"
         case .needsReview: "Needs Attention"
@@ -188,6 +190,7 @@ struct CatalogContribution: Codable, Identifiable, Hashable, Sendable {
     let confirmedFields: CatalogContributionFields?
     let validationResults: CatalogValidationResults?
     let extractionDiagnostics: CatalogExtractionDiagnostics?
+    let processingStage: String?
     let reviewReason: String?
     let acceptedFoodVersionID: UUID?
     let assets: [CatalogContributionAsset]?
@@ -201,6 +204,7 @@ struct CatalogContribution: Codable, Identifiable, Hashable, Sendable {
         case confirmedFields = "confirmed_fields"
         case validationResults = "validation_results"
         case extractionDiagnostics = "extraction_diagnostics"
+        case processingStage = "processing_stage"
         case reviewReason = "review_reason"
         case acceptedFoodVersionID = "accepted_food_version_id"
         case createdAt = "created_at"

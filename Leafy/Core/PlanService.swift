@@ -461,6 +461,30 @@ actor PlanService {
         return result.contribution
     }
 
+    func enqueueCatalogContribution(
+        id: UUID,
+        servingCount: Double?,
+        consumedAt: Date?,
+        localDate: Date?,
+        mealType: MealType?,
+        calendar: Calendar = .current
+    ) async throws -> CatalogContributionSubmitResponse {
+        var payload: [String: Any] = [
+            "action": "enqueue",
+            "contribution_id": id.uuidString.lowercased(),
+            "consent_version": 1,
+        ]
+        if let servingCount, let consumedAt, let localDate {
+            payload["serving_count"] = servingCount
+            payload["consumed_at"] = ISO8601DateFormatter().string(from: consumedAt)
+            payload["local_date"] = Self.localDayString(for: localDate, calendar: calendar)
+            payload["time_zone"] = calendar.timeZone.identifier
+            payload["meal_type"] = (mealType ?? .unspecified).rawValue
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        return try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionSubmitResponse.self)
+    }
+
     func submitCatalogContribution(id: UUID, fields: CatalogContributionFields, nutrients: [CatalogContributionNutrient]) async throws -> CatalogContributionSubmitResponse {
         let fieldData = try JSONEncoder().encode(fields)
         let nutrientData = try JSONEncoder().encode(nutrients)

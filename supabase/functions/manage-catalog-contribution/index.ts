@@ -3,9 +3,11 @@ import { cors, json } from '../_shared/http.ts'
 import { calculateAndPersistPFQS } from '../_shared/pfqs/persistence.ts'
 import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
 
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
+
 type Row = Record<string, unknown>
 type Body = {
-  action?: 'start' | 'register_asset' | 'extract' | 'submit' | 'list' | 'detail' | 'delete_draft' | 'log'
+  action?: 'start' | 'register_asset' | 'extract' | 'enqueue' | 'submit' | 'list' | 'detail' | 'delete_draft' | 'log'
   contribution_id?: string
   barcode?: string
   market_country?: string
@@ -19,6 +21,7 @@ type Body = {
   local_date?: string
   time_zone?: string
   meal_type?: string
+  serving_count?: number
 }
 type NutrientInput = {
   code: string
@@ -58,6 +61,20 @@ const extractionSchema = {
   },
 }
 
+const verificationSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['exact_gtin_match', 'product_name', 'brand_name', 'source_quality', 'matched_fields', 'conflict_fields', 'summary'],
+  properties: {
+    exact_gtin_match: { type: 'boolean' },
+    product_name: { type: 'string' },
+    brand_name: { type: 'string' },
+    source_quality: { type: 'string', enum: ['manufacturer', 'usda', 'retailer', 'database', 'other', 'none'] },
+    matched_fields: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+    conflict_fields: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+    summary: { type: 'string' },
+  },
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
@@ -73,12 +90,22 @@ Deno.serve(async (request) => {
     const action = body.action ?? 'list'
 
     if (action === 'start') return json(await start(admin, user.id, body))
-    if (action === 'list') return json({ contributions: await list(admin, user.id) })
+    if (action === 'list') {
+      EdgeRuntime.waitUntil(resumeReadyJobs(admin, user.id).catch((error) => console.error('catalog retry resume failed', error)))
+      return json({ contributions: await list(admin, user.id) })
+    }
     if (!body.contribution_id) return json({ error: 'A contribution identifier is required.' }, 400)
     const contribution = await owned(admin, user.id, body.contribution_id)
     if (action === 'detail') return json({ contribution: await detail(admin, contribution) })
     if (action === 'register_asset') return json({ contribution: await registerAsset(admin, contribution, body) })
     if (action === 'extract') return json({ contribution: await extract(admin, user.id, contribution) })
+    if (action === 'enqueue') {
+      const queued = await enqueueAutomation(admin, user.id, contribution, body)
+      EdgeRuntime.waitUntil(runAutomation(admin, user.id, String(contribution.id)).catch((error) => {
+        console.error('catalog automation background task failed', error)
+      }))
+      return json({ outcome: 'processing', contribution: queued, food_version_id: null }, 202)
+    }
     if (action === 'submit') return json(await submit(admin, contribution, body))
     if (action === 'delete_draft') return json(await deleteDraft(admin, contribution))
     if (action === 'log') return json({ entry: await logContribution(admin, user.id, contribution, body) })
@@ -97,7 +124,7 @@ async function start(admin: any, userID: string, body: Body) {
   const existing = await activeProduct(admin, gtin, market)
   if (existing) return { outcome: 'existing', food_version_id: existing.id, contribution: null }
   const resumed = await admin.from('catalog_contributions').select('*').eq('user_id', userID).eq('gtin', gtin)
-    .in('status', ['draft', 'needs_review']).order('updated_at', { ascending: false }).limit(1).maybeSingle()
+    .in('status', ['draft', 'processing', 'pending_review', 'needs_review']).order('updated_at', { ascending: false }).limit(1).maybeSingle()
   if (resumed.error) throw resumed.error
   if (resumed.data) return { outcome: 'contribution', contribution: await detail(admin, resumed.data) }
   const created = await admin.from('catalog_contributions').insert({ user_id: userID, gtin, market_country: market, status: 'draft' }).select('*').single()
@@ -112,16 +139,26 @@ async function list(admin: any, userID: string) {
   return result.data ?? []
 }
 
+async function resumeReadyJobs(admin: any, userID: string) {
+  const ready = await admin.from('catalog_contribution_jobs').select('contribution_id')
+    .eq('user_id', userID).in('status', ['queued', 'retry_wait']).lte('next_attempt_at', new Date().toISOString()).limit(3)
+  if (ready.error) throw ready.error
+  await Promise.all((ready.data ?? []).map((job: Row) => runAutomation(admin, userID, String(job.contribution_id))))
+}
+
 async function detail(admin: any, contribution: Row) {
   const assets = await admin.from('product_label_assets').select('id,asset_kind,object_path,created_at').eq('contribution_id', contribution.id)
   if (assets.error) throw assets.error
   const nutrients = await admin.from('catalog_contribution_nutrients').select('nutrient_code,amount_per_serving,unit,percent_daily_value,confidence').eq('contribution_id', contribution.id).eq('revision', contribution.revision)
   if (nutrients.error) throw nutrients.error
+  const job = await admin.from('catalog_contribution_jobs').select('status,last_error,completed_at').eq('contribution_id', contribution.id).maybeSingle()
+  if (job.error) throw job.error
   return {
     ...contribution,
     assets: assets.data ?? [],
     nutrients: nutrients.data ?? [],
     extraction_diagnostics: extractionDiagnostics(contribution),
+    processing_stage: job.data?.status ?? null,
   }
 }
 
@@ -184,6 +221,235 @@ async function extract(admin: any, userID: string, contribution: Row) {
   }).eq('id', contribution.id).select('*').single()
   if (update.error) throw update.error
   return detail(admin, update.data)
+}
+
+async function enqueueAutomation(admin: any, userID: string, contribution: Row, body: Body) {
+  assertEditable(contribution)
+  if (body.consent_version !== 1) throw new Error('Review the current catalog contribution terms before submitting.')
+  const assets = await admin.from('product_label_assets').select('asset_kind').eq('contribution_id', contribution.id)
+  if (assets.error) throw assets.error
+  const kinds = new Set((assets.data ?? []).map((row: Row) => String(row.asset_kind)))
+  if (!kinds.has('front')) throw new Error('Add a clear photo of the package front.')
+  if (!kinds.has('back_label') && !(kinds.has('nutrition_facts') && kinds.has('ingredients'))) {
+    throw new Error('Add a clear photo showing Nutrition Facts and ingredients.')
+  }
+  const requestedLog = body.serving_count == null ? null : {
+    serving_count: number(body.serving_count, 0.25, 100),
+    consumed_at: body.consumed_at,
+    local_date: body.local_date,
+    time_zone: body.time_zone,
+    meal_type: body.meal_type ?? 'unspecified',
+  }
+  const now = new Date().toISOString()
+  const update = await admin.from('catalog_contributions').update({
+    status: 'processing', consent_version: 1, submitted_at: contribution.submitted_at ?? now,
+    review_reason: null, automation_version: 'catalog-automation-1.0', updated_at: now,
+  }).eq('id', contribution.id).select('*').single()
+  if (update.error) throw update.error
+  const job = await admin.from('catalog_contribution_jobs').upsert({
+    contribution_id: contribution.id, user_id: userID, status: 'queued', attempts: 0,
+    next_attempt_at: now, requested_log: requestedLog, last_error: null,
+    started_at: null, completed_at: null, updated_at: now,
+  }, { onConflict: 'contribution_id' })
+  if (job.error) throw job.error
+  await event(admin, String(contribution.id), 'user', String(contribution.status), 'processing', 'Two-photo automated verification started')
+  return detail(admin, update.data)
+}
+
+async function runAutomation(admin: any, userID: string, contributionID: string) {
+  const startedAt = new Date().toISOString()
+  const claimed = await admin.from('catalog_contribution_jobs').update({
+    status: 'extracting', started_at: startedAt, updated_at: startedAt,
+  }).eq('contribution_id', contributionID).in('status', ['queued', 'retry_wait']).select('*').maybeSingle()
+  if (claimed.error) throw claimed.error
+  if (!claimed.data) return
+  try {
+    let contribution = await owned(admin, userID, contributionID)
+    const extractedContribution = await extract(admin, userID, contribution)
+    const diagnostics = extractedContribution.extraction_diagnostics ?? extractionDiagnostics(extractedContribution as unknown as Row)
+    if (diagnostics?.status === 'needs_photos') {
+      const firstRetake = Number(contribution.retake_count ?? 0) < 1
+      const status = firstRetake ? 'needs_review' : 'pending_review'
+      const message = firstRetake ? String(diagnostics.message) : 'Leafy could not confidently read every required label detail. Our catalog team will review it.'
+      const updated = await admin.from('catalog_contributions').update({
+        status, retake_count: firstRetake ? 1 : contribution.retake_count,
+        review_reason: message, updated_at: new Date().toISOString(),
+      }).eq('id', contributionID)
+      if (updated.error) throw updated.error
+      await finishJob(admin, contributionID, 'complete', null)
+      await event(admin, contributionID, 'automatic', 'processing', status, message)
+      return
+    }
+
+    contribution = await owned(admin, userID, contributionID)
+    const fields = normalizeFields(contribution.extracted_fields as Row ?? {})
+    const nutrients = normalizeNutrients((contribution.extracted_fields as Row)?.nutrients ?? [])
+    const validation = validate(fields, nutrients, contribution.extracted_fields as Row ?? {})
+    const revisionNumber = Number(contribution.revision ?? 1)
+    await persistAutomatedRevision(admin, contributionID, revisionNumber, contribution.extracted_fields as Row ?? {}, fields, nutrients, validation)
+
+    const verifying = await admin.from('catalog_contribution_jobs').update({ status: 'verifying', updated_at: new Date().toISOString() }).eq('contribution_id', contributionID)
+    if (verifying.error) throw verifying.error
+    const verification = await verifyIdentityOnline(userID, String(contribution.gtin), String(contribution.market_country), fields)
+    await persistVerificationSources(
+      admin, contributionID, revisionNumber, verification.sources,
+      verification.result.exact_gtin_match === true, verification.result.matched_fields,
+    )
+    const identityAgreement = verification.result.exact_gtin_match === true &&
+      verification.result.conflict_fields.length === 0 &&
+      namesAgree(String(fields.product_name), verification.result.product_name) &&
+      (Boolean(fields.brand_not_shown) || namesAgree(String(fields.brand_name), verification.result.brand_name))
+    const trustedSource = ['manufacturer', 'usda', 'retailer', 'database'].includes(verification.result.source_quality)
+    const autoPublish = validation.auto_approve === true && identityAgreement && trustedSource
+
+    // A private nutrient snapshot can be logged before the shared product is published.
+    const job = await admin.from('catalog_contribution_jobs').select('requested_log').eq('contribution_id', contributionID).single()
+    if (job.error) throw job.error
+    const requestedLog = job.data?.requested_log as Row | null
+    if (requestedLog && !requestedLog.logged_entry_id) {
+      const provisional = { ...contribution, status: 'pending_review', confirmed_fields: fields, accepted_food_version_id: null }
+      const servingGrams = Number(fields.serving_grams)
+      const logBody = {
+        ...requestedLog,
+        grams: servingGrams * Number(requestedLog.serving_count ?? 1),
+      } as Body
+      const entry = await logContribution(admin, userID, provisional, logBody)
+      const savedLog = await admin.from('catalog_contribution_jobs').update({
+        requested_log: { ...requestedLog, logged_entry_id: entry.id }, updated_at: new Date().toISOString(),
+      }).eq('contribution_id', contributionID)
+      if (savedLog.error) throw savedLog.error
+    }
+
+    let foodVersionID: string | null = null
+    let status = 'pending_review'
+    let reason = verification.result.summary || 'Leafy could not verify this package with enough confidence to publish it automatically.'
+    if (autoPublish) {
+      const publishing = await admin.from('catalog_contribution_jobs').update({ status: 'publishing', updated_at: new Date().toISOString() }).eq('contribution_id', contributionID)
+      if (publishing.error) throw publishing.error
+      const existing = await activeProduct(admin, String(contribution.gtin), String(contribution.market_country))
+      foodVersionID = existing?.id ?? await publish(
+        admin, contribution, fields, nutrients,
+        ['manufacturer', 'usda'].includes(verification.result.source_quality) ? 'verified' : 'community_confirmed',
+      )
+      status = 'accepted'
+      reason = 'Package details verified and added to Leafy.'
+    }
+    const now = new Date().toISOString()
+    const update = await admin.from('catalog_contributions').update({
+      status, confirmed_fields: fields, validation_results: validation,
+      verification_results: verification.result, accepted_food_version_id: foodVersionID,
+      last_submitted_at: now, reviewed_at: status === 'accepted' ? now : null,
+      review_reason: reason, updated_at: now,
+    }).eq('id', contributionID)
+    if (update.error) throw update.error
+    await finishJob(admin, contributionID, 'complete', null)
+    await event(admin, contributionID, 'automatic', 'processing', status, reason, { verification: verification.result })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Automated product processing failed.'
+    const job = await admin.from('catalog_contribution_jobs').select('attempts').eq('contribution_id', contributionID).single()
+    const attempts = Number(job.data?.attempts ?? 0) + 1
+    const retry = attempts < 3
+    const next = new Date(Date.now() + Math.pow(2, attempts) * 30_000).toISOString()
+    const failed = await admin.from('catalog_contribution_jobs').update({
+      status: retry ? 'retry_wait' : 'failed', attempts, next_attempt_at: next,
+      last_error: message, completed_at: retry ? null : new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq('contribution_id', contributionID)
+    if (failed.error) console.error('could not save catalog job failure', failed.error)
+    if (!retry) {
+      await admin.from('catalog_contributions').update({
+        status: 'pending_review', review_reason: 'Leafy could not finish automatic verification. Our catalog team will review it.',
+        updated_at: new Date().toISOString(),
+      }).eq('id', contributionID)
+    }
+    throw error
+  }
+}
+
+async function persistAutomatedRevision(admin: any, contributionID: string, revision: number, extracted: Row, fields: Row, nutrients: NutrientInput[], validation: Row) {
+  const revisionWrite = await admin.from('catalog_contribution_revisions').upsert({
+    contribution_id: contributionID, revision, extracted_fields: extracted, confirmed_fields: fields, validation_results: validation,
+  }, { onConflict: 'contribution_id,revision' })
+  if (revisionWrite.error) throw revisionWrite.error
+  await admin.from('catalog_contribution_nutrients').delete().eq('contribution_id', contributionID).eq('revision', revision)
+  if (nutrients.length) {
+    const write = await admin.from('catalog_contribution_nutrients').insert(nutrients.map((item) => ({
+      contribution_id: contributionID, revision, nutrient_code: item.code,
+      amount_per_serving: item.amount_per_serving, unit: item.unit,
+      percent_daily_value: item.percent_daily_value ?? null, confidence: item.confidence ?? 1, printed_on_label: true,
+    })))
+    if (write.error) throw write.error
+  }
+}
+
+async function verifyIdentityOnline(userID: string, gtin: string, market: string, fields: Row) {
+  const key = Deno.env.get('OPENAI_API_KEY')
+  if (!key) throw new Error('Online product verification is not configured yet.')
+  const model = Deno.env.get('OPENAI_MEAL_MODEL') ?? 'gpt-5.6-terra'
+  const prompt = `Verify the identity of packaged food barcode ${gtin} sold in ${market}. The photographed package reads product name "${fields.product_name}" and brand "${fields.brand_name}". Search exact-barcode manufacturer/brand pages and USDA branded-food records first, then reputable retailers or product databases. Do not use search-result snippets alone. Mark exact_gtin_match true only when a consulted page explicitly associates this exact barcode with the product. Report identity conflicts; do not replace package nutrition or ingredients.`
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model, store: false, reasoning: { effort: 'low' }, safety_identifier: await safetyID(userID),
+      tools: [{ type: 'web_search' }], include: ['web_search_call.action.sources'],
+      input: [{ role: 'system', content: [{ type: 'input_text', text: 'You verify packaged-food identity. Prefer primary sources and exact barcode matches. Return conservative structured results.' }] }, { role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+      text: { format: { type: 'json_schema', name: 'leafy_catalog_identity', strict: true, schema: verificationSchema } },
+    }),
+  })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload?.error?.message ?? 'Leafy could not verify that product online.')
+  const result = JSON.parse(extractOutputText(payload))
+  return { result, sources: collectWebSources(payload, result.source_quality) }
+}
+
+function collectWebSources(payload: Row, fallbackKind: string) {
+  const found = new Map<string, Row>()
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) { value.forEach(visit); return }
+    if (!value || typeof value !== 'object') return
+    const row = value as Row
+    if (typeof row.url === 'string' && /^https?:\/\//.test(row.url)) {
+      found.set(row.url, { url: row.url, title: String(row.title ?? ''), source_kind: normalizeSourceKind(fallbackKind) })
+    }
+    Object.values(row).forEach(visit)
+  }
+  visit(payload.output)
+  return [...found.values()]
+}
+
+async function persistVerificationSources(admin: any, contributionID: string, revision: number, sources: Row[], exactGTINMatch: boolean, matchedFields: unknown) {
+  if (!sources.length) return
+  const rows = await Promise.all(sources.map(async (source) => {
+    const parsed = new URL(String(source.url))
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(source.url)))
+    return {
+      contribution_id: contributionID, revision, url: String(source.url), title: String(source.title ?? ''),
+      domain: parsed.hostname, source_kind: normalizeSourceKind(String(source.source_kind ?? 'other')),
+      exact_gtin_match: exactGTINMatch,
+      matched_fields: Array.isArray(matchedFields) ? matchedFields.map(String).slice(0, 20) : [],
+      content_hash: [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, '0')).join(''),
+    }
+  }))
+  const write = await admin.from('catalog_verification_sources').upsert(rows, { onConflict: 'contribution_id,revision,url' })
+  if (write.error) throw write.error
+}
+
+function normalizeSourceKind(value: string) {
+  return ['manufacturer', 'usda', 'retailer', 'database'].includes(value) ? value : 'other'
+}
+
+function namesAgree(left: string, right: string) {
+  const tokens = (value: string) => new Set(value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((item) => item.length > 1))
+  const a = tokens(left); const b = tokens(right)
+  if (!a.size || !b.size) return false
+  const intersection = [...a].filter((item) => b.has(item)).length
+  return intersection / Math.min(a.size, b.size) >= 0.6
+}
+
+async function finishJob(admin: any, contributionID: string, status: string, error: string | null) {
+  const result = await admin.from('catalog_contribution_jobs').update({
+    status, last_error: error, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).eq('contribution_id', contributionID)
+  if (result.error) throw result.error
 }
 
 async function submit(admin: any, contribution: Row, body: Body) {
@@ -399,7 +665,7 @@ function clean(value: unknown, max: number) { return typeof value === 'string' ?
 function number(value: unknown, min: number, max: number) { const parsed = Number(value); return Number.isFinite(parsed) ? Math.min(Math.max(parsed, min), max) : min }
 function normalizeBarcode(value: string) { const digits = String(value).replace(/\D/g, ''); return digits.length >= 8 && digits.length <= 14 ? digits : '' }
 function format(value: number) { return Number.isInteger(value) ? String(value) : value.toFixed(1) }
-function assertEditable(contribution: Row) { if (!['draft', 'needs_review'].includes(String(contribution.status))) throw new Error('This submission can no longer be edited.') }
+function assertEditable(contribution: Row) { if (!['draft', 'needs_review', 'processing'].includes(String(contribution.status))) throw new Error('This submission can no longer be edited.') }
 async function owned(admin: any, userID: string, id: string) { const result = await admin.from('catalog_contributions').select('*').eq('id', id).eq('user_id', userID).single(); if (result.error || !result.data) throw new Error('Contribution not found.'); return result.data }
 async function activeProduct(admin: any, gtin: string, market: string) { const result = await admin.from('food_versions').select('id').eq('gtin', gtin).eq('market_country', market).is('superseded_at', null).neq('verification_status', 'rejected').maybeSingle(); if (result.error) throw result.error; return result.data }
 async function touch(admin: any, id: string) { const result = await admin.from('catalog_contributions').update({ updated_at: new Date().toISOString() }).eq('id', id); if (result.error) throw result.error }
