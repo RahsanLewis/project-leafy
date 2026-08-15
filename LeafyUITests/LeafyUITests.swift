@@ -187,20 +187,21 @@ final class LeafyUITests: XCTestCase {
         app.launch()
 
         app.buttons["logFoodButton"].tap()
-        app.segmentedControls["foodLoggingMethodPicker"].buttons["AI"].tap()
-        let description = app.textViews["aiMealDescription"]
+        let description = app.textFields["aiMealDescription"]
         XCTAssertTrue(description.waitForExistence(timeout: 3))
         description.tap()
         description.typeText("Chicken, rice, and vegetables")
         app.buttons["Done"].tap()
         app.buttons["analyzeMealButton"].tap()
 
-        XCTAssertTrue(app.staticTexts["One detail would help"].waitForExistence(timeout: 3))
-        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.staticTexts["More detail needed"].waitForExistence(timeout: 3))
+        app.textFields["Your answer"].tap()
+        app.textFields["Your answer"].typeText("One bowl")
+        app.buttons["Update estimate"].tap()
         XCTAssertTrue(app.buttons["confirmMealEstimateButton"].waitForExistence(timeout: 3))
         app.buttons["confirmMealEstimateButton"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["foodLogSuccessMessage"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.textViews["aiMealDescription"].exists)
+        XCTAssertTrue(app.textFields["aiMealDescription"].exists)
         app.navigationBars["Log Food"].buttons["Done"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
     }
@@ -297,8 +298,7 @@ final class LeafyUITests: XCTestCase {
         app.launch()
 
         app.buttons["logFoodButton"].tap()
-        app.segmentedControls["foodLoggingMethodPicker"].buttons["AI"].tap()
-        let description = app.textViews["aiMealDescription"]
+        let description = app.textFields["aiMealDescription"]
         XCTAssertTrue(description.waitForExistence(timeout: 3))
         description.tap()
         description.typeText("Chicken and rice")
@@ -312,7 +312,7 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
-    func testUnifiedFoodLoggingPreservesDraftAcrossMethodsPreview() {
+    func testUnifiedFoodLoggingKeepsSearchDescribePhotoAndScanTogetherPreview() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
         app.launch()
@@ -320,62 +320,39 @@ final class LeafyUITests: XCTestCase {
         app.buttons["logFoodButton"].tap()
         XCTAssertTrue(app.navigationBars["Log Food"].waitForExistence(timeout: 3))
 
-        let methods = app.segmentedControls["foodLoggingMethodPicker"]
-        XCTAssertTrue(methods.waitForExistence(timeout: 2))
-        XCTAssertTrue(methods.buttons["Scan"].isSelected)
+        XCTAssertFalse(app.segmentedControls["foodLoggingMethodPicker"].exists)
+        let description = app.textFields["aiMealDescription"]
+        XCTAssertTrue(description.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["addMealPhotoButton"].exists)
         XCTAssertTrue(app.buttons["scanBarcodeButton"].exists)
-        app.searchFields.firstMatch.tap()
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 2))
-        app.buttons["Cancel"].tap()
+        description.tap()
+        description.typeText("Apple")
+        app.buttons["Done"].tap()
         let scan = app.buttons["scanBarcodeButton"]
         XCTAssertTrue(scan.exists)
         scan.tap()
         XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
         app.navigationBars["Scan barcode"].buttons["Cancel"].tap()
         XCTAssertTrue(scan.waitForExistence(timeout: 2))
-
-        methods.buttons["Manual"].tap()
-        let name = app.textFields["foodNameField"]
-        let calories = app.textFields["foodCaloriesField"]
-        XCTAssertTrue(name.waitForExistence(timeout: 2))
-        name.tap()
-        name.typeText("Apple")
-        calories.tap()
-        calories.typeText("95")
-
-        methods.buttons["AI"].tap()
-        XCTAssertTrue(app.textViews["aiMealDescription"].waitForExistence(timeout: 2))
-        methods.buttons["Manual"].tap()
-        XCTAssertEqual(name.value as? String, "Apple")
-        XCTAssertEqual(calories.value as? String, "95")
-
-        app.buttons["saveFoodButton"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["foodLogSuccessMessage"].waitForExistence(timeout: 3))
-        XCTAssertEqual(name.value as? String, "Food or meal")
-        XCTAssertEqual(calories.value as? String, "0")
-        app.navigationBars["Log Food"].buttons["Done"].tap()
-        XCTAssertTrue(app.buttons["logFoodButton"].waitForExistence(timeout: 3))
-        for _ in 0..<3 where !app.staticTexts["Apple"].exists { app.swipeUp() }
-        XCTAssertTrue(app.staticTexts["Apple"].waitForExistence(timeout: 2))
+        XCTAssertEqual(description.value as? String, "Apple")
     }
 
     @MainActor
-    func testLogFoodConfirmsBeforeDiscardingManualDraft() {
+    func testLogFoodConfirmsBeforeDiscardingDescribeDraft() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
-        app.segmentedControls["foodLoggingMethodPicker"].buttons["Manual"].tap()
-        let name = app.textFields["foodNameField"]
-        XCTAssertTrue(name.waitForExistence(timeout: 2))
-        name.tap()
-        name.typeText("Unfinished snack")
+        let description = app.textFields["aiMealDescription"]
+        XCTAssertTrue(description.waitForExistence(timeout: 2))
+        description.tap()
+        description.typeText("Unfinished snack")
         app.navigationBars["Log Food"].buttons["Cancel"].tap()
 
         XCTAssertTrue(app.staticTexts["Discard this food entry?"].waitForExistence(timeout: 2))
         app.buttons["Keep Editing"].tap()
-        XCTAssertEqual(name.value as? String, "Unfinished snack")
+        XCTAssertEqual(description.value as? String, "Unfinished snack")
     }
 
     @MainActor
@@ -385,12 +362,17 @@ final class LeafyUITests: XCTestCase {
         app.launch()
 
         app.buttons["logFoodButton"].tap()
-        app.segmentedControls["foodLoggingMethodPicker"].buttons["Manual"].tap()
-        app.textFields["foodNameField"].tap()
-        app.textFields["foodNameField"].typeText("Apple")
-        app.textFields["foodCaloriesField"].tap()
-        app.textFields["foodCaloriesField"].typeText("95")
-        app.buttons["saveFoodButton"].tap()
+        let description = app.textFields["aiMealDescription"]
+        description.tap()
+        description.typeText("Apple")
+        app.buttons["Done"].tap()
+        app.buttons["analyzeMealButton"].tap()
+        XCTAssertTrue(app.textFields["Your answer"].waitForExistence(timeout: 3))
+        app.textFields["Your answer"].tap()
+        app.textFields["Your answer"].typeText("One medium apple")
+        app.buttons["Update estimate"].tap()
+        XCTAssertTrue(app.buttons["confirmMealEstimateButton"].waitForExistence(timeout: 3))
+        app.buttons["confirmMealEstimateButton"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["foodLogSuccessMessage"].waitForExistence(timeout: 3))
         app.navigationBars["Log Food"].buttons["Done"].tap()
 
@@ -526,30 +508,17 @@ final class LeafyUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "below your 7-day average")
         ).firstMatch.exists)
 
-        let displayMenu = app.buttons["weightDisplayMenu"]
-        XCTAssertTrue(displayMenu.exists)
-        XCTAssertGreaterThanOrEqual(displayMenu.frame.height, 43.9)
-        displayMenu.tap()
-        let actualMode = app.buttons["weightDisplayActual"]
-        XCTAssertTrue(actualMode.waitForExistence(timeout: 2))
-        actualMode.tap()
-        XCTAssertTrue(app.staticTexts["Actual weight"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["weightDisplayMenu"].exists)
+        XCTAssertFalse(app.buttons["weightDisplayTrend"].exists)
+        XCTAssertFalse(app.staticTexts["Trend weight"].exists)
         XCTAssertTrue(app.staticTexts["Actual remaining"].exists)
-        XCTAssertTrue(app.buttons["actualWeightInfo"].exists)
-
-        app.buttons["weightDisplayMenu"].tap()
-        let trendMode = app.buttons["weightDisplayTrend"]
-        XCTAssertTrue(trendMode.waitForExistence(timeout: 2))
-        trendMode.tap()
-        XCTAssertTrue(app.staticTexts["Trend weight"].waitForExistence(timeout: 2))
-
-        let trendInfo = app.buttons["trendWeightInfo"]
-        XCTAssertTrue(trendInfo.exists)
-        XCTAssertGreaterThanOrEqual(trendInfo.frame.width, 43.9)
-        XCTAssertGreaterThanOrEqual(trendInfo.frame.height, 43.9)
-        trendInfo.tap()
-        XCTAssertTrue(app.staticTexts["Why Leafy emphasizes trend weight"].waitForExistence(timeout: 2))
-        app.buttons["dismissTrendWeightExplanation"].tap()
+        let actualInfo = app.buttons["actualWeightInfo"]
+        XCTAssertTrue(actualInfo.exists)
+        XCTAssertGreaterThanOrEqual(actualInfo.frame.width, 43.9)
+        XCTAssertGreaterThanOrEqual(actualInfo.frame.height, 43.9)
+        actualInfo.tap()
+        XCTAssertTrue(app.staticTexts["About actual weight"].waitForExistence(timeout: 2))
+        app.buttons["dismissWeightExplanation"].tap()
 
         let fluctuationInfo = app.buttons["weightFluctuationRangeInfo"]
         XCTAssertTrue(fluctuationInfo.waitForExistence(timeout: 2))

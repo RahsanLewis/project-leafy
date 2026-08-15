@@ -44,6 +44,25 @@ private struct LabelNutrientDraft: Identifiable {
     var id: String { code }
 }
 
+struct CatalogContributionWaitEstimator {
+    private static let key = "leafy.catalogContribution.wait"
+
+    static func estimatedSeconds(defaults: UserDefaults = .standard) -> Double {
+        let stored = defaults.double(forKey: key)
+        return clamp(stored > 0 ? stored : 25)
+    }
+
+    static func record(_ duration: TimeInterval, defaults: UserDefaults = .standard) {
+        guard duration.isFinite, duration > 0 else { return }
+        let previous = estimatedSeconds(defaults: defaults)
+        defaults.set(clamp(previous * 0.7 + duration * 0.3), forKey: key)
+    }
+
+    private static func clamp(_ value: Double) -> Double {
+        min(60, max(8, value))
+    }
+}
+
 struct CatalogContributionView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -67,6 +86,13 @@ struct CatalogContributionView: View {
     @State private var consumedAt = Date()
     @State private var mealType: MealType = .unspecified
     @State private var grams = 0.0
+    @State private var servingCount = "1"
+    @State private var isEditingExtractedFields = false
+    @State private var isNutritionExpanded = false
+    @State private var analysisTask: Task<Void, Never>?
+    @State private var showingAnalysisWait = false
+    @State private var waitStartedAt = Date.now
+    @State private var waitEstimateSeconds = 25.0
 
     init(
         barcode: String,
@@ -94,12 +120,6 @@ struct CatalogContributionView: View {
         }
         .navigationTitle(step == .review ? "Review Product" : "Add Product")
         .navigationBarTitleDisplayMode(.inline)
-        .overlay {
-            if app.isCatalogContributionLoading {
-                Rectangle().fill(.regularMaterial).opacity(0.72).ignoresSafeArea()
-                ProgressView().controlSize(.large)
-            }
-        }
         .task { await start() }
         .onChange(of: frontItem) { _, item in Task { await load(item, target: .front) } }
         .onChange(of: backItem) { _, item in Task { await load(item, target: .backLabel) } }
@@ -108,6 +128,17 @@ struct CatalogContributionView: View {
         .sheet(item: $photoTarget) { target in
             MealCameraPicker { image in save(image, target: target) }
                 .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showingAnalysisWait) {
+            LeafyAnalysisLoadingView(
+                title: "Leafy is reading the package",
+                facts: Self.packageFacts,
+                startedAt: waitStartedAt,
+                estimatedSeconds: waitEstimateSeconds,
+                loadingAccessibilityIdentifier: "catalogAnalysisLoadingScreen",
+                cancelAccessibilityIdentifier: "cancelCatalogAnalysisButton",
+                onCancel: cancelAnalysis
+            )
         }
         .navigationDestination(item: $acceptedDetail) { product in
             ProductDetailView(product: product, intent: intent, logDate: app.selectedLogDate, onLogged: { onCompleted?() })
@@ -120,7 +151,19 @@ struct CatalogContributionView: View {
 
     @ViewBuilder private var captureContent: some View { loggingCaptureView }
 
-    @ViewBuilder private var reviewContent: some View { loggingReviewView }
+    @ViewBuilder private var reviewContent: some View {
+        if isEditingExtractedFields { loggingReviewView }
+        else { extractedReviewView }
+    }
+
+    private static let packageFacts = [
+        "Ingredients are listed from greatest to smallest amount by weight.",
+        "Nutrition Facts describe one labeled serving, which may differ from the amount you eat.",
+        "A sharp label close-up helps Leafy capture small values like added sugar and micronutrients.",
+        "Leafy keeps package photos private and uses them to verify the product details.",
+        "Serving size and servings per container describe two different things.",
+        "Reviewing the result helps keep Leafy’s shared food catalog accurate.",
+    ]
 
     private var captureView: some View {
         ScrollView {
@@ -142,7 +185,7 @@ struct CatalogContributionView: View {
             .padding(.bottom, 96)
         }
         .safeAreaInset(edge: .bottom) {
-            Button("Read Label") { Task { await analyze() } }
+            Button("Read Label", action: beginAnalysis)
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(!hasPhoto(.front) || !hasPhoto(.backLabel) || app.isCatalogContributionLoading)
                 .opacity(hasPhoto(.front) && hasPhoto(.backLabel) ? 1 : 0.45)
@@ -154,10 +197,16 @@ struct CatalogContributionView: View {
     private var loggingCaptureView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+                if let diagnostics = contribution?.extractionDiagnostics, diagnostics.status == .needsPhotos {
+                    Label(diagnostics.message, systemImage: "camera.fill")
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("catalogRetakeMessage")
+                }
                 VStack(alignment: .leading, spacing: LeafySpacing.small) {
                     Text("Help Leafy recognize this product")
                         .font(LeafyTypography.title2)
-                    Text("Add two clear package photos, then review what Leafy reads before submitting.")
+                    Text("Photograph the package front, Nutrition Facts, and ingredients. Leafy will fill in the product details for you.")
                         .font(LeafyTypography.subheadline)
                         .foregroundStyle(.secondary)
                     Text("Barcode \(barcode)")
@@ -166,13 +215,23 @@ struct CatalogContributionView: View {
                 }
 
                 loggingPhotoSlot(.front, item: $frontItem)
-                loggingPhotoSlot(.backLabel, item: $backItem)
-                if needsFactsCloseup { loggingPhotoSlot(.nutritionFacts, item: $factsItem) }
-                if needsIngredientsCloseup { loggingPhotoSlot(.ingredients, item: $ingredientsItem) }
+                loggingPhotoSlot(.nutritionFacts, item: $factsItem)
+                loggingPhotoSlot(.ingredients, item: $ingredientsItem)
 
                 Label("Photos remain private and are used to verify label data.", systemImage: "lock.shield")
                     .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
+
+                if contribution?.extractionDiagnostics?.status == .needsPhotos {
+                    Button("Enter details manually") {
+                        isEditingExtractedFields = true
+                        step = .review
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+                    .frame(minHeight: LeafyTheme.minimumTouchTarget)
+                    .accessibilityIdentifier("manualCatalogFallbackButton")
+                }
             }
             .padding(.horizontal, LeafyTheme.pageInset)
             .padding(.vertical, LeafySpacing.medium)
@@ -180,10 +239,10 @@ struct CatalogContributionView: View {
         }
         .background(LeafyTheme.canvas)
         .safeAreaInset(edge: .bottom) {
-            Button("Read Label") { Task { await analyze() } }
+            Button("Read Package", action: beginAnalysis)
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(!hasPhoto(.front) || !hasPhoto(.backLabel) || app.isCatalogContributionLoading)
-                .opacity(hasPhoto(.front) && hasPhoto(.backLabel) ? 1 : 0.45)
+                .disabled(!readyToReadPackage || app.isCatalogContributionLoading)
+                .opacity(readyToReadPackage ? 1 : 0.45)
                 .leafyDetachedBottomControl()
                 .accessibilityIdentifier("readProductLabelButton")
         }
@@ -244,6 +303,101 @@ struct CatalogContributionView: View {
                 .leafyDetachedBottomControl()
                 .accessibilityIdentifier("submitProductContributionButton")
         }
+    }
+
+    private var extractedReviewView: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+                VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                    Text("Check what Leafy found")
+                        .font(LeafyTypography.title2)
+                    Text("Confirm the details Leafy read from your package photos.")
+                        .font(LeafyTypography.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                contributionSection("Product") {
+                    contributionValueRow("Name", fields.productName)
+                    contributionValueRow("Brand", fields.brandNotShown ? "Not shown" : fields.brandName)
+                    contributionValueRow("Barcode", barcode)
+                }
+
+                contributionSection("Serving") {
+                    contributionValueRow("Serving", fields.servingDescription)
+                    contributionValueRow("Serving weight", "\(format(fields.servingGrams)) g")
+                    if !fields.servingsPerContainer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        contributionValueRow("Per container", fields.servingsPerContainer)
+                    }
+                }
+
+                contributionSection("Nutrition per serving") {
+                    HStack(alignment: .firstTextBaseline, spacing: LeafySpacing.large) {
+                        nutritionMetric("Calories", code: "energy_kcal", unit: "Cal")
+                        nutritionMetric("Protein", code: "protein_g", unit: "g")
+                        nutritionMetric("Carbs", code: "carbohydrate_g", unit: "g")
+                        nutritionMetric("Fat", code: "fat_g", unit: "g")
+                    }
+                    .padding(.vertical, LeafySpacing.small)
+
+                    DisclosureGroup("Full Nutrition Facts", isExpanded: $isNutritionExpanded) {
+                        VStack(spacing: 0) {
+                            ForEach(nutrientDrafts) { nutrient in
+                                contributionValueRow(
+                                    nutrient.title,
+                                    "\(nutrient.amount) \(nutrient.unit)"
+                                )
+                            }
+                        }
+                        .padding(.top, LeafySpacing.xSmall)
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .tint(LeafyTheme.green)
+                    .frame(minHeight: LeafyTheme.rowMinHeight)
+                }
+
+                contributionSection("Ingredients") {
+                    Text(fields.ingredients)
+                        .font(LeafyTypography.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, LeafySpacing.small)
+                    if !fields.allergens.isEmpty {
+                        Text("Contains: \(fields.allergens.joined(separator: ", "))")
+                            .font(LeafyTypography.subheadlineSemibold)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if intent == .log {
+                    contributionSection("Add to food log") {
+                        servingCountEditor
+                        DatePicker("Time", selection: $consumedAt, displayedComponents: .hourAndMinute)
+                            .frame(minHeight: LeafyTheme.rowMinHeight)
+                            .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
+                        Picker("Meal", selection: $mealType) {
+                            ForEach(MealType.allCases) { Text($0.label).tag($0) }
+                        }
+                        .frame(minHeight: LeafyTheme.rowMinHeight)
+                    }
+                }
+
+                HStack(spacing: LeafySpacing.large) {
+                    Button("Something looks wrong") { isEditingExtractedFields = true }
+                    Button("Retake photos") { step = .capture }
+                }
+                .font(LeafyTypography.subheadlineSemibold)
+                .foregroundStyle(LeafyTheme.green)
+
+                Text("By submitting, you confirm this matches the package. Structured label data may join Leafy’s shared catalog; photos remain private verification evidence.")
+                    .font(LeafyTypography.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.vertical, LeafySpacing.medium)
+            .padding(.bottom, 112)
+        }
+        .background(LeafyTheme.canvas)
+        .safeAreaInset(edge: .bottom) { contributionSubmitButton }
+        .accessibilityIdentifier("catalogExtractedReview")
     }
 
     private var loggingReviewView: some View {
@@ -310,17 +464,7 @@ struct CatalogContributionView: View {
                 }
 
                 if intent == .log { contributionSection("Add to food log") {
-                    HStack {
-                        Text("Amount")
-                        Spacer()
-                        TextField("28", value: $grams, format: .number)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 90)
-                        Text("g").foregroundStyle(.secondary)
-                    }
-                    .frame(minHeight: LeafyTheme.rowMinHeight)
-                    .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
+                    servingCountEditor
                     DatePicker("Time", selection: $consumedAt, displayedComponents: .hourAndMinute)
                         .frame(minHeight: LeafyTheme.rowMinHeight)
                     Divider().overlay(LeafyTheme.hairline)
@@ -343,14 +487,7 @@ struct CatalogContributionView: View {
             .padding(.bottom, 112)
         }
         .background(LeafyTheme.canvas)
-        .safeAreaInset(edge: .bottom) {
-            Button(intent == .log ? "Submit and Log Food" : "Submit Product") { Task { await submit() } }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(!canSubmit || app.isCatalogContributionLoading)
-                .opacity(canSubmit ? 1 : 0.45)
-                .leafyDetachedBottomControl()
-                .accessibilityIdentifier("submitProductContributionButton")
-        }
+        .safeAreaInset(edge: .bottom) { contributionSubmitButton }
     }
 
     private var submittedView: some View {
@@ -398,13 +535,13 @@ struct CatalogContributionView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
                     Text(target.title).font(LeafyTypography.headline)
-                    Text(target == .front ? "Show the name and brand" : "Make the small print readable")
+                    Text(photoInstruction(target))
                         .font(LeafyTypography.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: hasPhoto(target) ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(hasPhoto(target) ? LeafyTheme.green : Color.secondary.opacity(0.55))
+                Image(systemName: needsRetake(target) ? "exclamationmark.circle.fill" : hasPhoto(target) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(needsRetake(target) ? .orange : hasPhoto(target) ? LeafyTheme.green : Color.secondary.opacity(0.55))
             }
 
             if let image = previews[target] {
@@ -439,6 +576,72 @@ struct CatalogContributionView: View {
         }
     }
 
+    private var servingCountEditor: some View {
+        HStack(spacing: LeafySpacing.small) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("How many servings did you eat?")
+                Text("\(format(consumedGrams)) g total")
+                    .font(LeafyTypography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            servingCountButton("minus", delta: -ProductServingQuantity.step)
+            TextField("1", text: $servingCount)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.center)
+                .font(LeafyTypography.headline)
+                .frame(width: 62)
+                .frame(minHeight: LeafyTheme.minimumTouchTarget)
+                .accessibilityIdentifier("contributionServingCount")
+            servingCountButton("plus", delta: ProductServingQuantity.step)
+        }
+        .frame(minHeight: LeafyTheme.rowMinHeight)
+        .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
+    }
+
+    private func servingCountButton(_ symbol: String, delta: Double) -> some View {
+        Button {
+            let current = validServingCount ?? 1
+            servingCount = ProductServingQuantity.formatted(
+                min(max(current + delta, ProductServingQuantity.allowedRange.lowerBound), ProductServingQuantity.allowedRange.upperBound)
+            )
+        } label: {
+            Image(systemName: symbol)
+                .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(LeafyTheme.green)
+    }
+
+    private func nutritionMetric(_ title: String, code: String, unit: String) -> some View {
+        let value = nutrientDrafts.first(where: { $0.code == code })?.amount ?? "—"
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(LeafyTypography.caption).foregroundStyle(.secondary)
+            Text("\(value) \(unit)")
+                .font(LeafyTypography.subheadlineSemibold)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+    }
+
+    private var contributionSubmitButton: some View {
+        Button { Task { await submit() } } label: {
+            HStack(spacing: LeafySpacing.small) {
+                if app.isCatalogContributionLoading {
+                    ProgressView().tint(.white)
+                }
+                Text(app.isCatalogContributionLoading
+                     ? "Submitting…"
+                     : (intent == .log ? "Submit and Log Food" : "Submit Product"))
+            }
+        }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!canSubmit || (intent == .log && validServingCount == nil) || app.isCatalogContributionLoading)
+            .opacity(canSubmit && (intent != .log || validServingCount != nil) ? 1 : 0.45)
+            .leafyDetachedBottomControl()
+            .accessibilityIdentifier("submitProductContributionButton")
+    }
+
     private func contributionSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title.uppercased())
@@ -469,6 +672,33 @@ struct CatalogContributionView: View {
     private var needsFactsCloseup: Bool { contribution?.extractedFields?.evidence?.nutritionFactsLegible == false }
     private var needsIngredientsCloseup: Bool { contribution?.extractedFields?.evidence?.ingredientsLegible == false }
     private func hasPhoto(_ target: CatalogPhotoTarget) -> Bool { photos[target] != nil || contribution?.assets?.contains(where: { $0.assetKind == target.rawValue }) == true }
+    private var hasRequiredPhotoSet: Bool {
+        hasPhoto(.front) && ((hasPhoto(.nutritionFacts) && hasPhoto(.ingredients)) || hasPhoto(.backLabel))
+    }
+    private var readyToReadPackage: Bool {
+        guard hasRequiredPhotoSet else { return false }
+        let requested = contribution?.extractionDiagnostics?.requestedAssets ?? []
+        return requested.allSatisfy { rawValue in
+            guard let target = CatalogPhotoTarget(rawValue: rawValue) else { return true }
+            return photos[target] != nil
+        }
+    }
+    private func needsRetake(_ target: CatalogPhotoTarget) -> Bool {
+        contribution?.extractionDiagnostics?.requestedAssets.contains(target.rawValue) == true
+    }
+    private func photoInstruction(_ target: CatalogPhotoTarget) -> String {
+        switch target {
+        case .front: "Show the complete product name and brand"
+        case .nutritionFacts: "Fill the frame and keep every number sharp"
+        case .ingredients: "Show the full ingredients and allergen statement"
+        case .backLabel: "Make all small print readable"
+        }
+    }
+    private var validServingCount: Double? { ProductServingQuantity.count(from: servingCount) }
+    private var consumedGrams: Double { fields.servingGrams * (validServingCount ?? 0) }
+    private func format(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...2)))
+    }
     private var allergensBinding: Binding<String> { Binding(get: { fields.allergens.joined(separator: ", ") }, set: { fields.allergens = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }) }
     private var canSubmit: Bool {
         !fields.productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
@@ -485,7 +715,6 @@ struct CatalogContributionView: View {
         guard let contribution = response.contribution else { return }
         configure(contribution)
         hasUnsavedDraft = true
-        if contribution.status == .needsReview || contribution.extractedFields?.productName.isEmpty == false { step = .review }
     }
 
     private func load(_ item: PhotosPickerItem?, target: CatalogPhotoTarget) async {
@@ -500,14 +729,46 @@ struct CatalogContributionView: View {
         photos[target] = data; previews[target] = image; hasUnsavedDraft = true
     }
 
-    private func analyze() async {
-        guard var current = contribution else { return }
-        for target in CatalogPhotoTarget.allCases where photos[target] != nil {
-            guard let data = photos[target], let updated = await app.uploadCatalogPhoto(data, contributionID: current.id, assetKind: target.rawValue) else { return }
-            current = updated; photos[target] = nil
+    private func analyze() async -> Bool {
+        guard var current = contribution else { return false }
+        let pendingPhotos = photos
+        for target in CatalogPhotoTarget.allCases where pendingPhotos[target] != nil {
+            guard let data = pendingPhotos[target],
+                  let updated = await app.uploadCatalogPhoto(data, contributionID: current.id, assetKind: target.rawValue)
+            else { return false }
+            guard !Task.isCancelled else { return false }
+            current = updated
         }
-        guard let extracted = await app.extractCatalogContribution(id: current.id) else { return }
-        configure(extracted); step = .review
+        guard let extracted = await app.extractCatalogContribution(id: current.id) else { return false }
+        guard !Task.isCancelled else { return false }
+        for target in pendingPhotos.keys where photos[target] == pendingPhotos[target] {
+            photos[target] = nil
+        }
+        configure(extracted)
+        return true
+    }
+
+    private func beginAnalysis() {
+        analysisTask?.cancel()
+        waitStartedAt = .now
+        waitEstimateSeconds = CatalogContributionWaitEstimator.estimatedSeconds()
+        showingAnalysisWait = true
+        analysisTask = Task { @MainActor in
+            let startedAt = Date.now
+            let succeeded = await analyze()
+            guard !Task.isCancelled else { return }
+            if succeeded {
+                CatalogContributionWaitEstimator.record(Date.now.timeIntervalSince(startedAt))
+            }
+            showingAnalysisWait = false
+            analysisTask = nil
+        }
+    }
+
+    private func cancelAnalysis() {
+        analysisTask?.cancel()
+        analysisTask = nil
+        showingAnalysisWait = false
     }
 
     private func configure(_ value: CatalogContribution) {
@@ -519,6 +780,22 @@ struct CatalogContributionView: View {
             return LabelNutrientDraft(code: definition.code, title: definition.title, unit: definition.unit, amount: found.map { $0.amountPerServing.formatted(.number.precision(.fractionLength(0...3))) } ?? "", dailyValue: found?.percentDailyValue.map { $0.formatted() } ?? "", confidence: found?.confidence ?? 1)
         }
         if grams <= 0 { grams = fields.servingGrams }
+        if value.status == .needsReview {
+            isEditingExtractedFields = true
+            step = .review
+        } else if value.extractionDiagnostics?.status == .needsPhotos {
+            isEditingExtractedFields = false
+            step = .capture
+        } else if let extracted = value.extractedFields,
+                  !extracted.productName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  extracted.servingGrams > 0,
+                  extracted.nutrients?.isEmpty == false {
+            isEditingExtractedFields = false
+            step = .review
+        } else {
+            isEditingExtractedFields = false
+            step = .capture
+        }
     }
 
     private func submit() async {
@@ -533,9 +810,9 @@ struct CatalogContributionView: View {
         if intent == .log {
             let logged: Bool
             if let id = result.foodVersionID, let detail = await app.loadProductDetail(foodVersionID: id) {
-                logged = await app.logProduct(detail, grams: grams, consumedAt: consumedAt, mealType: mealType)
+                logged = await app.logProduct(detail, grams: consumedGrams, consumedAt: consumedAt, mealType: mealType)
             } else {
-                logged = await app.logCatalogContribution(result.contribution, grams: grams, consumedAt: consumedAt, mealType: mealType)
+                logged = await app.logCatalogContribution(result.contribution, grams: consumedGrams, consumedAt: consumedAt, mealType: mealType)
             }
             if logged { hasUnsavedDraft = false; onCompleted?(); dismiss() }
         } else if let id = result.foodVersionID {

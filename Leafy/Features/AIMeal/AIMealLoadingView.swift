@@ -27,8 +27,18 @@ struct AIMealLoadingView: View {
     let startedAt: Date
     let estimatedSeconds: Double
     let onCancel: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var factIndex = 0
+
+    var body: some View {
+        LeafyAnalysisLoadingView(
+            title: "Leafy is estimating your meal",
+            facts: Self.facts,
+            startedAt: startedAt,
+            estimatedSeconds: estimatedSeconds,
+            loadingAccessibilityIdentifier: "aiMealLoadingScreen",
+            cancelAccessibilityIdentifier: "cancelMealAnalysisButton",
+            onCancel: onCancel
+        )
+    }
 
     private static let facts = [
         "Protein and carbohydrates each provide about 4 calories per gram.",
@@ -40,6 +50,18 @@ struct AIMealLoadingView: View {
         "Restaurant portions can vary, so Leafy keeps an uncertainty range around its estimate.",
         "Reviewing an AI estimate helps Leafy preserve what you actually ate rather than a guess.",
     ]
+}
+
+struct LeafyAnalysisLoadingView: View {
+    let title: String
+    let facts: [String]
+    let startedAt: Date
+    let estimatedSeconds: Double
+    let loadingAccessibilityIdentifier: String
+    let cancelAccessibilityIdentifier: String
+    let onCancel: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var factIndex = 0
 
     var body: some View {
         VStack(spacing: LeafySpacing.xLarge) {
@@ -51,10 +73,10 @@ struct AIMealLoadingView: View {
             .frame(width: 92, height: 92)
 
             VStack(spacing: LeafySpacing.small) {
-                Text("Leafy is estimating your meal")
+                Text(title)
                     .font(LeafyTypography.title2)
                     .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("aiMealLoadingScreen")
+                    .accessibilityIdentifier(loadingAccessibilityIdentifier)
                 TimelineView(.periodic(from: startedAt, by: 1)) { context in
                     Text(waitMessage(at: context.date))
                         .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
@@ -65,7 +87,7 @@ struct AIMealLoadingView: View {
             VStack(spacing: LeafySpacing.compact) {
                 Text("DID YOU KNOW?")
                     .font(LeafyTypography.captionSemibold).foregroundStyle(LeafyTheme.green)
-                Text(Self.facts[factIndex])
+                Text(facts[factIndex])
                     .id(factIndex)
                     .font(LeafyTypography.body)
                     .multilineTextAlignment(.center)
@@ -84,7 +106,7 @@ struct AIMealLoadingView: View {
                 .foregroundStyle(LeafyTheme.green)
                 .frame(minHeight: LeafyTheme.minimumTouchTarget)
                 .leafyDetachedBottomControl()
-                .accessibilityIdentifier("cancelMealAnalysisButton")
+                .accessibilityIdentifier(cancelAccessibilityIdentifier)
         }
         .interactiveDismissDisabled()
         .task {
@@ -92,7 +114,7 @@ struct AIMealLoadingView: View {
                 try? await Task.sleep(for: .seconds(4))
                 guard !Task.isCancelled else { return }
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
-                    factIndex = (factIndex + 1) % Self.facts.count
+                    factIndex = (factIndex + 1) % facts.count
                 }
             }
         }

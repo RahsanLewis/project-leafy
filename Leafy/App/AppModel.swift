@@ -30,6 +30,7 @@ final class AppModel {
     var isDailyLoading = false
     var isFoodMutationInProgress = false
     var productSearchResults: [ProductSummary] = []
+    var recentLoggingFoods: [ProductSummary] = []
     var productHistory: [ProductSummary] = []
     var isProductLoading = false
     var productErrorMessage: String?
@@ -444,14 +445,20 @@ final class AppModel {
         isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
         defer { isCatalogContributionLoading = false }
         do { return try await service.uploadCatalogLabelPhoto(data, contributionID: contributionID, assetKind: assetKind) }
-        catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
+        catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return nil }
+            catalogContributionErrorMessage = userFacingMessage(for: error); return nil
+        }
     }
 
     func extractCatalogContribution(id: UUID) async -> CatalogContribution? {
         isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
         defer { isCatalogContributionLoading = false }
         do { return try await service.extractCatalogContribution(id: id) }
-        catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
+        catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { return nil }
+            catalogContributionErrorMessage = userFacingMessage(for: error); return nil
+        }
     }
 
     func submitCatalogContribution(id: UUID, fields: CatalogContributionFields, nutrients: [CatalogContributionNutrient]) async -> CatalogContributionSubmitResponse? {
@@ -507,6 +514,12 @@ final class AppModel {
     func loadProductHistory() async {
         guard isAuthenticated else { return }
         do { productHistory = try await service.fetchProductHistory() }
+        catch { productErrorMessage = userFacingMessage(for: error) }
+    }
+
+    func loadRecentLoggingFoods() async {
+        guard isAuthenticated else { return }
+        do { recentLoggingFoods = try await service.fetchRecentLoggingFoods() }
         catch { productErrorMessage = userFacingMessage(for: error) }
     }
 
@@ -595,11 +608,20 @@ final class AppModel {
         }
     }
 
-    func updateMealEstimateItem(id: UUID, name: String, portion: String, calories: Int) {
+    func updateMealEstimateItem(
+        id: UUID,
+        name: String,
+        portion: String,
+        calories: Int,
+        estimatedGrams: Double?,
+        nutrients: [NutrientAmountInput]
+    ) {
         guard let index = mealEstimate?.items.firstIndex(where: { $0.id == id }) else { return }
         mealEstimate?.items[index].name = name
         mealEstimate?.items[index].portion = portion
         mealEstimate?.items[index].calories = calories
+        mealEstimate?.items[index].estimatedGrams = estimatedGrams
+        mealEstimate?.items[index].nutrients = nutrients
     }
 
     func removeMealEstimateItem(id: UUID) {
@@ -614,6 +636,7 @@ final class AppModel {
         let items = estimate.items.map {
             MealConfirmationItem(
                 id: $0.id, name: $0.name, portion: $0.portion, calories: $0.calories,
+                estimatedGrams: $0.estimatedGrams,
                 nutrients: $0.nutrients ?? []
             )
         }

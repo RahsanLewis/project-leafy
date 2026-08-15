@@ -406,6 +406,12 @@ actor PlanService {
         return result.products
     }
 
+    func fetchRecentLoggingFoods() async throws -> [ProductSummary] {
+        let body = try JSONSerialization.data(withJSONObject: ["action": "logging_recents"])
+        let result: ProductListResponse = try await request(function: "discover-food-product", body: body, response: ProductListResponse.self)
+        return result.products
+    }
+
     func startCatalogContribution(barcode: String, marketCountry: String = "US") async throws -> CatalogContributionStartResponse {
         let body = try JSONSerialization.data(withJSONObject: [
             "action": "start", "barcode": barcode, "market_country": marketCountry,
@@ -544,8 +550,14 @@ actor PlanService {
             [
                 "id": item.id.uuidString.lowercased(), "name": item.name,
                 "portion": item.portion, "calories": item.calories,
+                "estimated_grams": item.estimatedGrams ?? NSNull(),
                 "nutrients": item.nutrients.map { nutrient in
-                    ["code": nutrient.code, "amount": nutrient.amount]
+                    [
+                        "code": nutrient.code, "amount": nutrient.amount,
+                        "derivation_method": nutrient.derivationMethod.rawValue,
+                        "source_version": nutrient.sourceVersion ?? NSNull(),
+                        "confidence": nutrient.confidence ?? NSNull(),
+                    ] as [String: Any]
                 },
             ] as [String: Any]
         }

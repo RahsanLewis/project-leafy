@@ -4,7 +4,7 @@ import { calculateAndPersistPFQS, pfqsAPIResult } from '../_shared/pfqs/persiste
 import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
 
 type Body = {
-  action: 'search' | 'barcode' | 'detail' | 'history' | 'log'
+  action: 'search' | 'barcode' | 'detail' | 'history' | 'logging_recents' | 'log'
   query?: string
   barcode?: string
   fdc_id?: number
@@ -77,6 +77,31 @@ Deno.serve(async (request) => {
       const products = await Promise.all((data ?? []).map(async (row) => ({ history_id: row.id, analyzed_at: row.analyzed_at, ...(await productForVersion(admin, row.food_version_id)) })))
       return json({ products })
     }
+    if (body.action === 'logging_recents') {
+      const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+      const [{ data: logged, error: loggedError }, { data: viewed, error: viewedError }] = await Promise.all([
+        admin.from('food_entries').select('canonical_food_version_id,consumed_at')
+          .eq('user_id', user.id).not('canonical_food_version_id', 'is', null)
+          .gte('consumed_at', since).order('consumed_at', { ascending: false }).limit(50),
+        admin.from('product_analysis_history').select('food_version_id,analyzed_at')
+          .eq('user_id', user.id).order('analyzed_at', { ascending: false }).limit(30),
+      ])
+      if (loggedError) throw loggedError
+      if (viewedError) throw viewedError
+      const ids: string[] = []
+      for (const row of logged ?? []) {
+        const id = String(row.canonical_food_version_id ?? '')
+        if (id && !ids.includes(id)) ids.push(id)
+        if (ids.length === 8) break
+      }
+      for (const row of viewed ?? []) {
+        const id = String(row.food_version_id ?? '')
+        if (id && !ids.includes(id)) ids.push(id)
+        if (ids.length === 8) break
+      }
+      const products = await Promise.all(ids.map((id) => productForVersion(admin, id)))
+      return json({ products })
+    }
     if (body.action === 'log') {
       const grams = Number(body.grams)
       if (!body.food_version_id || !Number.isFinite(grams) || grams <= 0 || grams > 5000) return json({ error: 'Choose a valid serving amount.' }, 400)
@@ -132,6 +157,7 @@ function summaryFromUSDA(food: Record<string, unknown>) {
   return {
     id: `usda:${food.fdcId}`, fdc_id: food.fdcId, food_version_id: null, name: food.description,
     brand: food.brandOwner ?? food.brandName ?? null, barcode: food.gtinUpc ?? null, source: 'USDA FoodData Central',
+    food_kind: 'packaged', resolution_source: 'usda',
     serving_size: food.servingSize ?? null, serving_unit: food.servingSizeUnit ?? null,
     calories_per_100g: nutrients['1008'] ?? null, image_url: null, score: null,
   }
@@ -208,6 +234,8 @@ async function productForVersion(admin: any, id: string) {
   return {
     id, food_version_id: id, fdc_id: version.source_system === 'usda_fdc' ? Number(version.source_record_id) : null,
     name: version.description, brand: version.brand_name, barcode: version.gtin, source: version.source_system === 'usda_fdc' ? 'USDA FoodData Central' : 'Leafy catalog',
+    food_kind: version.food_kind ?? (version.gtin ? 'packaged' : 'generic'),
+    resolution_source: version.source_system === 'usda_fdc' ? 'usda' : 'leafy_catalog',
     source_record_id: version.source_record_id, serving_size: version.serving_size, serving_unit: version.serving_unit,
     calories_per_100g: values.find((n: { code: string; amount_per_100g: number }) => n.code === 'energy_kcal')?.amount_per_100g ?? null,
     ingredients: version.ingredients_text, allergens: version.allergens ?? [], image_url: version.image_url,

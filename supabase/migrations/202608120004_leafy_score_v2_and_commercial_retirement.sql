@@ -73,7 +73,7 @@ update public.consent_grants set revoked_at = coalesce(revoked_at, now())
 where purpose = 'commercial_dataset' and revoked_at is null;
 update public.consumption_items set commercial_eligible = false, consent_grant_id = null
 where commercial_eligible or consent_grant_id is not null;
-update public.media_assets set commercial_eligible = false, consent_grant_id = null
+update public.nutrition_media_assets set commercial_eligible = false, consent_grant_id = null
 where commercial_eligible or consent_grant_id is not null;
 update public.consent_documents set retired_at = coalesce(retired_at, now())
 where document_key = 'commercial_nutrition_dataset' and retired_at is null;

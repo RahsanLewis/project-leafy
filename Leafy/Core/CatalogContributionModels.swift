@@ -160,6 +160,24 @@ struct CatalogValidationResults: Codable, Hashable, Sendable {
     }
 }
 
+enum CatalogExtractionStatus: String, Codable, Sendable {
+    case complete
+    case needsPhotos = "needs_photos"
+}
+
+struct CatalogExtractionDiagnostics: Codable, Hashable, Sendable {
+    let status: CatalogExtractionStatus
+    let missingFields: [String]
+    let requestedAssets: [String]
+    let message: String
+
+    enum CodingKeys: String, CodingKey {
+        case status, message
+        case missingFields = "missing_fields"
+        case requestedAssets = "requested_assets"
+    }
+}
+
 struct CatalogContribution: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let gtin: String
@@ -169,6 +187,7 @@ struct CatalogContribution: Codable, Identifiable, Hashable, Sendable {
     let extractedFields: CatalogContributionFields?
     let confirmedFields: CatalogContributionFields?
     let validationResults: CatalogValidationResults?
+    let extractionDiagnostics: CatalogExtractionDiagnostics?
     let reviewReason: String?
     let acceptedFoodVersionID: UUID?
     let assets: [CatalogContributionAsset]?
@@ -181,6 +200,7 @@ struct CatalogContribution: Codable, Identifiable, Hashable, Sendable {
         case extractedFields = "extracted_fields"
         case confirmedFields = "confirmed_fields"
         case validationResults = "validation_results"
+        case extractionDiagnostics = "extraction_diagnostics"
         case reviewReason = "review_reason"
         case acceptedFoodVersionID = "accepted_food_version_id"
         case createdAt = "created_at"

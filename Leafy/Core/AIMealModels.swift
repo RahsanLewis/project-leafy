@@ -15,19 +15,25 @@ struct MealEstimateItem: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var name: String
     var portion: String
-    let estimatedGrams: Double?
+    var estimatedGrams: Double?
     var calories: Int
     let calorieLow: Int
     let calorieHigh: Int
     let confidence: Double
     let assumptions: [String]
     var nutrients: [NutrientAmountInput]?
+    var resolutionSource: String? = nil
+    var foodVersionID: UUID? = nil
+    var catalogEligible: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, portion, calories, confidence, assumptions, nutrients
         case estimatedGrams = "estimated_grams"
         case calorieLow = "calorie_low"
         case calorieHigh = "calorie_high"
+        case resolutionSource = "resolution_source"
+        case foodVersionID = "food_version_id"
+        case catalogEligible = "catalog_eligible"
     }
 
     var confidenceLabel: String {
@@ -35,6 +41,14 @@ struct MealEstimateItem: Codable, Equatable, Identifiable, Sendable {
         case 0.75...: "High confidence"
         case 0.5...: "Medium confidence"
         default: "Low confidence"
+        }
+    }
+
+    var sourceLabel: String {
+        switch resolutionSource {
+        case "usda": "USDA nutrition data"
+        case "leafy_catalog": "Leafy food catalog"
+        default: "Leafy estimate"
         }
     }
 }
@@ -75,7 +89,13 @@ struct MealConfirmationItem: Encodable, Equatable, Sendable {
     let name: String
     let portion: String
     let calories: Int
+    let estimatedGrams: Double?
     let nutrients: [NutrientAmountInput]
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, portion, calories, nutrients
+        case estimatedGrams = "estimated_grams"
+    }
 }
 
 struct MealConfirmationResponse: Codable, Sendable { let entries: [FoodEntry] }

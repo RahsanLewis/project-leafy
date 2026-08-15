@@ -46,7 +46,7 @@ struct DashboardView: View {
         .sheet(isPresented: $app.showLogFood, onDismiss: {
             Task { await app.mealLoggerDidDismiss() }
         }) {
-            LogFoodView(initialMethod: app.pendingMealDescription.isEmpty ? .search : .ai, initialAIDescription: app.pendingMealDescription)
+            LogFoodView(initialAIDescription: app.pendingMealDescription)
         }
     }
 }

@@ -117,7 +117,12 @@ async function detail(admin: any, contribution: Row) {
   if (assets.error) throw assets.error
   const nutrients = await admin.from('catalog_contribution_nutrients').select('nutrient_code,amount_per_serving,unit,percent_daily_value,confidence').eq('contribution_id', contribution.id).eq('revision', contribution.revision)
   if (nutrients.error) throw nutrients.error
-  return { ...contribution, assets: assets.data ?? [], nutrients: nutrients.data ?? [] }
+  return {
+    ...contribution,
+    assets: assets.data ?? [],
+    nutrients: nutrients.data ?? [],
+    extraction_diagnostics: extractionDiagnostics(contribution),
+  }
 }
 
 async function registerAsset(admin: any, contribution: Row, body: Body) {
@@ -171,7 +176,12 @@ async function extract(admin: any, userID: string, contribution: Row) {
   if (!response.ok) throw new Error(payload?.error?.message ?? 'Leafy could not read that product label.')
   const extracted = JSON.parse(extractOutputText(payload))
   extracted.nutrients = normalizeNutrients(extracted.nutrients)
-  const update = await admin.from('catalog_contributions').update({ extracted_fields: extracted, updated_at: new Date().toISOString() }).eq('id', contribution.id).select('*').single()
+  const validation = validate(extracted, extracted.nutrients, extracted)
+  const update = await admin.from('catalog_contributions').update({
+    extracted_fields: extracted,
+    validation_results: validation,
+    updated_at: new Date().toISOString(),
+  }).eq('id', contribution.id).select('*').single()
   if (update.error) throw update.error
   return detail(admin, update.data)
 }
@@ -335,6 +345,54 @@ function normalizeNutrients(raw: unknown): NutrientInput[] {
     seen.add(code)
     return [{ code, amount_per_serving: amount, unit: units[code], percent_daily_value: item.percent_daily_value == null ? null : number(item.percent_daily_value, 0, 10000), confidence: number(item.confidence ?? 1, 0, 1) }]
   })
+}
+function extractionDiagnostics(contribution: Row) {
+  const extracted = contribution.extracted_fields as Row | null
+  if (!extracted || !Object.keys(extracted).length) return null
+  const validation = contribution.validation_results as Row ?? validate(
+    extracted,
+    normalizeNutrients(extracted.nutrients),
+    extracted,
+  )
+  const missing = Array.isArray(validation.missing_fields)
+    ? validation.missing_fields.map(String)
+    : []
+  const evidence = extracted.evidence as Row ?? {}
+  const requested = new Set<string>()
+  if (evidence.front_legible !== true || missing.some((field) => field === 'Product name' || field === 'Brand')) {
+    requested.add('front')
+  }
+  if (
+    evidence.nutrition_facts_legible !== true ||
+    validation.calorie_consistent === false ||
+    missing.some((field) => field === 'Serving weight' || field === 'Serving description' || requiredNutrients.includes(field))
+  ) requested.add('nutrition_facts')
+  if (evidence.ingredients_legible !== true || missing.includes('Ingredients')) requested.add('ingredients')
+  if (missing.includes('Clear package evidence')) {
+    if (evidence.front_legible !== true) requested.add('front')
+    if (evidence.nutrition_facts_legible !== true) requested.add('nutrition_facts')
+    if (evidence.ingredients_legible !== true) requested.add('ingredients')
+  }
+  const needsPhotos = requested.size > 0 || missing.length > 0 || validation.calorie_consistent === false
+  const requestedAssets = [...requested]
+  const names: Record<string, string> = {
+    front: 'the package front', nutrition_facts: 'the Nutrition Facts label', ingredients: 'the ingredients list',
+  }
+  const targets = requestedAssets.map((item) => names[item]).filter(Boolean)
+  return {
+    status: needsPhotos ? 'needs_photos' : 'complete',
+    missing_fields: missing,
+    requested_assets: requestedAssets,
+    message: needsPhotos
+      ? `Leafy needs a clearer photo of ${joinReadable(targets)}.`
+      : 'Leafy read the package label successfully.',
+  }
+}
+function joinReadable(values: string[]) {
+  if (!values.length) return 'the missing label information'
+  if (values.length === 1) return values[0]
+  if (values.length === 2) return `${values[0]} and ${values[1]}`
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`
 }
 function extractionPrompt(barcode: string) { return `The scanned barcode is ${barcode}. Read the product front and U.S. Nutrition Facts / ingredients evidence. Product name should be specific but concise. Capture printed amounts per serving for every standard nutrient code in the schema. For a nutrient not visible, return -1 so it can be flagged for review. Ingredients must be a faithful transcription. Do not invent a brand, serving, ingredient, nutrient, or allergen.` }
 function clean(value: unknown, max: number) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }

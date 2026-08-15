@@ -26,3 +26,11 @@ Deno.test('automatic publication requires evidence, nutrition completeness, and 
   assertStringIncludes(functionSource, "evidence.front_legible === true")
   assertStringIncludes(functionSource, "status = validation.missing_fields.length ? 'needs_review'")
 })
+
+Deno.test('incomplete photo extraction requests focused retakes instead of a blank review form', () => {
+  assertStringIncludes(functionSource, 'extraction_diagnostics: extractionDiagnostics(contribution)')
+  assertStringIncludes(functionSource, "requested.add('front')")
+  assertStringIncludes(functionSource, "requested.add('nutrition_facts')")
+  assertStringIncludes(functionSource, "requested.add('ingredients')")
+  assertStringIncludes(functionSource, "status: needsPhotos ? 'needs_photos' : 'complete'")
+})

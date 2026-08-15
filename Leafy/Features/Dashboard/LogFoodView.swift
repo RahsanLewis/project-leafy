@@ -1,83 +1,28 @@
 import SwiftUI
 import UIKit
 
-enum FoodLoggingMethod: String, CaseIterable, Identifiable {
-    case search
-    case ai
-    case manual
-
-    var id: Self { self }
-
-    var label: String {
-        switch self {
-        case .search: "Scan"
-        case .ai: "AI"
-        case .manual: "Manual"
-        }
-    }
-}
-
 struct LogFoodView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @State private var method: FoodLoggingMethod
-    @State private var searchHasDraft = false
-    @State private var aiHasDraft = false
-    @State private var manualHasDraft = false
+    @State private var hasDraft = false
     @State private var showingDiscardConfirmation = false
     @State private var successMessage: String?
     @State private var hasLoggedFood = false
     let initialAIDescription: String
 
-    init(initialMethod: FoodLoggingMethod = .search, initialAIDescription: String = "") {
-        _method = State(initialValue: initialMethod)
+    init(initialAIDescription: String = "") {
         self.initialAIDescription = initialAIDescription
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Logging method", selection: $method) {
-                    ForEach(FoodLoggingMethod.allCases) { method in
-                        Text(method.label).tag(method)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, LeafyTheme.pageInset)
-                .padding(.top, LeafySpacing.small)
-                .padding(.bottom, LeafySpacing.compact)
-                .background(LeafyTheme.canvas)
-                .accessibilityIdentifier("foodLoggingMethodPicker")
-
-                TabView(selection: $method) {
-                    ProductDiscoveryView(
-                        intent: .log,
-                        embedded: true,
-                        onLogged: { handleLogged(method: .search) },
-                        hasUnsavedDraft: $searchHasDraft
-                    )
-                        .tag(FoodLoggingMethod.search)
-
-                    AIMealView(
-                        logDate: app.selectedLogDate,
-                        embedded: true,
-                        initialDescription: initialAIDescription,
-                        onSaved: { handleLogged(method: .ai) },
-                        hasUnsavedDraft: $aiHasDraft
-                    )
-                        .tag(FoodLoggingMethod.ai)
-
-                    FoodEntryEditorView(
-                        entry: nil,
-                        logDate: app.selectedLogDate,
-                        embedded: true,
-                        onSaved: { handleLogged(method: .manual) },
-                        hasUnsavedDraft: $manualHasDraft
-                    )
-                    .tag(FoodLoggingMethod.manual)
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-            }
+            AIMealView(
+                logDate: app.selectedLogDate,
+                embedded: true,
+                initialDescription: initialAIDescription,
+                onSaved: handleLogged,
+                hasUnsavedDraft: $hasDraft
+            )
             .overlay(alignment: .top) {
                 if let successMessage {
                     Label(successMessage, systemImage: "checkmark.circle.fill")
@@ -114,22 +59,16 @@ struct LogFoodView: View {
         }
     }
 
-    private var hasUnsavedDraft: Bool {
-        searchHasDraft || aiHasDraft || manualHasDraft
-    }
+    private var hasUnsavedDraft: Bool { hasDraft }
 
     private func requestDismiss() {
         if hasUnsavedDraft { showingDiscardConfirmation = true }
         else { dismiss() }
     }
 
-    private func handleLogged(method: FoodLoggingMethod) {
+    private func handleLogged() {
         hasLoggedFood = true
-        switch method {
-        case .search: searchHasDraft = false
-        case .ai: aiHasDraft = false
-        case .manual: manualHasDraft = false
-        }
+        hasDraft = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation(LeafyMotion.state) { successMessage = "Food added" }
         Task { @MainActor in

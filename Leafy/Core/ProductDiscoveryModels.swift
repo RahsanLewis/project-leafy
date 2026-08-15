@@ -10,6 +10,8 @@ struct ProductSummary: Codable, Identifiable, Hashable, Sendable {
     let brand: String?
     let barcode: String?
     let source: String
+    let foodKind: String?
+    let resolutionSource: String?
     let servingSize: Double?
     let servingUnit: String?
     let caloriesPer100G: Double?
@@ -19,6 +21,7 @@ struct ProductSummary: Codable, Identifiable, Hashable, Sendable {
     var analyzedAt: Date? = nil
     enum CodingKeys: String, CodingKey {
         case id, name, brand, barcode, source, score
+        case foodKind = "food_kind", resolutionSource = "resolution_source"
         case fdcID = "fdc_id", foodVersionID = "food_version_id"
         case servingSize = "serving_size", servingUnit = "serving_unit"
         case caloriesPer100G = "calories_per_100g", imageURL = "image_url"
@@ -34,6 +37,8 @@ struct ProductDetail: Codable, Identifiable, Hashable, Sendable {
     let brand: String?
     let barcode: String?
     let source: String
+    let foodKind: String?
+    let resolutionSource: String?
     let servingSize: Double?
     let servingUnit: String?
     let caloriesPer100G: Double?
@@ -46,6 +51,7 @@ struct ProductDetail: Codable, Identifiable, Hashable, Sendable {
     let score: ProductNutritionScore?
     enum CodingKeys: String, CodingKey {
         case id, name, brand, barcode, source, ingredients, allergens, nutrients, portions, score
+        case foodKind = "food_kind", resolutionSource = "resolution_source"
         case fdcID = "fdc_id", foodVersionID = "food_version_id"
         case servingSize = "serving_size", servingUnit = "serving_unit"
         case caloriesPer100G = "calories_per_100g", imageURL = "image_url"

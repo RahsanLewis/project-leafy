@@ -132,6 +132,18 @@ struct FoodEntryEditorView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if entry != nil && hasResolutionAffectingChanges {
+                    Button {
+                        recalculateNutrition()
+                    } label: {
+                        Label("Recalculate Nutrition", systemImage: "arrow.triangle.2.circlepath")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+                    .disabled(!input.isValid || app.isNutrientAutoFillLoading)
+                }
+
                 if let mismatchMessage {
                     inlineError(mismatchMessage, symbol: "exclamationmark.triangle")
                 }
@@ -225,6 +237,24 @@ struct FoodEntryEditorView: View {
         Label(message, systemImage: symbol)
             .font(LeafyTypography.subheadline)
             .foregroundStyle(.orange)
+    }
+
+    private var hasResolutionAffectingChanges: Bool {
+        guard let entry else { return false }
+        let amount = Double(amountText.replacingOccurrences(of: ",", with: "."))
+        return name.trimmingCharacters(in: .whitespacesAndNewlines) != entry.name
+            || amount != entry.amount
+            || (amount != nil && amountUnit != entry.amountUnit)
+    }
+
+    private func recalculateNutrition() {
+        Task {
+            guard let estimates = await app.autoFillNutrients(for: input) else { return }
+            nutrientValues = Dictionary(uniqueKeysWithValues: estimates.map {
+                ($0.code, String(format: "%g", $0.amount))
+            })
+            estimatedNutrientCodes = Set(estimates.map(\.code))
+        }
     }
 
     private var input: FoodEntryInput {

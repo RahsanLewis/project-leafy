@@ -3,25 +3,6 @@ import SwiftUI
 import UIKit
 
 struct WeightView: View {
-    enum DisplayMode: String, CaseIterable {
-        case trend
-        case actual
-
-        var title: String {
-            switch self {
-            case .trend: "Trend"
-            case .actual: "Actual"
-            }
-        }
-
-        var metricTitle: String {
-            switch self {
-            case .trend: "Trend weight"
-            case .actual: "Actual weight"
-            }
-        }
-    }
-
     enum ChartRange: String, CaseIterable {
         case week = "1W"
         case month = "1M"
@@ -50,7 +31,6 @@ struct WeightView: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("weightDisplayMode") private var displayModeRawValue = DisplayMode.actual.rawValue
     @State private var chartRange: ChartRange = .month
     @State private var selectedChartDate: Date?
     @State private var lastHapticChartDate: Date?
@@ -210,9 +190,6 @@ struct WeightView: View {
         }
         .animation(LeafyMotion.state, value: app.weightStatusMessage)
         .onChange(of: chartRange) { _, _ in selectedChartDate = nil }
-        .onChange(of: insights.hasTrend, initial: true) { _, hasTrend in
-            if !hasTrend { displayModeRawValue = DisplayMode.actual.rawValue }
-        }
         .task { if app.weightEntries.isEmpty && !app.isWeightLoading { await app.loadWeightHistory() } }
     }
 
@@ -225,14 +202,10 @@ struct WeightView: View {
                         .font(LeafyTypography.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    if insights.hasTrend {
-                        displayModeMenu
-                    } else {
-                        Text(DisplayMode.actual.metricTitle)
-                            .font(LeafyTypography.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(minHeight: LeafyTheme.minimumTouchTarget)
-                    }
+                    Text("Actual weight")
+                        .font(LeafyTypography.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: LeafyTheme.minimumTouchTarget)
                 }
 
                 if selectedChartDate == nil {
@@ -248,8 +221,8 @@ struct WeightView: View {
                             .padding(-10)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("About \(displayMode.metricTitle.lowercased())")
-                    .accessibilityIdentifier(displayMode == .trend ? "trendWeightInfo" : "actualWeightInfo")
+                    .accessibilityLabel("About actual weight")
+                    .accessibilityIdentifier("actualWeightInfo")
                 }
             }
             .frame(height: 24, alignment: .leading)
@@ -282,7 +255,7 @@ struct WeightView: View {
                         .frame(height: 38)
 
                     goalDatum(
-                        label: displayMode == .trend ? "Trend remaining" : "Actual remaining",
+                        label: "Actual remaining",
                         value: displayedRemainingKG.map(formatWeight) ?? "Learning"
                     )
                     .padding(.leading, LeafySpacing.medium)
@@ -299,7 +272,7 @@ struct WeightView: View {
         }
         .padding(.vertical, LeafySpacing.medium)
         .sheet(isPresented: $showingWeightExplanation) {
-            WeightExplanationView(mode: displayMode)
+            WeightExplanationView()
                 .presentationDetents([.height(270)])
                 .presentationDragIndicator(.visible)
         }
@@ -321,36 +294,6 @@ struct WeightView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-    }
-
-    private var displayModeMenu: some View {
-        Menu {
-            ForEach(DisplayMode.allCases, id: \.self) { mode in
-                Button {
-                    guard displayMode != mode else { return }
-                    withAnimation(reduceMotion ? .none : .easeInOut(duration: 0.18)) {
-                        displayModeRawValue = mode.rawValue
-                    }
-                    UISelectionFeedbackGenerator().selectionChanged()
-                } label: {
-                    Label(mode.metricTitle, systemImage: displayMode == mode ? "checkmark" : "")
-                }
-                .accessibilityIdentifier("weightDisplay\(mode.title)")
-            }
-        } label: {
-            HStack(spacing: LeafySpacing.xSmall) {
-                Text(displayMode.metricTitle)
-                Image(systemName: "chevron.down")
-                    .font(LeafyTypography.icon(11))
-            }
-            .font(LeafyTypography.subheadline)
-            .foregroundStyle(.secondary)
-            .frame(minHeight: LeafyTheme.minimumTouchTarget)
-            .contentShape(Rectangle())
-        }
-        .accessibilityLabel("Weight view, \(displayMode.metricTitle)")
-        .accessibilityHint("Choose trend weight or actual weight")
-        .accessibilityIdentifier("weightDisplayMenu")
     }
 
     private var chartLegend: some View {
@@ -652,13 +595,6 @@ struct WeightView: View {
         }
     }
 
-    private var selectedTrendPoint: WeightTrendPoint? {
-        guard let selectedChartDate else { return nil }
-        return filteredTrendPoints.min {
-            abs($0.date.timeIntervalSince(selectedChartDate)) < abs($1.date.timeIntervalSince(selectedChartDate))
-        }
-    }
-
     private var selectedActualEntry: WeightEntry? {
         guard let selectedChartDate else { return nil }
         return filteredEntries.min {
@@ -670,19 +606,8 @@ struct WeightView: View {
         selectedActualEntry?.recordedOn
     }
 
-    private var displayMode: DisplayMode {
-        guard insights.hasTrend else { return .actual }
-        return DisplayMode(rawValue: displayModeRawValue) ?? .actual
-    }
-
     private var displayedWeightKG: Double? {
-        if let selectedActualEntry { return selectedActualEntry.weightKG }
-        switch displayMode {
-        case .trend:
-            return insights.trendWeightKG ?? latestEntry?.weightKG
-        case .actual:
-            return latestEntry?.weightKG
-        }
+        selectedActualEntry?.weightKG ?? latestEntry?.weightKG
     }
 
     @ViewBuilder
@@ -739,21 +664,11 @@ struct WeightView: View {
     }
 
     private var displayedRangeChangeKG: Double? {
-        switch displayMode {
-        case .trend:
-            return WeightInsightMetrics.trendRangeChangeKG(points: filteredTrendPoints)
-        case .actual:
-            return actualRangeChangeKG
-        }
+        actualRangeChangeKG
     }
 
     private var displayedRangeStartKG: Double? {
-        switch displayMode {
-        case .trend:
-            return filteredTrendPoints.sorted { $0.date < $1.date }.first?.averageKG
-        case .actual:
-            return chartActualEntries.first?.weightKG
-        }
+        chartActualEntries.first?.weightKG
     }
 
     private var latestEntry: WeightEntry? {
@@ -782,9 +697,6 @@ struct WeightView: View {
 
     private var displayedRemainingKG: Double? {
         guard app.draft.goal != .maintain else { return nil }
-        if displayMode == .trend, selectedChartDate == nil, !insights.hasTrend {
-            return nil
-        }
         guard let displayedWeightKG else { return nil }
         return abs(app.draft.targetWeightKG - displayedWeightKG)
     }
@@ -855,10 +767,6 @@ struct WeightView: View {
         }
         if currentNeeded > 0 { return "Leafy needs \(currentNeeded) more check-in\(currentNeeded == 1 ? "" : "s") in the current seven-day window." }
         return "Leafy needs \(previousNeeded) more check-in\(previousNeeded == 1 ? "" : "s") in the preceding seven-day window."
-    }
-
-    private var heroLabel: String {
-        selectedDataDate?.formatted(date: .abbreviated, time: .omitted) ?? displayMode.metricTitle
     }
 
     private var chartScale: WeightChartScale {
@@ -1022,12 +930,11 @@ struct WeightView: View {
 
 private struct WeightExplanationView: View {
     @Environment(\.dismiss) private var dismiss
-    let mode: WeightView.DisplayMode
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             HStack(alignment: .top) {
-                Text(title)
+                Text("About actual weight")
                     .font(LeafyTypography.title2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: LeafySpacing.small)
@@ -1041,10 +948,10 @@ private struct WeightExplanationView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss weight explanation")
-                .accessibilityIdentifier("dismissTrendWeightExplanation")
+                .accessibilityIdentifier("dismissWeightExplanation")
             }
 
-            Text(explanation)
+            Text("Actual weight is the reading recorded by your scale. It is useful for seeing each measurement, but water, sodium, carbohydrates, hormones, digestion, and time of day can cause normal short-term changes.")
                 .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1053,22 +960,6 @@ private struct WeightExplanationView: View {
         }
         .padding(LeafyTheme.pageInset)
         .background(LeafyTheme.canvas)
-    }
-
-    private var title: String {
-        switch mode {
-        case .trend: "Why Leafy emphasizes trend weight"
-        case .actual: "About actual weight"
-        }
-    }
-
-    private var explanation: String {
-        switch mode {
-        case .trend:
-            "Trend weight is your rolling seven-day average. It reduces the influence of temporary changes from water, sodium, carbohydrates, hormones, and digestion, making longer-term progress easier to see than a single weigh-in."
-        case .actual:
-            "Actual weight is the reading recorded by your scale. It is useful for seeing each measurement, but water, sodium, carbohydrates, hormones, digestion, and time of day can cause normal short-term changes."
-        }
     }
 }
 
