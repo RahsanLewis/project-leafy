@@ -391,6 +391,56 @@ enum WeightChartDateDomain {
     }
 }
 
+enum WeightChartAxis {
+    static func tickDates(
+        in domain: ClosedRange<Date>,
+        desiredCount: Int,
+        calendar: Calendar = .current
+    ) -> [Date] {
+        let lowerDay = calendar.startOfDay(for: domain.lowerBound)
+        let upperDay = calendar.startOfDay(for: domain.upperBound)
+        let daySpan = max(0, calendar.dateComponents([.day], from: lowerDay, to: upperDay).day ?? 0)
+        let count = min(max(2, desiredCount), daySpan + 1)
+
+        guard count > 1, domain.lowerBound < domain.upperBound else { return [lowerDay] }
+
+        let interval = domain.upperBound.timeIntervalSince(domain.lowerBound)
+        var seen = Set<Date>()
+        return (0..<count).compactMap { index in
+            let fraction = Double(index) / Double(count - 1)
+            let candidate = domain.lowerBound.addingTimeInterval(interval * fraction)
+            let day = calendar.startOfDay(for: candidate)
+            return seen.insert(day).inserted ? day : nil
+        }
+    }
+
+    static func label(
+        for date: Date,
+        in domain: ClosedRange<Date>,
+        calendar: Calendar = .current
+    ) -> String {
+        let daySpan = max(
+            0,
+            calendar.dateComponents(
+                [.day],
+                from: calendar.startOfDay(for: domain.lowerBound),
+                to: calendar.startOfDay(for: domain.upperBound)
+            ).day ?? 0
+        )
+
+        if daySpan <= 120 {
+            return date.formatted(.dateTime.month(.abbreviated).day())
+        }
+        if daySpan <= 730 {
+            let crossesYears = calendar.component(.year, from: domain.lowerBound) != calendar.component(.year, from: domain.upperBound)
+            return crossesYears
+                ? date.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
+                : date.formatted(.dateTime.month(.abbreviated))
+        }
+        return date.formatted(.dateTime.year())
+    }
+}
+
 struct WeightChartScale: Equatable, Sendable {
     let domain: ClosedRange<Double>
 

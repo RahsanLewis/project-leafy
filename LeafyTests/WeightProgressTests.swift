@@ -200,6 +200,62 @@ final class WeightProgressTests: XCTestCase {
         XCTAssertEqual(domain.upperBound, calendar.date(byAdding: .day, value: 1, to: reading))
     }
 
+    func testChartAxisDoesNotRepeatLabelsWithinAShortVisibleRange() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let lower = calendar.date(from: DateComponents(year: 2026, month: 8, day: 25, hour: 18))!
+        let upper = calendar.date(from: DateComponents(year: 2026, month: 8, day: 27, hour: 6))!
+        let domain = lower...upper
+
+        let ticks = WeightChartAxis.tickDates(in: domain, desiredCount: 5, calendar: calendar)
+        let labels = ticks.map { WeightChartAxis.label(for: $0, in: domain, calendar: calendar) }
+
+        XCTAssertEqual(labels, ["Aug 25", "Aug 26", "Aug 27"])
+        XCTAssertEqual(Set(labels).count, labels.count)
+    }
+
+    func testChartAxisAdaptsLabelsToVisibleSpanInsteadOfSelectedRange() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let shortDomain = ClosedRange(
+            uncheckedBounds: (
+                calendar.date(from: DateComponents(year: 2026, month: 7, day: 28))!,
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 14))!
+            )
+        )
+        let longDomain = ClosedRange(
+            uncheckedBounds: (
+                calendar.date(from: DateComponents(year: 2025, month: 8, day: 14))!,
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 14))!
+            )
+        )
+
+        XCTAssertEqual(
+            WeightChartAxis.label(for: shortDomain.lowerBound, in: shortDomain, calendar: calendar),
+            "Jul 28"
+        )
+        XCTAssertEqual(
+            WeightChartAxis.label(for: longDomain.lowerBound, in: longDomain, calendar: calendar),
+            "Aug 25"
+        )
+    }
+
+    func testChartAxisUsesYearsForMultiYearHistory() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let domain = ClosedRange(
+            uncheckedBounds: (
+                calendar.date(from: DateComponents(year: 2022, month: 1, day: 1))!,
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 14))!
+            )
+        )
+        let ticks = WeightChartAxis.tickDates(in: domain, desiredCount: 5, calendar: calendar)
+        let labels = ticks.map { WeightChartAxis.label(for: $0, in: domain, calendar: calendar) }
+
+        XCTAssertEqual(Set(labels).count, labels.count)
+        XCTAssertTrue(labels.allSatisfy { $0.count == 4 })
+    }
+
     func testEightReadingsProduceTwoRollingSevenReadingTrendPoints() {
         let calendar = Calendar(identifier: .gregorian)
         let entries = (1...8).map { day in makeEntry(weightKG: Double(day), day: day) }

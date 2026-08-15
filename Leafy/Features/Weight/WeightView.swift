@@ -403,10 +403,10 @@ struct WeightView: View {
         .chartYScale(domain: chartScale.domain)
         .chartXScale(domain: chartDateDomain)
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: xAxisLabelCount)) { value in
+            AxisMarks(values: chartXAxisDates) { value in
                 if let date = value.as(Date.self) {
                     AxisValueLabel {
-                        Text(xAxisLabel(for: date))
+                        Text(WeightChartAxis.label(for: date, in: chartDateDomain, calendar: .current))
                             .font(LeafyTypography.caption2)
                             .foregroundStyle(Color.secondary)
                     }
@@ -840,15 +840,12 @@ struct WeightView: View {
         }
     }
 
-    private func xAxisLabel(for date: Date) -> String {
-        switch chartRange {
-        case .week, .month:
-            return date.formatted(.dateTime.month(.abbreviated).day())
-        case .quarter, .yearToDate, .year:
-            return date.formatted(.dateTime.month(.abbreviated))
-        case .all:
-            return date.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
-        }
+    private var chartXAxisDates: [Date] {
+        WeightChartAxis.tickDates(
+            in: chartDateDomain,
+            desiredCount: xAxisLabelCount,
+            calendar: .current
+        )
     }
 
     private func displayValue(_ kg: Double) -> Double { app.draft.unitSystem == .imperial ? kg * 2.20462 : kg }

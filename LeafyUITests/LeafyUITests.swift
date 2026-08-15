@@ -561,6 +561,24 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
+    func testWeightChartSupportsEveryTimeframe() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launch()
+
+        app.tabBars.buttons["Progress"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["weightChart"].waitForExistence(timeout: 3))
+
+        for range in ["1W", "1M", "3M", "YTD", "1Y", "All"] {
+            let button = app.buttons["weightRange\(range)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 2), "Missing \(range) chart range")
+            button.tap()
+            XCTAssertTrue(button.isSelected, "\(range) should become the selected chart range")
+            XCTAssertTrue(app.descendants(matching: .any)["weightChart"].exists)
+        }
+    }
+
+    @MainActor
     func testTrendWeightIsHiddenBeforeSevenReadings() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SixWeightReadings", "-SkipMorningCheckIn", "-SkipBrandSplash"]
