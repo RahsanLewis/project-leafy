@@ -12,6 +12,7 @@ struct AIMealView: View {
     @State private var selectedImage: UIImage?
     @State private var photoData: Data?
     @State private var photoItem: PhotosPickerItem?
+    @State private var showingPhotoLibrary = false
     @State private var showingCamera = false
     @State private var mealDate = Date.now
     @State private var mealType: MealType = .unspecified
@@ -82,6 +83,11 @@ struct AIMealView: View {
             MealCameraPicker { image in setImage(image) }
                 .ignoresSafeArea()
         }
+        .photosPicker(
+            isPresented: $showingPhotoLibrary,
+            selection: $photoItem,
+            matching: .images
+        )
         .sheet(isPresented: $showingScanner) { scannerSheet }
         .sheet(isPresented: $showingUnknownProduct, onDismiss: finishUnknownProductSheet) {
             if let unknownBarcode {
@@ -265,7 +271,7 @@ struct AIMealView: View {
                     Button { showingCamera = true } label: {
                         Label("Take Photo", systemImage: "camera")
                     }
-                    PhotosPicker(selection: $photoItem, matching: .images) {
+                    Button { showingPhotoLibrary = true } label: {
                         Label("Choose from Library", systemImage: "photo.on.rectangle")
                     }
                 } label: {

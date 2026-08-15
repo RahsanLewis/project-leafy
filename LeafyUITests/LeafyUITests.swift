@@ -338,6 +338,23 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
+    func testLogFoodChooseFromLibraryOpensSystemPhotoPicker() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launch()
+
+        app.buttons["logFoodButton"].tap()
+        XCTAssertTrue(app.navigationBars["Log Food"].waitForExistence(timeout: 3))
+
+        app.buttons["addMealPhotoButton"].tap()
+        let chooseFromLibrary = app.buttons["Choose from Library"]
+        XCTAssertTrue(chooseFromLibrary.waitForExistence(timeout: 2))
+        chooseFromLibrary.tap()
+
+        XCTAssertTrue(app.navigationBars["Photos"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testLogFoodConfirmsBeforeDiscardingDescribeDraft() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
