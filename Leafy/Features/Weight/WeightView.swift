@@ -298,7 +298,7 @@ struct WeightView: View {
 
     private var chartLegend: some View {
         HStack(spacing: LeafySpacing.large) {
-            chartLegendItem(label: "Actual", showsPoint: true)
+            chartLegendItem(label: "Actual")
             if insights.fluctuationOffsetsKG != nil {
                 Button {
                     showingFluctuationExplanation = true
@@ -331,18 +331,11 @@ struct WeightView: View {
         }
     }
 
-    private func chartLegendItem(label: String, showsPoint: Bool = false) -> some View {
+    private func chartLegendItem(label: String) -> some View {
         HStack(spacing: LeafySpacing.xSmall) {
-            ZStack {
-                Capsule()
-                    .fill(LeafyTheme.green)
-                    .frame(width: 24, height: 3)
-                if showsPoint {
-                    Circle()
-                        .fill(LeafyTheme.green)
-                        .frame(width: 7, height: 7)
-                }
-            }
+            Capsule()
+                .fill(LeafyTheme.green)
+                .frame(width: 24, height: 3)
             Text(label)
                 .font(LeafyTypography.caption)
                 .foregroundStyle(.secondary)
@@ -371,9 +364,6 @@ struct WeightView: View {
                     .foregroundStyle(LeafyTheme.green)
                     .lineStyle(.init(lineWidth: 3, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.linear)
-                PointMark(x: .value("Date", entry.recordedOn), y: .value("Actual weight", displayValue(entry.weightKG)))
-                    .foregroundStyle(LeafyTheme.green)
-                    .symbolSize(34)
             }
             if app.draft.goal != .maintain,
                chartScale.domain.contains(displayValue(app.draft.targetWeightKG)) {
