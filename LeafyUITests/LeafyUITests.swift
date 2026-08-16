@@ -532,11 +532,13 @@ final class LeafyUITests: XCTestCase {
 
         app.buttons["openDailyNutrition"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["dailyNutritionView"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Build toward"].exists)
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Keep within")).firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Sodium"].exists)
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Vitamins")).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Fiber & choline"].exists)
+        app.staticTexts["Vitamins"].tap()
         XCTAssertTrue(app.staticTexts["Vitamin D"].exists)
+        let limits = app.staticTexts["Nutrients to limit"]
+        for _ in 0..<2 where !limits.isHittable { app.swipeUp() }
+        limits.tap()
+        XCTAssertTrue(app.staticTexts["Sodium"].exists)
     }
 
     @MainActor

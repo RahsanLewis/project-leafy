@@ -93,7 +93,7 @@ struct ServingNutritionHero: View {
 struct NutritionValueDisclosure: View {
     let title: String
     let nutrients: [NutrientAmountInput]
-    @State private var expandedGroups: Set<String> = []
+    @State private var expandedGroups: Set<NutritionGroup> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.compact) {
@@ -117,7 +117,7 @@ struct NutritionValueDisclosure: View {
                         .padding(.top, LeafySpacing.small)
                     } label: {
                         HStack {
-                            Text(group).font(LeafyTypography.headline)
+                            Text(group.title).font(LeafyTypography.headline)
                             Spacer()
                             Text("\(items.count)").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
                         }
@@ -129,13 +129,13 @@ struct NutritionValueDisclosure: View {
         }
     }
 
-    private var groups: [String] { ["Macros", "Build toward", "Vitamins", "Minerals", "Keep within", "Additional"] }
+    private var groups: [NutritionGroup] { NutritionGroup.detailOrder }
     private func amount(for code: String) -> NutrientAmountInput? { nutrients.first { $0.code == code } }
     private func value(for item: NutrientCatalog.Item) -> String {
         guard let amount = amount(for: item.code) else { return "Not available" }
         return "\(amount.amount.formatted(.number.precision(.fractionLength(0...2)))) \(item.unit)"
     }
-    private func binding(for group: String) -> Binding<Bool> {
+    private func binding(for group: NutritionGroup) -> Binding<Bool> {
         Binding(
             get: { expandedGroups.contains(group) },
             set: { expanded in

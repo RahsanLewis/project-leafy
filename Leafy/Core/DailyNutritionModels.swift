@@ -181,56 +181,79 @@ struct NutrientAutoFillResponse: Codable, Sendable {
     }
 }
 
+enum NutritionGroup: String, CaseIterable, Hashable, Sendable {
+    case macros
+    case fiberAndCholine
+    case vitamins
+    case minerals
+    case limits
+    case other
+
+    static let detailOrder: [Self] = [.macros, .fiberAndCholine, .vitamins, .minerals, .limits, .other]
+    static let dailyOrder: [Self] = [.fiberAndCholine, .vitamins, .minerals, .limits, .other]
+
+    var title: String {
+        switch self {
+        case .macros: "Macros"
+        case .fiberAndCholine: "Fiber & choline"
+        case .vitamins: "Vitamins"
+        case .minerals: "Minerals"
+        case .limits: "Nutrients to limit"
+        case .other: "Other tracked nutrients"
+        }
+    }
+}
+
 enum NutrientCatalog {
     struct Item: Identifiable, Hashable, Sendable {
         let code: String
         let name: String
         let unit: String
-        let group: String
+        let group: NutritionGroup
         var id: String { code }
     }
 
     static let items: [Item] = [
-        .init(code: "protein_g", name: "Protein", unit: "g", group: "Macros"),
-        .init(code: "carbohydrate_g", name: "Carbohydrate", unit: "g", group: "Macros"),
-        .init(code: "fat_g", name: "Fat", unit: "g", group: "Macros"),
-        .init(code: "fiber_g", name: "Dietary fiber", unit: "g", group: "Build toward"),
-        .init(code: "vitamin_a_mcg_rae", name: "Vitamin A", unit: "mcg RAE", group: "Vitamins"),
-        .init(code: "vitamin_c_mg", name: "Vitamin C", unit: "mg", group: "Vitamins"),
-        .init(code: "vitamin_d_mcg", name: "Vitamin D", unit: "mcg", group: "Vitamins"),
-        .init(code: "vitamin_e_mg", name: "Vitamin E", unit: "mg", group: "Vitamins"),
-        .init(code: "vitamin_k_mcg", name: "Vitamin K", unit: "mcg", group: "Vitamins"),
-        .init(code: "thiamin_mg", name: "Thiamin", unit: "mg", group: "Vitamins"),
-        .init(code: "riboflavin_mg", name: "Riboflavin", unit: "mg", group: "Vitamins"),
-        .init(code: "niacin_mg_ne", name: "Niacin", unit: "mg NE", group: "Vitamins"),
-        .init(code: "vitamin_b6_mg", name: "Vitamin B6", unit: "mg", group: "Vitamins"),
-        .init(code: "folate_mcg_dfe", name: "Folate", unit: "mcg DFE", group: "Vitamins"),
-        .init(code: "vitamin_b12_mcg", name: "Vitamin B12", unit: "mcg", group: "Vitamins"),
-        .init(code: "biotin_mcg", name: "Biotin", unit: "mcg", group: "Vitamins"),
-        .init(code: "pantothenic_acid_mg", name: "Pantothenic acid", unit: "mg", group: "Vitamins"),
-        .init(code: "calcium_mg", name: "Calcium", unit: "mg", group: "Minerals"),
-        .init(code: "iron_mg", name: "Iron", unit: "mg", group: "Minerals"),
-        .init(code: "magnesium_mg", name: "Magnesium", unit: "mg", group: "Minerals"),
-        .init(code: "phosphorus_mg", name: "Phosphorus", unit: "mg", group: "Minerals"),
-        .init(code: "iodine_mcg", name: "Iodine", unit: "mcg", group: "Minerals"),
-        .init(code: "potassium_mg", name: "Potassium", unit: "mg", group: "Minerals"),
-        .init(code: "zinc_mg", name: "Zinc", unit: "mg", group: "Minerals"),
-        .init(code: "selenium_mcg", name: "Selenium", unit: "mcg", group: "Minerals"),
-        .init(code: "copper_mg", name: "Copper", unit: "mg", group: "Minerals"),
-        .init(code: "manganese_mg", name: "Manganese", unit: "mg", group: "Minerals"),
-        .init(code: "chromium_mcg", name: "Chromium", unit: "mcg", group: "Minerals"),
-        .init(code: "molybdenum_mcg", name: "Molybdenum", unit: "mcg", group: "Minerals"),
-        .init(code: "chloride_mg", name: "Chloride", unit: "mg", group: "Minerals"),
-        .init(code: "choline_mg", name: "Choline", unit: "mg", group: "Build toward"),
-        .init(code: "saturated_fat_g", name: "Saturated fat", unit: "g", group: "Keep within"),
-        .init(code: "sodium_mg", name: "Sodium", unit: "mg", group: "Keep within"),
-        .init(code: "added_sugars_g", name: "Added sugars", unit: "g", group: "Keep within"),
-        .init(code: "cholesterol_mg", name: "Cholesterol", unit: "mg", group: "Keep within"),
-        .init(code: "sugars_g", name: "Total sugars", unit: "g", group: "Additional"),
-        .init(code: "trans_fat_g", name: "Trans fat", unit: "g", group: "Additional"),
-        .init(code: "water_g", name: "Water", unit: "g", group: "Additional"),
-        .init(code: "caffeine_mg", name: "Caffeine", unit: "mg", group: "Additional"),
-        .init(code: "alcohol_g", name: "Alcohol", unit: "g", group: "Additional"),
+        .init(code: "protein_g", name: "Protein", unit: "g", group: .macros),
+        .init(code: "carbohydrate_g", name: "Carbohydrate", unit: "g", group: .macros),
+        .init(code: "fat_g", name: "Fat", unit: "g", group: .macros),
+        .init(code: "fiber_g", name: "Dietary fiber", unit: "g", group: .fiberAndCholine),
+        .init(code: "vitamin_a_mcg_rae", name: "Vitamin A", unit: "mcg RAE", group: .vitamins),
+        .init(code: "vitamin_c_mg", name: "Vitamin C", unit: "mg", group: .vitamins),
+        .init(code: "vitamin_d_mcg", name: "Vitamin D", unit: "mcg", group: .vitamins),
+        .init(code: "vitamin_e_mg", name: "Vitamin E", unit: "mg", group: .vitamins),
+        .init(code: "vitamin_k_mcg", name: "Vitamin K", unit: "mcg", group: .vitamins),
+        .init(code: "thiamin_mg", name: "Thiamin", unit: "mg", group: .vitamins),
+        .init(code: "riboflavin_mg", name: "Riboflavin", unit: "mg", group: .vitamins),
+        .init(code: "niacin_mg_ne", name: "Niacin", unit: "mg NE", group: .vitamins),
+        .init(code: "vitamin_b6_mg", name: "Vitamin B6", unit: "mg", group: .vitamins),
+        .init(code: "folate_mcg_dfe", name: "Folate", unit: "mcg DFE", group: .vitamins),
+        .init(code: "vitamin_b12_mcg", name: "Vitamin B12", unit: "mcg", group: .vitamins),
+        .init(code: "biotin_mcg", name: "Biotin", unit: "mcg", group: .vitamins),
+        .init(code: "pantothenic_acid_mg", name: "Pantothenic acid", unit: "mg", group: .vitamins),
+        .init(code: "calcium_mg", name: "Calcium", unit: "mg", group: .minerals),
+        .init(code: "iron_mg", name: "Iron", unit: "mg", group: .minerals),
+        .init(code: "magnesium_mg", name: "Magnesium", unit: "mg", group: .minerals),
+        .init(code: "phosphorus_mg", name: "Phosphorus", unit: "mg", group: .minerals),
+        .init(code: "iodine_mcg", name: "Iodine", unit: "mcg", group: .minerals),
+        .init(code: "potassium_mg", name: "Potassium", unit: "mg", group: .minerals),
+        .init(code: "zinc_mg", name: "Zinc", unit: "mg", group: .minerals),
+        .init(code: "selenium_mcg", name: "Selenium", unit: "mcg", group: .minerals),
+        .init(code: "copper_mg", name: "Copper", unit: "mg", group: .minerals),
+        .init(code: "manganese_mg", name: "Manganese", unit: "mg", group: .minerals),
+        .init(code: "chromium_mcg", name: "Chromium", unit: "mcg", group: .minerals),
+        .init(code: "molybdenum_mcg", name: "Molybdenum", unit: "mcg", group: .minerals),
+        .init(code: "chloride_mg", name: "Chloride", unit: "mg", group: .minerals),
+        .init(code: "choline_mg", name: "Choline", unit: "mg", group: .fiberAndCholine),
+        .init(code: "saturated_fat_g", name: "Saturated fat", unit: "g", group: .limits),
+        .init(code: "sodium_mg", name: "Sodium", unit: "mg", group: .limits),
+        .init(code: "added_sugars_g", name: "Added sugars", unit: "g", group: .limits),
+        .init(code: "cholesterol_mg", name: "Cholesterol", unit: "mg", group: .limits),
+        .init(code: "sugars_g", name: "Total sugars", unit: "g", group: .other),
+        .init(code: "trans_fat_g", name: "Trans fat", unit: "g", group: .other),
+        .init(code: "water_g", name: "Water", unit: "g", group: .other),
+        .init(code: "caffeine_mg", name: "Caffeine", unit: "mg", group: .other),
+        .init(code: "alcohol_g", name: "Alcohol", unit: "g", group: .other),
     ]
 }
 

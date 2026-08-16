@@ -1554,8 +1554,14 @@ final class AppModel {
             ("iron_mg", "Iron", "mg", 8.2, 18, .goal),
         ]
         let nutrients = values.enumerated().map { index, value in
-            DailyNutrient(
-                code: value.0, name: value.1, unit: value.2, nutrientClass: index < 3 ? "macro" : "other",
+            let nutrientClass: String = switch value.0 {
+            case "protein_g", "carbohydrate_g", "fat_g": "macro"
+            case "vitamin_d_mcg": "vitamin"
+            case "sodium_mg", "calcium_mg", "iron_mg": "mineral"
+            default: "other"
+            }
+            return DailyNutrient(
+                code: value.0, name: value.1, unit: value.2, nutrientClass: nutrientClass,
                 displayOrder: index, targetKind: value.5, amount: value.3, targetAmount: value.4,
                 percentOfTarget: value.4.map { value.3 / $0 }, coverage: 0.78,
                 estimatedAmount: value.3 * 0.35, verifiedAmount: value.3 * 0.65, confidence: 0.68

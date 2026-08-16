@@ -7,7 +7,7 @@ struct NutrientEditorView: View {
     @Binding var values: [String: String]
     @Binding var estimatedCodes: Set<String>
     let loggingContext: Bool
-    @State private var expandedGroups: Set<String> = ["Macros"]
+    @State private var expandedGroups: Set<NutritionGroup> = [.macros]
     @FocusState private var focusedCode: String?
 
     init(
@@ -74,7 +74,7 @@ struct NutrientEditorView: View {
         }
     }
 
-    private func nutrientGroup(_ group: String) -> some View {
+    private func nutrientGroup(_ group: NutritionGroup) -> some View {
         let items = NutrientCatalog.items.filter { $0.group == group }
         return DisclosureGroup(isExpanded: binding(for: group)) {
             VStack(spacing: 0) {
@@ -86,7 +86,7 @@ struct NutrientEditorView: View {
             .padding(.top, LeafySpacing.small)
         } label: {
             HStack {
-                Text(group).font(LeafyTypography.title3)
+                Text(group.title).font(LeafyTypography.title3)
                 Spacer()
                 if let count = enteredCount(in: items), count > 0 {
                     Text("\(count) added")
@@ -127,8 +127,8 @@ struct NutrientEditorView: View {
         .frame(minHeight: LeafyTheme.rowMinHeight)
     }
 
-    private var groups: [String] { ["Macros", "Build toward", "Vitamins", "Minerals", "Keep within", "Additional"] }
-    private func binding(for group: String) -> Binding<Bool> {
+    private var groups: [NutritionGroup] { NutritionGroup.detailOrder }
+    private func binding(for group: NutritionGroup) -> Binding<Bool> {
         Binding(
             get: { expandedGroups.contains(group) },
             set: { expanded in
@@ -154,7 +154,7 @@ struct NutrientEditorView: View {
                 values[estimate.code] = estimate.amount.formatted(.number.precision(.fractionLength(0...3)))
                 estimatedCodes.insert(estimate.code)
             }
-            expandedGroups.insert("Macros")
+            expandedGroups.insert(.macros)
         }
     }
 }

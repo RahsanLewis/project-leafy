@@ -71,6 +71,23 @@ final class DailyNutritionModelsTests: XCTestCase {
         XCTAssertGreaterThan(nutrient.percentOfTarget ?? 0, 1)
     }
 
+    func testNutritionGroupsUseClearStableTitles() {
+        XCTAssertEqual(
+            NutritionGroup.dailyOrder.map(\.title),
+            ["Fiber & choline", "Vitamins", "Minerals", "Nutrients to limit", "Other tracked nutrients"]
+        )
+    }
+
+    func testNutrientCatalogKeepsExpectedGroupCounts() {
+        let counts = Dictionary(grouping: NutrientCatalog.items, by: \.group).mapValues(\.count)
+
+        XCTAssertEqual(counts[.fiberAndCholine], 2)
+        XCTAssertEqual(counts[.vitamins], 13)
+        XCTAssertEqual(counts[.minerals], 13)
+        XCTAssertEqual(counts[.limits], 4)
+        XCTAssertEqual(counts[.other], 5)
+    }
+
     func testNutritionFocusRanksWellCoveredGoalsByLowestProgress() {
         let nutrients = [
             presentationNutrient(code: "fiber_g", kind: .goal, percent: 0.60, coverage: 0.95, order: 1),

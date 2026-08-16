@@ -1,15 +1,15 @@
 import SwiftUI
 
 enum NutritionPresentation {
-    static let groupOrder = ["Build toward", "Vitamins", "Minerals", "Keep within", "Additional"]
+    static let groupOrder = NutritionGroup.dailyOrder
 
-    static func group(for nutrient: DailyNutrient) -> String {
-        if nutrient.targetKind == .limit { return "Keep within" }
-        if nutrient.targetKind == .informational { return "Additional" }
+    static func group(for nutrient: DailyNutrient) -> NutritionGroup {
+        if nutrient.targetKind == .limit { return .limits }
+        if nutrient.targetKind == .informational { return .other }
         switch nutrient.nutrientClass.lowercased() {
-        case "vitamin": return "Vitamins"
-        case "mineral": return "Minerals"
-        default: return "Build toward"
+        case "vitamin": return .vitamins
+        case "mineral": return .minerals
+        default: return .fiberAndCholine
         }
     }
 
@@ -43,7 +43,7 @@ struct DailyNutritionView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isChangingDay = false
-    @State private var expandedGroups: Set<String> = []
+    @State private var expandedGroups: Set<NutritionGroup> = []
     @State private var selectedNutrient: DailyNutrient?
     @State private var showingTargets = false
 
@@ -125,10 +125,10 @@ struct DailyNutritionView: View {
         let goals = NutritionPresentation.focusNutrients(from: summary.nutrients)
         let limits = NutritionPresentation.limitNutrients(from: summary.nutrients)
         if !goals.isEmpty {
-            nutrientCollection(title: "Build toward", subtitle: "Useful progress to keep in view today", nutrients: goals)
+            nutrientCollection(title: "Nutrients to focus on", subtitle: "Useful progress to keep in view today", nutrients: goals)
         }
         if !limits.isEmpty {
-            nutrientCollection(title: "Keep an eye on", subtitle: "Approaching a general daily limit", nutrients: limits)
+            nutrientCollection(title: "Approaching daily limits", subtitle: "Nutrients nearing a general daily limit", nutrients: limits)
         }
     }
 
@@ -158,12 +158,12 @@ struct DailyNutritionView: View {
         }
     }
 
-    private func nutrientDisclosure(_ title: String, nutrients: [DailyNutrient]) -> some View {
+    private func nutrientDisclosure(_ group: NutritionGroup, nutrients: [DailyNutrient]) -> some View {
         DisclosureGroup(isExpanded: Binding(
-            get: { expandedGroups.contains(title) },
+            get: { expandedGroups.contains(group) },
             set: { expanded in
                 withAnimation(reduceMotion ? nil : LeafyMotion.state) {
-                    if expanded { expandedGroups.insert(title) } else { expandedGroups.remove(title) }
+                    if expanded { expandedGroups.insert(group) } else { expandedGroups.remove(group) }
                 }
             }
         )) {
@@ -176,7 +176,7 @@ struct DailyNutritionView: View {
             .padding(.top, LeafySpacing.small)
         } label: {
             HStack {
-                Text(title).font(LeafyTypography.headline)
+                Text(group.title).font(LeafyTypography.headline)
                 Spacer()
                 Text("\(nutrients.count)").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
             }
