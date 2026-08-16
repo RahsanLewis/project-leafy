@@ -176,8 +176,6 @@ struct WeightView: View {
         }
         .sheet(item: $selectedInsightExplanation) { insight in
             WeightInsightExplanationView(insight: insight)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showingPlanEditor) {
             PlanEditView(onSaved: {})
@@ -273,8 +271,6 @@ struct WeightView: View {
         .padding(.vertical, LeafySpacing.medium)
         .sheet(isPresented: $showingWeightExplanation) {
             WeightExplanationView()
-                .presentationDetents([.height(270)])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -326,8 +322,6 @@ struct WeightView: View {
                 goal: app.draft.goal,
                 source: insights.fluctuationRangeSource
             )
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -363,7 +357,7 @@ struct WeightView: View {
                 )
                     .foregroundStyle(LeafyTheme.green)
                     .lineStyle(.init(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    .interpolationMethod(.linear)
+                    .interpolationMethod(.monotone)
             }
             if app.draft.goal != .maintain,
                chartScale.domain.contains(displayValue(app.draft.targetWeightKG)) {
@@ -394,6 +388,8 @@ struct WeightView: View {
         .chartXScale(domain: chartDateDomain)
         .chartXAxis {
             AxisMarks(values: chartXAxisDates) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(LeafyTheme.hairline)
                 if let date = value.as(Date.self) {
                     AxisValueLabel {
                         Text(WeightChartAxis.label(for: date, in: chartDateDomain, calendar: .current))
@@ -405,6 +401,8 @@ struct WeightView: View {
         }
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(LeafyTheme.hairline)
                 AxisValueLabel()
                     .foregroundStyle(Color.secondary)
             }
@@ -916,97 +914,60 @@ struct WeightView: View {
 }
 
 private struct WeightExplanationView: View {
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.medium) {
-            HStack(alignment: .top) {
-                Text("About actual weight")
-                    .font(LeafyTypography.title2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: LeafySpacing.small)
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(LeafyTypography.icon(15))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss weight explanation")
-                .accessibilityIdentifier("dismissWeightExplanation")
-            }
-
+        LeafyInfoSheet(
+            title: "About actual weight",
+            dismissAccessibilityLabel: "Dismiss weight explanation",
+            dismissIdentifier: "dismissWeightExplanation"
+        ) {
             Text("Actual weight is the reading recorded by your scale. It is useful for seeing each measurement, but water, sodium, carbohydrates, hormones, digestion, and time of day can cause normal short-term changes.")
                 .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 0)
         }
-        .padding(LeafyTheme.pageInset)
-        .background(LeafyTheme.canvas)
     }
 }
 
 private struct FluctuationRangeExplanationView: View {
-    @Environment(\.dismiss) private var dismiss
     let goal: WeightGoal
     let source: WeightFluctuationRangeSource
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                HStack(alignment: .top) {
-                    Text(source == .personalized ? "Your typical range" : "Expected range")
-                        .font(LeafyTypography.title2)
-                    Spacer(minLength: LeafySpacing.small)
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(LeafyTypography.icon(15))
-                            .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss fluctuation range explanation")
-                }
+        LeafyInfoSheet(
+            title: source == .personalized ? "Your typical range" : "Expected range",
+            dismissAccessibilityLabel: "Dismiss fluctuation range explanation",
+            dismissIdentifier: "dismissFluctuationRangeExplanation"
+        ) {
+            explanationSection(
+                title: "What it means",
+                text: introduction,
+                identifier: "fluctuationRangeMeaning"
+            )
 
-                explanationSection(
-                    title: "What it means",
-                    text: introduction,
-                    identifier: "fluctuationRangeMeaning"
-                )
+            explanationSection(
+                title: "Inside the range",
+                text: "A reading inside the shaded area is consistent with ordinary day-to-day movement.",
+                identifier: "fluctuationRangeInside"
+            )
 
-                explanationSection(
-                    title: "Inside the range",
-                    text: "A reading inside the shaded area is consistent with ordinary day-to-day movement.",
-                    identifier: "fluctuationRangeInside"
-                )
+            explanationSection(
+                title: "Outside the range",
+                text: "A reading above or below the shaded area can still be temporary. Look for several readings moving in the same direction before treating it as a change in progress.",
+                identifier: "fluctuationRangeOutside"
+            )
 
-                explanationSection(
-                    title: "Outside the range",
-                    text: "A reading above or below the shaded area can still be temporary. Look for several readings moving in the same direction before treating it as a change in progress.",
-                    identifier: "fluctuationRangeOutside"
-                )
+            explanationSection(
+                title: "What matters most",
+                text: goalMessage,
+                identifier: "fluctuationRangeGoal"
+            )
 
-                explanationSection(
-                    title: "What matters most",
-                    text: goalMessage,
-                    identifier: "fluctuationRangeGoal"
-                )
-
-                Text("Water retention, sodium, carbohydrates, hormones, digestion, exercise, and time of day can all temporarily move the scale without changing your underlying progress.")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("fluctuationRangeFactors")
-            }
-            .padding(LeafyTheme.pageInset)
+            Text("Water retention, sodium, carbohydrates, hormones, digestion, exercise, and time of day can all temporarily move the scale without changing your underlying progress.")
+                .font(LeafyTypography.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("fluctuationRangeFactors")
         }
-        .background(LeafyTheme.canvas)
     }
 
     private func explanationSection(
@@ -1053,47 +1014,28 @@ private struct WeightInsightExplanation: Identifiable {
 }
 
 private struct WeightInsightExplanationView: View {
-    @Environment(\.dismiss) private var dismiss
     let insight: WeightInsightExplanation
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                HStack(alignment: .top) {
-                    Text(insight.title)
-                        .font(LeafyTypography.title2)
-                    Spacer(minLength: LeafySpacing.small)
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(LeafyTypography.icon(15))
-                            .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss \(insight.title.lowercased()) explanation")
-                    .accessibilityIdentifier("dismissWeightInsightExplanation")
-                }
+        LeafyInfoSheet(
+            title: insight.title,
+            dismissIdentifier: "dismissWeightInsightExplanation"
+        ) {
+            Text(insight.explanation)
+                .font(LeafyTypography.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("weightInsightExplanation-\(insight.id)")
 
-                Text(insight.explanation)
+            if let status = insight.status {
+                Divider()
+                Text(status)
                     .font(LeafyTypography.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("weightInsightExplanation-\(insight.id)")
-
-                if let status = insight.status {
-                    Divider()
-                    Text(status)
-                        .font(LeafyTypography.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("weightInsightStatus-\(insight.id)")
-                }
+                    .accessibilityIdentifier("weightInsightStatus-\(insight.id)")
             }
-            .padding(LeafyTheme.pageInset)
         }
-        .background(LeafyTheme.canvas)
     }
 }
 

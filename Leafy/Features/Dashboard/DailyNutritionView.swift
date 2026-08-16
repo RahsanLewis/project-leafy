@@ -82,8 +82,6 @@ struct DailyNutritionView: View {
         .refreshable { await app.loadDailyLog() }
         .sheet(item: $selectedNutrient) { nutrient in
             NutrientExplanationSheet(nutrient: nutrient)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
         }
         .accessibilityIdentifier("dailyNutritionView")
     }
@@ -322,24 +320,22 @@ private struct NutrientProgressRow: View {
 }
 
 private struct NutrientExplanationSheet: View {
-    @Environment(\.dismiss) private var dismiss
     let nutrient: DailyNutrient
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                Text(nutrient.name).font(LeafyTypography.title)
-                Text(targetExplanation).font(LeafyTypography.body).foregroundStyle(.secondary)
-                LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
-                LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
-                if nutrient.hasEstimate {
-                    LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
-                }
-                Spacer()
+        LeafyInfoSheet(
+            title: nutrient.name,
+            dismissIdentifier: "dismissNutrientExplanation"
+        ) {
+            Text(targetExplanation)
+                .font(LeafyTypography.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
+            LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
+            if nutrient.hasEstimate {
+                LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
             }
-            .padding(LeafyTheme.pageInset)
-            .background(LeafyTheme.canvas)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 

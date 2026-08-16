@@ -20,8 +20,6 @@ struct PlanResultsView: View {
         }
         .sheet(isPresented: $showingCalculation) {
             PlanCalculationView(plan: plan, input: input)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
         }
         .alert(
             "Something went wrong",
@@ -211,54 +209,41 @@ struct PlanResultsView: View {
 
 private struct PlanCalculationView: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     let plan: NutritionPlan
     let input: NutritionPlanInput
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
-                    VStack(alignment: .leading, spacing: LeafySpacing.small) {
-                        Text("How targets are set")
-                            .font(LeafyTypography.title2)
-                        Text("Leafy combines a resting-energy equation with your activity estimate and selected goal.")
-                            .font(LeafyTypography.body)
-                            .foregroundStyle(.secondary)
-                    }
+        LeafyInfoSheet(
+            title: "How targets are set",
+            dismissIdentifier: "dismissPlanCalculation"
+        ) {
+            Text("Leafy combines a resting-energy equation with your activity estimate and selected goal.")
+                .font(LeafyTypography.body)
+                .foregroundStyle(.secondary)
 
-                    VStack(spacing: 0) {
-                        calculationRow("Resting energy", value: "\(plan.bmrKcal.formatted()) Cal")
-                        Divider().overlay(LeafyTheme.hairline)
-                        calculationRow("Estimated maintenance", value: "\(plan.tdeeKcal.formatted()) Cal")
-                        Divider().overlay(LeafyTheme.hairline)
-                        calculationRow(adjustmentLabel, value: adjustmentValue)
-                        Divider().overlay(LeafyTheme.hairline)
-                        calculationRow("Activity estimate", value: input.activityLevel.title)
-                        Divider().overlay(LeafyTheme.hairline)
-                        calculationRow("Goal pace", value: input.goal == .maintain ? "Maintain" : input.pace.title)
-                    }
-
-                    VStack(alignment: .leading, spacing: LeafySpacing.small) {
-                        Text("Protein target")
-                            .font(LeafyTypography.headline)
-                        Text(proteinExplanation)
-                            .font(LeafyTypography.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text("Leafy uses the Mifflin–St Jeor equation. Energy needs and weight changes vary, so these targets are a practical starting point rather than a medical prescription.")
-                        .font(LeafyTypography.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(LeafyTheme.pageInset)
+            VStack(spacing: 0) {
+                calculationRow("Resting energy", value: "\(plan.bmrKcal.formatted()) Cal")
+                Divider().overlay(LeafyTheme.hairline)
+                calculationRow("Estimated maintenance", value: "\(plan.tdeeKcal.formatted()) Cal")
+                Divider().overlay(LeafyTheme.hairline)
+                calculationRow(adjustmentLabel, value: adjustmentValue)
+                Divider().overlay(LeafyTheme.hairline)
+                calculationRow("Activity estimate", value: input.activityLevel.title)
+                Divider().overlay(LeafyTheme.hairline)
+                calculationRow("Goal pace", value: input.goal == .maintain ? "Maintain" : input.pace.title)
             }
-            .background(LeafyTheme.canvas)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
+
+            VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                Text("Protein target")
+                    .font(LeafyTypography.headline)
+                Text(proteinExplanation)
+                    .font(LeafyTypography.subheadline)
+                    .foregroundStyle(.secondary)
             }
+
+            Text("Leafy uses the Mifflin–St Jeor equation. Energy needs and weight changes vary, so these targets are a practical starting point rather than a medical prescription.")
+                .font(LeafyTypography.footnote)
+                .foregroundStyle(.secondary)
         }
         .accessibilityIdentifier("planCalculationView")
     }

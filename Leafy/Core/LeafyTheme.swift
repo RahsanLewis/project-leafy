@@ -202,6 +202,59 @@ private struct LeafyDetachedBottomControlModifier: ViewModifier {
     }
 }
 
+struct LeafyInfoSheet<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let dismissAccessibilityLabel: String
+    let dismissIdentifier: String
+    @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        dismissAccessibilityLabel: String? = nil,
+        dismissIdentifier: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.dismissAccessibilityLabel = dismissAccessibilityLabel ?? "Dismiss \(title.lowercased()) explanation"
+        self.dismissIdentifier = dismissIdentifier
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                HStack(alignment: .top) {
+                    Text(title)
+                        .font(LeafyTypography.title2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: LeafySpacing.small)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(LeafyTypography.icon(15))
+                            .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(dismissAccessibilityLabel)
+                    .accessibilityIdentifier(dismissIdentifier)
+                }
+
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(LeafyTheme.pageInset)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(LeafyTheme.canvas)
+        .presentationSizing(.fitted)
+        .presentationDragIndicator(.visible)
+    }
+}
+
 extension View {
     func leafyBorderlessList() -> some View {
         modifier(LeafyBorderlessListModifier())
