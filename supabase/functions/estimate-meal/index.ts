@@ -20,6 +20,7 @@ type Body = {
   consumed_at?: string
   local_date?: string
   time_zone?: string
+  market_country?: string
   meal_type?: string
   answer?: string
   skip?: boolean
@@ -158,6 +159,7 @@ async function startSession(admin: any, userID: string, body: Body) {
     description_text: description || null, voice_transcript: transcript || null,
     meal_type: validMealType(body.meal_type), consumed_at: body.consumed_at,
     local_date: body.local_date, time_zone: String(body.time_zone).slice(0, 80),
+    market_country: /^[A-Za-z]{2}$/.test(body.market_country ?? '') ? body.market_country!.toUpperCase() : 'US',
     provider: 'openai', prompt_version: mealPromptVersion, schema_version: mealSchemaVersion,
     error_code: null, error_message: null, updated_at: new Date().toISOString(),
   }
@@ -176,13 +178,6 @@ async function runAnalysis(admin: any, userID: string, sessionInput: Record<stri
   ])
   if (answerError) throw answerError
   if (mediaError) throw mediaError
-  if (!media && !(answers ?? []).length && !forceReady && likelySingleReusableFood(String(session.description_text ?? ''))) {
-    const known = await resolveKnownFood(admin, String(session.description_text ?? ''))
-    if (known) return persistEstimate(admin, session, known, null, {
-      provider: known.items[0].resolution_source === 'usda' ? 'usda_fdc' : 'leafy_catalog',
-      modelID: null, providerResponseID: null, inputTokens: null, outputTokens: null, latencyMS: 0,
-    })
-  }
   const answerPairs = (answers ?? []).map((row: Record<string, unknown>) => ({
     question: String(row.question), answer: row.skipped ? 'User skipped this question.' : String(row.answer ?? ''),
   }))
@@ -198,30 +193,46 @@ async function runAnalysis(admin: any, userID: string, sessionInput: Record<stri
   }
   const key = Deno.env.get('OPENAI_API_KEY')
   if (!key) throw new Error('AI meal estimates are not configured yet.')
-  const model = Deno.env.get('OPENAI_MEAL_MODEL') ?? 'gpt-5.6-terra'
+  const model = Deno.env.get('OPENAI_MEAL_MODEL') ?? 'gpt-5.6-sol'
+  const marketCountry = String(session.market_country ?? 'US').toUpperCase().slice(0, 2)
   const started = Date.now()
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const requestBody = {
       model, store: false, reasoning: { effort: 'low' }, safety_identifier: await safetyID(userID),
+      tools: [{ type: 'web_search' }], tool_choice: 'required',
+      include: ['web_search_call.action.sources'],
       input: [
-        { role: 'system', content: [{ type: 'input_text', text: systemPrompt(forceReady) }] },
+        { role: 'system', content: [{ type: 'input_text', text: systemPrompt(true, marketCountry) }] },
         { role: 'user', content },
       ],
       text: { format: { type: 'json_schema', name: 'leafy_meal_estimate', strict: true, schema: mealEstimateSchema } },
-    }),
+    }
+  let response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
   })
-  const payload = await response.json()
+  let payload = await response.json()
+  let usedWebSearch = response.ok
+  if (!response.ok) {
+    console.warn('Grounded meal resolution failed; falling back to an immediate estimate', payload?.error?.message)
+    const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } = requestBody
+    response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(fallbackBody),
+    })
+    payload = await response.json()
+    usedWebSearch = false
+  }
   if (!response.ok) throw new Error(payload?.error?.message ?? 'The AI service could not analyze this meal.')
   const outputText = extractOutputText(payload)
-  const estimate = normalizeMealOutput(JSON.parse(outputText), forceReady)
+  const estimate = normalizeMealOutput(JSON.parse(outputText), true)
+  const grounded = usedWebSearch ? estimate : downgradeUngroundedEstimate(estimate)
   return persistEstimate(admin, session, {
-    ...estimate,
-    items: estimate.items.map((item) => ({
-      ...item, resolution_source: 'ai' as const, food_version_id: null,
+    ...grounded,
+    items: grounded.items.map((item) => ({
+      ...item, resolution_source: resolutionSource(item), food_version_id: null,
       catalog_eligible: reusableEstimate(item.confidence, item.estimated_grams, item.nutrients),
     })),
-  }, estimate.follow_up_question, {
+  }, null, {
     provider: 'openai', modelID: model, providerResponseID: payload.id ?? null,
     inputTokens: payload.usage?.input_tokens ?? null, outputTokens: payload.usage?.output_tokens ?? null,
     latencyMS: Date.now() - started,
@@ -251,6 +262,11 @@ async function persistEstimate(admin: any, session: Record<string, unknown>, est
     confidence: item.confidence, assumptions: item.assumptions,
     food_version_id: item.food_version_id ?? null,
     resolution_source: item.resolution_source ?? 'ai', catalog_eligible: item.catalog_eligible ?? false,
+    nutrition_basis: item.nutrition_basis ?? 'ai_estimate',
+    market_country: item.market_country ?? 'US', source_title: item.source_title ?? null,
+    source_url: item.source_url ?? null, source_kind: item.source_kind ?? null,
+    exact_source_match: item.exact_source_match ?? false,
+    retrieved_at: item.source_url ? new Date().toISOString() : null,
   }))
   const inserted = await admin.from('ai_meal_items').insert(rows).select('*').order('ordinal')
   if (inserted.error) throw inserted.error
@@ -364,9 +380,38 @@ function sessionResponse(id: string, estimate: ReturnType<typeof normalizeMealOu
       resolution_source: row.resolution_source ?? 'ai',
       food_version_id: row.food_version_id ?? null,
       catalog_eligible: row.catalog_eligible ?? false,
+      nutrition_basis: row.nutrition_basis ?? 'ai_estimate', market_country: row.market_country ?? 'US',
+      source_title: row.source_title ?? null, source_url: row.source_url ?? null,
+      source_kind: row.source_kind ?? null, exact_source_match: row.exact_source_match ?? false,
+      retrieved_at: row.retrieved_at ?? null,
       nutrients: estimate.items[index]?.nutrients ?? [],
     })),
     follow_up: followUp ? { id: followUp.id, ordinal: followUp.ordinal, question: followUp.question } : null,
+  }
+}
+
+function resolutionSource(item: { nutrition_basis: string; source_kind: string | null }) {
+  if (item.nutrition_basis === 'usda') return 'usda'
+  if (item.nutrition_basis === 'leafy_catalog') return 'leafy_catalog'
+  if (item.nutrition_basis === 'official') return item.source_kind === 'restaurant' ? 'restaurant' : 'manufacturer'
+  if (item.nutrition_basis === 'secondary') return 'secondary'
+  return 'ai'
+}
+
+function downgradeUngroundedEstimate(estimate: ReturnType<typeof normalizeMealOutput>) {
+  const items = estimate.items.map((item) => ({
+    ...item, nutrition_basis: 'ai_estimate' as const, source_title: null, source_url: null,
+    source_kind: null, exact_source_match: false, confidence: Math.min(item.confidence, 0.55),
+    calorie_low: Math.min(item.calorie_low, Math.round(item.calories * 0.8)),
+    calorie_high: Math.max(item.calorie_high, Math.round(item.calories * 1.2)),
+  }))
+  return {
+    ...estimate, items, status: 'ready' as const, follow_up_question: null,
+    total_calories: items.reduce((sum, item) => sum + item.calories, 0),
+    calorie_low: items.reduce((sum, item) => sum + item.calorie_low, 0),
+    calorie_high: items.reduce((sum, item) => sum + item.calorie_high, 0),
+    confidence: Math.min(estimate.confidence, 0.55),
+    assumptions: [...estimate.assumptions, 'Live sources were unavailable; review this estimate before logging.'].slice(0, 8),
   }
 }
 

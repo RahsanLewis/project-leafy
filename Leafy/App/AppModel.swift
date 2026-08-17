@@ -599,7 +599,8 @@ final class AppModel {
                 description: normalizedDescription,
                 consumedAt: consumedAt,
                 localDate: localDate,
-                mealType: mealType
+                mealType: mealType,
+                marketCountry: Locale.current.region?.identifier ?? "US"
             )
             mealEstimate = try await service.estimateMeal(input, photoObjectPath: mealPhotoObjectPath)
             return true

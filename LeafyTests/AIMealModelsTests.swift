@@ -72,6 +72,16 @@ final class AIMealModelsTests: XCTestCase {
         XCTAssertFalse(draft.isValid)
     }
 
+    func testGroundedItemDecodesClickableOfficialSource() throws {
+        let json = """
+        {"id":"D27DC6DA-CC10-4E55-9CC0-A017C9345521","name":"Large fries","portion":"1 large order","estimated_grams":null,"calories":480,"calorie_low":480,"calorie_high":480,"confidence":0.99,"assumptions":[],"nutrients":[],"resolution_source":"restaurant","nutrition_basis":"official","market_country":"US","source_title":"McDonald's","source_url":"https://www.mcdonalds.com/us/en-us/about-our-food/nutrition-calculator.html","source_kind":"restaurant","exact_source_match":true}
+        """
+        let value = try JSONDecoder().decode(MealEstimateItem.self, from: Data(json.utf8))
+        XCTAssertEqual(value.sourceLabel, "McDonald's · Official")
+        XCTAssertEqual(value.sourceURL?.host(), "www.mcdonalds.com")
+        XCTAssertTrue(value.exactSourceMatch == true)
+    }
+
     private func item(calories: Int, confidence: Double = 0.7) -> MealEstimateItem {
         MealEstimateItem(
             id: UUID(), name: "Food", portion: "one serving", estimatedGrams: nil,

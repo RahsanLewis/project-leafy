@@ -176,17 +176,14 @@ Deno.serve(async (request) => {
     const context = await personalContext(admin, user.id, body.local_date);
     const foods = await catalogMatches(admin, message);
     const model = Deno.env.get("OPENAI_CHAT_MODEL") ?? "gpt-5.6-sol";
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const responseBody = {
         model,
         store: false,
         reasoning: { effort: "low" },
         safety_identifier: await safetyID(user.id),
+        tools: [{ type: "web_search" }],
+        tool_choice: "required",
+        include: ["web_search_call.action.sources"],
         input: [
           {
             role: "system",
@@ -209,9 +206,28 @@ Deno.serve(async (request) => {
             schema: chatSchema,
           },
         },
-      }),
+      };
+    let response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(responseBody),
     });
-    const payload = await response.json();
+    let payload = await response.json();
+    let usedWebSearch = response.ok;
+    if (!response.ok) {
+      console.warn("Ask Leafy web search failed; returning an immediate model estimate", payload?.error?.message);
+      const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } = responseBody;
+      response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify(fallbackBody),
+      });
+      payload = await response.json();
+      usedWebSearch = false;
+    }
     if (!response.ok) {
       throw new Error(
         payload?.error?.message ?? "Ask Leafy could not answer right now.",
@@ -227,8 +243,16 @@ Deno.serve(async (request) => {
       offTopicCount = await recentOffTopicCount(admin, user.id, since);
       shouldCount = countsTowardLimit("off_topic", offTopicCount);
     }
-    const sources = allowedSources(parsed.source_keys, context, foods);
-    const mealSuggestion = !enforceRedirect && parsed.meal_status === "ready"
+    const sources = [
+      ...allowedSources(parsed.source_keys, context, foods),
+      ...webSources(payload),
+    ].filter((source, index, all) =>
+      all.findIndex((candidate) =>
+        candidate.kind === source.kind && candidate.label === source.label &&
+        candidate.url === source.url
+      ) === index
+    ).slice(0, 6);
+    const mealSuggestionRaw = !enforceRedirect && parsed.meal_status === "ready"
       ? normalizeMealOutput({
         status: "ready",
         follow_up_question: null,
@@ -240,6 +264,9 @@ Deno.serve(async (request) => {
         assumptions: parsed.meal_assumptions,
       }, true)
       : null;
+    const mealSuggestion = mealSuggestionRaw && !usedWebSearch
+      ? downgradeChatEstimate(mealSuggestionRaw)
+      : mealSuggestionRaw;
     const now = new Date().toISOString();
     const userRow = await admin.from("ai_chat_messages").insert({
       thread_id: thread.id,
@@ -417,7 +444,9 @@ function systemPrompt(
 
 Be practical, concise, nonjudgmental, and transparent about uncertainty. Never diagnose, treat disease, change medication, promote eating-disorder behaviors, or give unsafe rapid-weight-loss guidance. For urgent_health, clearly encourage appropriate urgent or emergency help and do not diagnose. For pregnancy, breastfeeding, eating-disorder recovery, clinician-directed diets, severe symptoms, or medication interactions, provide only broad safety information and recommend an appropriate clinician. Use the private Leafy context only when relevant. Catalog candidates may be approximate. Format simple answers as concise prose. For answers with multiple recommendations, you may use short Markdown bullets and limited bold emphasis. Do not use headings, tables, links, or block quotes.
 
-When the user is describing food they already consumed, help them create a structured log. Ask one focused follow-up at a time whenever another answer would materially improve the item or portion estimates. Continue asking useful follow-ups across messages; there is no fixed number. If the user does not know an answer, make a conservative best-effort estimate with wider ranges and lower confidence. Use meal_status needs_clarification while asking, ready when a reviewable itemized estimate is available, and none for ordinary nutrition questions. For ready meals, identify every caloric food and drink, include sauces/oils/toppings, estimate nutrients conservatively, and put the structured values only in the meal fields rather than repeating the full breakdown in answer. Never claim a meal was logged. Return only the requested JSON.\nThe scope router classified the newest request as ${
+Use live web sources for every in-scope answer. For named restaurant or branded foods, search the exact item, size, market, and customization and prefer official restaurant/manufacturer sources, then USDA, then a verified Leafy catalog record, then reputable databases or retailers. Do not substitute a generic analogue when exact official nutrition is available.
+
+When the user describes food they consumed, return a reviewable itemized estimate immediately. Do not ask a follow-up before showing the first result. Include every food and drink, including zero-calorie drinks, plus sauces/oils/toppings. Put uncertainty and assumed sizes in meal_assumptions so the user can edit them. Use meal_status ready for a loggable meal and none for ordinary nutrition questions. For exact official values, use the same low/high calories, high confidence, and item-level source fields. Never claim a meal was logged. Return only the requested JSON.\nThe scope router classified the newest request as ${
     JSON.stringify(routedScope)
   }. Preserve urgent_health if routed that way. You may tighten health or mixed to off_topic, but never downgrade urgent_health.\nPRIVATE CONTEXT: ${
     JSON.stringify(context)
@@ -475,7 +504,7 @@ async function routeScope(
   history: Array<{ role: string; content: string }>,
   message: string,
 ) {
-  const model = Deno.env.get("OPENAI_SCOPE_MODEL") ?? "gpt-5.6-luna";
+  const model = Deno.env.get("OPENAI_SCOPE_MODEL") ?? "gpt-5.6-sol";
   const started = Date.now();
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -615,6 +644,18 @@ async function persistMealSuggestion(
     calorie_high: item.calorie_high,
     confidence: item.confidence,
     assumptions: item.assumptions,
+    nutrition_basis: item.nutrition_basis,
+    market_country: item.market_country,
+    source_title: item.source_title,
+    source_url: item.source_url,
+    source_kind: item.source_kind,
+    exact_source_match: item.exact_source_match,
+    resolution_source: item.nutrition_basis === "official"
+      ? (item.source_kind === "restaurant" ? "restaurant" : "manufacturer")
+      : item.nutrition_basis === "usda" ? "usda"
+      : item.nutrition_basis === "leafy_catalog" ? "leafy_catalog"
+      : item.nutrition_basis === "secondary" ? "secondary" : "ai",
+    retrieved_at: item.source_url ? new Date().toISOString() : null,
   }));
   const inserted = await admin.from("ai_meal_items").insert(rows).select(
     "id,ordinal",
@@ -638,6 +679,23 @@ async function persistMealSuggestion(
     if (result.error) throw result.error;
   }
   return sessionID;
+}
+
+function downgradeChatEstimate(estimate: ReturnType<typeof normalizeMealOutput>) {
+  const items = estimate.items.map((item) => ({
+    ...item, nutrition_basis: "ai_estimate" as const, source_title: null, source_url: null,
+    source_kind: null, exact_source_match: false, confidence: Math.min(item.confidence, 0.55),
+    calorie_low: Math.min(item.calorie_low, Math.round(item.calories * 0.8)),
+    calorie_high: Math.max(item.calorie_high, Math.round(item.calories * 1.2)),
+  }));
+  return {
+    ...estimate, items, status: "ready" as const, follow_up_question: null,
+    total_calories: items.reduce((sum, item) => sum + item.calories, 0),
+    calorie_low: items.reduce((sum, item) => sum + item.calorie_low, 0),
+    calorie_high: items.reduce((sum, item) => sum + item.calorie_high, 0),
+    confidence: Math.min(estimate.confidence, 0.55),
+    assumptions: [...estimate.assumptions, "Live sources were unavailable; review this estimate before logging."].slice(0, 8),
+  };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -675,7 +733,7 @@ async function loadMealSuggestion(
   if (session.error || !session.data) return null;
   const items = await admin.from("ai_meal_items")
     .select(
-      "id,ordinal,predicted_name,predicted_portion,predicted_grams,predicted_calories,calorie_low,calorie_high,confidence,assumptions,food_entry_id",
+      "id,ordinal,predicted_name,predicted_portion,predicted_grams,predicted_calories,calorie_low,calorie_high,confidence,assumptions,food_entry_id,resolution_source,nutrition_basis,market_country,source_title,source_url,source_kind,exact_source_match,retrieved_at",
     )
     .eq("session_id", sessionID).order("ordinal");
   if (items.error) throw items.error;
@@ -720,6 +778,14 @@ async function loadMealSuggestion(
       calorie_high: item.calorie_high,
       confidence: item.confidence,
       assumptions: item.assumptions ?? [],
+      resolution_source: item.resolution_source,
+      nutrition_basis: item.nutrition_basis,
+      market_country: item.market_country,
+      source_title: item.source_title,
+      source_url: item.source_url,
+      source_kind: item.source_kind,
+      exact_source_match: item.exact_source_match,
+      retrieved_at: item.retrieved_at,
       nutrients: nutrientMap.get(String(item.id)) ?? [],
     })),
   };
@@ -740,17 +806,50 @@ function allowedSources(
   foods: unknown[],
 ) {
   const requested = Array.isArray(keys) ? keys : [];
-  const all: Record<string, { kind: string; label: string } | null> = {
-    plan: context.plan ? { kind: "plan", label: "Your Leafy plan" } : null,
-    today: { kind: "log", label: "Today’s food log" },
+  const all: Record<string, { kind: string; label: string; url: null } | null> = {
+    plan: context.plan ? { kind: "plan", label: "Your Leafy plan", url: null } : null,
+    today: { kind: "log", label: "Today’s food log", url: null },
     weight: context.latest_weight_kg
-      ? { kind: "weight", label: "Your weight trend" }
+      ? { kind: "weight", label: "Your weight trend", url: null }
       : null,
     catalog: foods.length
-      ? { kind: "catalog", label: "Leafy food catalog / USDA" }
+      ? { kind: "catalog", label: "Leafy food catalog / USDA", url: null }
       : null,
   };
-  return requested.map((key) => all[String(key)]).filter(Boolean);
+  return requested.map((key) => all[String(key)]).filter(
+    (source): source is { kind: string; label: string; url: null } =>
+      source !== null,
+  );
+}
+
+// The Responses API nests consulted URLs under web_search_call.action.sources.
+// Keep this traversal tolerant of response-shape additions while only exposing
+// valid HTTPS links to the client.
+function webSources(payload: unknown) {
+  const found: Array<{ kind: string; label: string; url: string }> = [];
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    if (typeof record.url === "string" && /^https:\/\//i.test(record.url)) {
+      let hostname = "Source";
+      try {
+        hostname = new URL(record.url).hostname.replace(/^www\./, "");
+      } catch { /* URL was already constrained above. */ }
+      const title = typeof record.title === "string" && record.title.trim()
+        ? record.title.trim()
+        : hostname;
+      found.push({ kind: "web", label: title.slice(0, 80), url: record.url });
+    }
+    Object.values(record).forEach(visit);
+  };
+  visit(payload);
+  return found.filter((source, index, all) =>
+    all.findIndex((candidate) => candidate.url === source.url) === index
+  );
 }
 function titleFor(message: string) {
   const compact = message.replace(/\s+/g, " ").trim();

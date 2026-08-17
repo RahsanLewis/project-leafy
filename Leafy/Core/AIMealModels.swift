@@ -25,6 +25,13 @@ struct MealEstimateItem: Codable, Equatable, Identifiable, Sendable {
     var resolutionSource: String? = nil
     var foodVersionID: UUID? = nil
     var catalogEligible: Bool? = nil
+    var nutritionBasis: String? = nil
+    var marketCountry: String? = nil
+    var sourceTitle: String? = nil
+    var sourceURL: URL? = nil
+    var sourceKind: String? = nil
+    var exactSourceMatch: Bool? = nil
+    var retrievedAt: Date? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, portion, calories, confidence, assumptions, nutrients
@@ -34,6 +41,13 @@ struct MealEstimateItem: Codable, Equatable, Identifiable, Sendable {
         case resolutionSource = "resolution_source"
         case foodVersionID = "food_version_id"
         case catalogEligible = "catalog_eligible"
+        case nutritionBasis = "nutrition_basis"
+        case marketCountry = "market_country"
+        case sourceTitle = "source_title"
+        case sourceURL = "source_url"
+        case sourceKind = "source_kind"
+        case exactSourceMatch = "exact_source_match"
+        case retrievedAt = "retrieved_at"
     }
 
     var confidenceLabel: String {
@@ -44,11 +58,25 @@ struct MealEstimateItem: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
-    var sourceLabel: String {
-        switch resolutionSource {
-        case "usda": "USDA nutrition data"
-        case "leafy_catalog": "Leafy food catalog"
-        default: "Leafy estimate"
+    var sourceLabel: String? {
+        if let sourceTitle, !sourceTitle.isEmpty {
+            let suffix = nutritionBasis == "official" ? "Official" : sourceKindLabel
+            return suffix.map { "\(sourceTitle) · \($0)" } ?? sourceTitle
+        }
+        switch nutritionBasis ?? resolutionSource {
+        case "usda": return "USDA"
+        case "leafy_catalog": return "Leafy catalog"
+        default: return nil
+        }
+    }
+
+    private var sourceKindLabel: String? {
+        switch sourceKind {
+        case "restaurant", "manufacturer": return "Official"
+        case "usda": return "USDA"
+        case "database": return "Nutrition database"
+        case "retailer": return "Retailer"
+        default: return nil
         }
     }
 }
@@ -82,6 +110,7 @@ struct MealEstimateInput: Sendable {
     let consumedAt: Date
     let localDate: Date
     let mealType: MealType
+    let marketCountry: String
 }
 
 struct MealConfirmationItem: Encodable, Equatable, Sendable {

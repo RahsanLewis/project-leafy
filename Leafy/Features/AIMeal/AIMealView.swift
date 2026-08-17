@@ -876,6 +876,7 @@ struct AIMealView: View {
 
 private struct MealEstimateItemCard: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
     let item: MealEstimateItem
     let onChange: (String, String, Int, Double?, [NutrientAmountInput]) -> Void
     let onRemove: () -> Void
@@ -916,9 +917,21 @@ private struct MealEstimateItemCard: View {
                 Button(role: .destructive, action: onRemove) { Image(systemName: "trash") }
                     .accessibilityLabel("Remove \(name)")
             }
-            Text(item.sourceLabel)
-                .font(LeafyTypography.captionSemibold)
-                .foregroundStyle(LeafyTheme.green)
+            if let sourceLabel = item.sourceLabel {
+                Button {
+                    if let sourceURL = item.sourceURL { openURL(sourceURL) }
+                } label: {
+                    HStack(spacing: LeafySpacing.xSmall) {
+                        Text(sourceLabel)
+                        if item.sourceURL != nil { Image(systemName: "arrow.up.right") }
+                    }
+                    .font(LeafyTypography.captionSemibold)
+                    .foregroundStyle(LeafyTheme.green)
+                }
+                .buttonStyle(.plain)
+                .disabled(item.sourceURL == nil)
+                .accessibilityHint(item.sourceURL == nil ? "" : "Opens the nutrition source")
+            }
             if isResolvedFood {
                 servingEditor
                 Text(resolvedPortionDescription)
@@ -995,7 +1008,8 @@ private struct MealEstimateItemCard: View {
     }
 
     private var isResolvedFood: Bool {
-        item.resolutionSource == "usda" || item.resolutionSource == "leafy_catalog"
+        ["official", "manufacturer", "restaurant", "usda", "leafy_catalog"].contains(item.resolutionSource)
+            || item.exactSourceMatch == true
     }
 
     private var validServingCount: Double? { ProductServingQuantity.count(from: servingCount) }

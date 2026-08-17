@@ -14,9 +14,16 @@ struct NutritionChatThread: Codable, Identifiable, Equatable, Sendable {
 }
 
 struct NutritionChatSource: Codable, Identifiable, Equatable, Sendable {
-    var id: String { "\(kind):\(label)" }
+    var id: String { "\(kind):\(label):\(url ?? "")" }
     let kind: String
     let label: String
+    let url: String?
+
+    init(kind: String, label: String, url: String? = nil) {
+        self.kind = kind
+        self.label = label
+        self.url = url
+    }
 }
 
 enum NutritionChatMealStatus: String, Codable, Equatable, Sendable {

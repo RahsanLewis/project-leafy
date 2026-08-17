@@ -555,6 +555,7 @@ actor PlanService {
             "consumed_at": ISO8601DateFormatter().string(from: input.consumedAt),
             "local_date": Self.localDayString(for: input.localDate),
             "time_zone": Calendar.current.timeZone.identifier, "meal_type": input.mealType.rawValue,
+            "market_country": input.marketCountry,
         ]
         if let photoObjectPath { object["photo_object_path"] = photoObjectPath }
         let body = try JSONSerialization.data(withJSONObject: object)

@@ -223,8 +223,21 @@ private struct ChatMessageView: View {
                     .font(LeafyTypography.body)
                     .textSelection(.enabled)
                 if !message.sources.isEmpty {
-                    Text(message.sources.map(\.label).joined(separator: " · "))
-                        .font(LeafyTypography.caption).foregroundStyle(.secondary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: LeafySpacing.compact) {
+                            ForEach(message.sources) { source in
+                                if let rawURL = source.url, let url = URL(string: rawURL) {
+                                    Link(destination: url) {
+                                        Label(source.label, systemImage: "arrow.up.right")
+                                    }
+                                } else {
+                                    Text(source.label)
+                                }
+                            }
+                            .font(LeafyTypography.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 if message.suggestedLogDescription != nil {
                     Button("Review and log") { onLogDescription() }
