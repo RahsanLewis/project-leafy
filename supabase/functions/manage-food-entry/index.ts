@@ -63,7 +63,7 @@ Deno.serve(async (request) => {
 function validatedEntry(body: Body) {
   const name = String(body.name ?? '').trim().slice(0, 120)
   const calories = Math.round(Number(body.calories))
-  if (!name || calories < 1 || calories > 10000) throw new Error('Enter a food name and calories between 1 and 10,000.')
+  if (!name || calories < 0 || calories > 10000) throw new Error('Enter a food name and calories between 0 and 10,000.')
   if (!body.consumed_at || !/^\d{4}-\d{2}-\d{2}$/.test(body.local_date ?? '') || !body.time_zone) throw new Error('Food date and time are required.')
   const values: Record<string, unknown> = {
     name, calories, consumed_at: body.consumed_at, local_date: body.local_date,
@@ -92,7 +92,7 @@ function validateNutrient(value: NutrientInput) {
 async function autoFill(userID: string, body: Body) {
   const name = String(body.name ?? '').trim().slice(0, 120)
   const calories = Math.round(Number(body.calories))
-  if (!name || calories < 1 || calories > 10000) throw new Error('Enter a food name and calories before using Auto-fill.')
+  if (!name || calories < 0 || calories > 10000) throw new Error('Enter a food name and calories before using Auto-fill.')
   const key = Deno.env.get('OPENAI_API_KEY')
   if (!key) throw new Error('AI nutrient estimates are not configured yet.')
   const model = Deno.env.get('OPENAI_MEAL_MODEL') ?? 'gpt-5.6-terra'

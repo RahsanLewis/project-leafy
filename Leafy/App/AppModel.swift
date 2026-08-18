@@ -666,8 +666,8 @@ final class AppModel {
                 nutrients: $0.nutrients ?? []
             )
         }
-        guard items.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains($0.calories) }) else {
-            mealEstimateErrorMessage = "Review each food name and calorie estimate before saving."
+        guard items.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (0...10_000).contains($0.calories) }) else {
+            mealEstimateErrorMessage = "Check that each food has a name and calories between 0 and 10,000."
             return false
         }
         mealEstimateActivity = .saving

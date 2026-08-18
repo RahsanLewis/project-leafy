@@ -21,9 +21,6 @@ struct AIMealView: View {
     @State private var showingAnalysisWait = false
     @State private var waitStartedAt = Date.now
     @State private var waitEstimateSeconds = 12.0
-    @State private var showingMealDetails = false
-    @State private var servingAmount = ""
-    @State private var servingUnit = "serving"
     @State private var selectedProduct: ProductDetail?
     @State private var productServingCount = "1"
     @State private var showingScanner = false
@@ -127,14 +124,11 @@ struct AIMealView: View {
         }
         .onChange(of: description) { _, _ in updateDraftState() }
         .onChange(of: photoData) { _, _ in updateDraftState() }
-        .onChange(of: servingAmount) { _, _ in updateDraftState() }
-        .onChange(of: servingUnit) { _, _ in updateDraftState() }
         .onChange(of: app.mealEstimate?.followUp?.id) { _, _ in
             followUpAnswer = ""
             clarificationIsFocused = false
         }
         .onAppear { updateDraftState() }
-        .task { await app.loadRecentLoggingFoods() }
         .task(id: description.trimmingCharacters(in: .whitespacesAndNewlines)) {
             let query = description.trimmingCharacters(in: .whitespacesAndNewlines)
             guard query.count >= 2, photoData == nil, selectedProduct == nil, app.mealEstimate == nil else {
@@ -180,16 +174,12 @@ struct AIMealView: View {
             VStack(alignment: .leading, spacing: LeafySpacing.small) {
                 Text("What did you eat?")
                     .font(LeafyTypography.title2)
-                Text("Search for a known food, scan a package, or describe a meal for Leafy to estimate.")
+                Text("Describe a food or meal, add a photo, or scan a package.")
                     .font(LeafyTypography.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: LeafySpacing.small) {
-                Text("SEARCH OR DESCRIBE FOOD")
-                    .font(LeafyTypography.captionSemibold)
-                    .foregroundStyle(.secondary)
-                    .tracking(0.6)
+            VStack(alignment: .leading, spacing: LeafySpacing.medium) {
                 TextField("Food, product, or meal", text: $description, axis: .vertical)
                     .focused($descriptionIsFocused)
                     .lineLimit(1...4)
@@ -203,29 +193,7 @@ struct AIMealView: View {
                     }
                     .accessibilityIdentifier("aiMealDescription")
 
-                HStack(spacing: LeafySpacing.compact) {
-                    Text("Serving")
-                        .font(LeafyTypography.body)
-                    Spacer()
-                    TextField("Typical", text: $servingAmount)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 92)
-                        .accessibilityIdentifier("describeServingAmount")
-                    Picker("Serving unit", selection: $servingUnit) {
-                        ForEach(["serving", "g", "oz", "cup", "piece", "tbsp", "tsp"], id: \.self) {
-                            Text($0).tag($0)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                }
-                .frame(minHeight: LeafyTheme.rowMinHeight)
-                .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
-
-                Text(servingAmount.isEmpty
-                     ? "Leafy will suggest a common serving for you to confirm."
-                     : "You can adjust the serving and nutrition before logging.")
+                Text("Include an amount if you know it. Otherwise, Leafy will use a typical serving.")
                     .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
 
@@ -233,7 +201,8 @@ struct AIMealView: View {
                     photoInput
                     Button { showingScanner = true } label: {
                         Label("Scan barcode", systemImage: "barcode.viewfinder")
-                            .frame(maxWidth: .infinity, minHeight: LeafyTheme.minimumTouchTarget)
+                            .frame(maxWidth: .infinity, minHeight: 58)
+                            .background(LeafyTheme.green.opacity(0.10), in: .rect(cornerRadius: LeafyRadius.control))
                     }
                     .buttonStyle(.plain)
                     .font(LeafyTypography.subheadlineSemibold)
@@ -244,12 +213,6 @@ struct AIMealView: View {
 
             discoveryContent
 
-            DisclosureGroup("Meal details", isExpanded: $showingMealDetails) {
-                mealDetails.padding(.top, LeafySpacing.small)
-            }
-            .font(LeafyTypography.headline)
-            .tint(LeafyTheme.green)
-
             if let message = app.mealEstimateErrorMessage {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(LeafyTypography.subheadline)
@@ -257,7 +220,7 @@ struct AIMealView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("You’ll review the serving and nutrition before anything is added to your calorie budget.")
+            Text("Leafy will prepare an estimate you can log immediately or review first.")
                 .font(LeafyTypography.footnote).foregroundStyle(.secondary)
 
         }
@@ -294,7 +257,8 @@ struct AIMealView: View {
                     Label("Add photo", systemImage: "camera")
                     .font(LeafyTypography.subheadlineSemibold)
                     .foregroundStyle(LeafyTheme.green)
-                    .frame(maxWidth: .infinity, minHeight: LeafyTheme.minimumTouchTarget)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .background(LeafyTheme.green.opacity(0.10), in: .rect(cornerRadius: LeafyRadius.control))
                     .contentShape(.rect)
                 }
                 .accessibilityIdentifier("addMealPhotoButton")
@@ -305,9 +269,7 @@ struct AIMealView: View {
 
     @ViewBuilder private var discoveryContent: some View {
         let query = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        if photoData == nil && query.isEmpty && !app.recentLoggingFoods.isEmpty {
-            foodResultSection("Recent foods", products: app.recentLoggingFoods)
-        } else if photoData == nil && query.count >= 2 {
+        if photoData == nil && query.count >= 2 {
             VStack(alignment: .leading, spacing: LeafySpacing.small) {
                 HStack {
                     Text("MATCHES")
@@ -641,7 +603,7 @@ struct AIMealView: View {
                     .font(LeafyTypography.subheadline).foregroundStyle(.orange)
             }
 
-            Text("Nutrition values can vary by recipe, preparation, and serving size. Review them before logging.")
+            Text("Log Leafy’s estimate now, or review any item you want to change first.")
                 .font(LeafyTypography.footnote).foregroundStyle(.secondary)
 
             Button("Start over", role: .destructive) {
@@ -847,20 +809,16 @@ struct AIMealView: View {
     private func resetInputs() {
         description = ""; selectedImage = nil; photoData = nil; photoItem = nil
         selectedProduct = nil; productServingCount = "1"
-        servingAmount = ""; servingUnit = "serving"
         followUpAnswer = ""; mealDate = Self.logDate(logDay, usingTimeFrom: .now); mealType = .unspecified
     }
 
     private func updateDraftState() {
         hasUnsavedDraft = selectedProduct != nil || app.mealEstimate != nil || photoData != nil
             || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !servingAmount.isEmpty
     }
 
     private var resolvedDescription: String {
-        let base = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !servingAmount.isEmpty else { return base }
-        return "\(base)\nServing consumed: \(servingAmount) \(servingUnit)"
+        description.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func logDate(_ day: Date, usingTimeFrom time: Date) -> Date {

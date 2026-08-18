@@ -122,7 +122,7 @@ struct ChatMealReviewItem: Identifiable, Equatable, Sendable {
     }
 
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...10_000).contains(calories)
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (0...10_000).contains(calories)
     }
 }
 

@@ -65,7 +65,7 @@ struct FoodEntryInput: Equatable, Sendable {
     var nutrients: [NutrientAmountInput] = []
 
     var normalizedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var isValid: Bool { !normalizedName.isEmpty && normalizedName.count <= 120 && (1...10_000).contains(calories) }
+    var isValid: Bool { !normalizedName.isEmpty && normalizedName.count <= 120 && (0...10_000).contains(calories) }
 }
 
 enum NutrientTargetKind: String, Codable, Sendable { case goal, limit, informational }

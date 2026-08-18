@@ -31,7 +31,8 @@ final class DailyNutritionModelsTests: XCTestCase {
     func testFoodEntryInputValidation() {
         XCTAssertTrue(FoodEntryInput(name: "Greek yogurt", calories: 140, consumedAt: .now).isValid)
         XCTAssertFalse(FoodEntryInput(name: "   ", calories: 140, consumedAt: .now).isValid)
-        XCTAssertFalse(FoodEntryInput(name: "Food", calories: 0, consumedAt: .now).isValid)
+        XCTAssertTrue(FoodEntryInput(name: "Sparkling water", calories: 0, consumedAt: .now).isValid)
+        XCTAssertFalse(FoodEntryInput(name: "Food", calories: -1, consumedAt: .now).isValid)
         XCTAssertFalse(FoodEntryInput(name: "Food", calories: 10_001, consumedAt: .now).isValid)
     }
 

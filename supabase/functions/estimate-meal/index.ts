@@ -78,7 +78,7 @@ Deno.serve(async (request) => {
             confidence: Number.isFinite(confidence) ? confidence : null }]
         }) : [],
       }))
-      if (normalized.some((item) => !isUUID(item.client_item_id) || (item.origin === 'prediction' && !isUUID(item.id)) || !item.name || item.calories < 1 || item.calories > 10000 || (item.estimated_grams != null && (!Number.isFinite(item.estimated_grams) || item.estimated_grams <= 0 || item.estimated_grams > 5000)))) {
+      if (normalized.some((item) => !isUUID(item.client_item_id) || (item.origin === 'prediction' && !isUUID(item.id)) || !item.name || item.calories < 0 || item.calories > 10000 || (item.estimated_grams != null && (!Number.isFinite(item.estimated_grams) || item.estimated_grams <= 0 || item.estimated_grams > 5000)))) {
         return json({ error: 'Review each food name and calorie estimate before saving.' }, 400)
       }
       const suppliedTiming = body.consumed_at || body.local_date || body.time_zone
