@@ -75,7 +75,7 @@ final class DailyNutritionModelsTests: XCTestCase {
     func testNutritionGroupsUseClearStableTitles() {
         XCTAssertEqual(
             NutritionGroup.dailyOrder.map(\.title),
-            ["Fiber & choline", "Vitamins", "Minerals", "Nutrients to limit", "Other tracked nutrients"]
+            ["Vitamins", "Minerals", "Other nutrients"]
         )
     }
 
@@ -89,29 +89,18 @@ final class DailyNutritionModelsTests: XCTestCase {
         XCTAssertEqual(counts[.other], 5)
     }
 
-    func testNutritionFocusRanksWellCoveredGoalsByLowestProgress() {
+    func testDailyNutritionUsesFourBroadCategoriesAndSortsLimitsFirst() {
         let nutrients = [
             presentationNutrient(code: "fiber_g", kind: .goal, percent: 0.60, coverage: 0.95, order: 1),
             presentationNutrient(code: "vitamin_d_mcg", kind: .goal, percent: 0.20, coverage: 0.90, order: 2),
-            presentationNutrient(code: "iron_mg", kind: .goal, percent: 0.10, coverage: 0.40, order: 3),
-            presentationNutrient(code: "calcium_mg", kind: .goal, percent: 0.40, coverage: 0.85, order: 4),
-            presentationNutrient(code: "protein_g", kind: .goal, percent: 0.15, coverage: 1, order: 0)
+            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 1.20, coverage: 0.90, order: 3),
+            presentationNutrient(code: "choline_mg", kind: .goal, percent: 0.40, coverage: 0.85, order: 4)
         ]
 
-        XCTAssertEqual(
-            NutritionPresentation.focusNutrients(from: nutrients).map(\.code),
-            ["vitamin_d_mcg", "calcium_mg", "fiber_g"]
-        )
-    }
-
-    func testNutritionLimitsOnlySurfaceWithCoverageNearThreshold() {
-        let nutrients = [
-            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 0.85, coverage: 0.90, order: 1),
-            presentationNutrient(code: "added_sugars_g", kind: .limit, percent: 0.95, coverage: 0.60, order: 2),
-            presentationNutrient(code: "cholesterol_mg", kind: .limit, percent: 0.70, coverage: 1, order: 3)
-        ]
-
-        XCTAssertEqual(NutritionPresentation.limitNutrients(from: nutrients).map(\.code), ["sodium_mg"])
+        XCTAssertEqual(NutritionPresentation.group(for: nutrients[0]), .other)
+        XCTAssertEqual(NutritionPresentation.group(for: nutrients[1]), .vitamins)
+        XCTAssertEqual(NutritionPresentation.group(for: nutrients[2]), .other)
+        XCTAssertEqual(NutritionPresentation.sorted(nutrients.filter { NutritionPresentation.group(for: $0) == .other }, in: .other).first?.code, "sodium_mg")
     }
 
     func testFoodEntryDecodesLinkedCatalogVersion() throws {

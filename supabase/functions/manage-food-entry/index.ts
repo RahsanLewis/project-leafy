@@ -1,6 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
 import { normalizeNutrients, nutrientArraySchema, nutrientPrompt } from '../_shared/nutrients.ts'
+import { processNutrientJobs } from '../_shared/nutrient-enrichment.ts'
+
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
 type NutrientInput = { code: string; amount: number; derivation_method?: string; source_version?: string; confidence?: number }
 type Body = {
@@ -53,6 +56,9 @@ Deno.serve(async (request) => {
       })
       if (result.error) throw result.error
     }
+    EdgeRuntime.waitUntil(processNutrientJobs(admin, user.id, 2).catch((error) => {
+      console.error('background nutrient enrichment failed', error)
+    }))
     return json({ entry })
   } catch (error) {
     console.error('manage-food-entry failed', error)

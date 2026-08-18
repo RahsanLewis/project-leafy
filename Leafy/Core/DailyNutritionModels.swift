@@ -158,16 +158,21 @@ struct DailyNutritionSummary: Codable, Equatable, Sendable {
     let macroCoverage: Double?
     let reference: NutrientReference
     let nutrients: [DailyNutrient]
+    let enrichmentStatus: String? = nil
+    let pendingItemCount: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case reference, nutrients
         case localDate = "local_date"
         case totalCalories = "total_calories"
         case macroCoverage = "macro_coverage"
+        case enrichmentStatus = "enrichment_status"
+        case pendingItemCount = "pending_item_count"
     }
 
     func nutrient(_ code: String) -> DailyNutrient? { nutrients.first { $0.code == code } }
     static let macroCodes = ["protein_g", "carbohydrate_g", "fat_g"]
+    var isEnriching: Bool { enrichmentStatus == "processing" || (pendingItemCount ?? 0) > 0 }
 }
 
 struct NutrientAutoFillResponse: Codable, Sendable {
@@ -190,7 +195,9 @@ enum NutritionGroup: String, CaseIterable, Hashable, Sendable {
     case other
 
     static let detailOrder: [Self] = [.macros, .fiberAndCholine, .vitamins, .minerals, .limits, .other]
-    static let dailyOrder: [Self] = [.fiberAndCholine, .vitamins, .minerals, .limits, .other]
+    // Daily Nutrition intentionally has four broad sections: Macros (rendered
+    // separately), Vitamins, Minerals, and Other nutrients.
+    static let dailyOrder: [Self] = [.vitamins, .minerals, .other]
 
     var title: String {
         switch self {
@@ -199,7 +206,7 @@ enum NutritionGroup: String, CaseIterable, Hashable, Sendable {
         case .vitamins: "Vitamins"
         case .minerals: "Minerals"
         case .limits: "Nutrients to limit"
-        case .other: "Other tracked nutrients"
+        case .other: "Other nutrients"
         }
     }
 }

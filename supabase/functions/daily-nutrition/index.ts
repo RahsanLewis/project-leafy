@@ -1,5 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
+import { processNutrientJobs } from '../_shared/nutrient-enrichment.ts'
+
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
 type Row = Record<string, unknown>
 
@@ -30,12 +33,16 @@ Deno.serve(async (request) => {
     const itemIDs = itemRows.map((row) => String(row.id))
     if (!itemIDs.length) return json(await emptySummary(admin, body.local_date!))
 
-    const [{ data: observations, error: observationError }, metadata] = await Promise.all([
+    const [{ data: observations, error: observationError }, { data: jobs, error: jobsError }, metadata] = await Promise.all([
       admin.from('consumption_item_nutrients').select('consumption_item_id,nutrient_code,amount,derivation_method,confidence').in('consumption_item_id', itemIDs),
+      admin.from('nutrient_enrichment_jobs').select('status').in('consumption_item_id', itemIDs),
       loadMetadata(admin),
     ])
     if (observationError) throw observationError
-    return json(buildSummary(body.local_date!, itemRows, (observations ?? []) as Row[], metadata))
+    if (jobsError) throw jobsError
+    const jobRows = (jobs ?? []) as Row[]
+    EdgeRuntime.waitUntil(processNutrientJobs(admin, user.id, 3).catch((error) => console.error('nutrient retry resume failed', error)))
+    return json(buildSummary(body.local_date!, itemRows, (observations ?? []) as Row[], metadata, jobRows))
   } catch (error) {
     console.error('daily-nutrition failed', error)
     return json({ error: error instanceof Error ? error.message : 'Unable to load daily nutrition.' }, 400)
@@ -60,7 +67,7 @@ async function emptySummary(admin: any, localDate: string) {
   return buildSummary(localDate, [], [], metadata)
 }
 
-function buildSummary(localDate: string, items: Row[], observations: Row[], metadata: { definitions: Row[]; reference: Row }) {
+function buildSummary(localDate: string, items: Row[], observations: Row[], metadata: { definitions: Row[]; reference: Row }, jobs: Row[] = []) {
   const caloriesByItem = new Map(items.map((item) => [String(item.id), Number(item.calories_kcal ?? 0)]))
   const totalCalories = [...caloriesByItem.values()].reduce((sum, value) => sum + value, 0)
   const targetRows = (metadata.reference.nutrient_reference_values ?? []) as Row[]
@@ -102,5 +109,8 @@ function buildSummary(localDate: string, items: Row[], observations: Row[], meta
       population: metadata.reference.population, source_url: metadata.reference.source_url,
     },
     nutrients,
+    enrichment_status: jobs.some((job) => ['queued', 'processing', 'retry_wait'].includes(String(job.status)))
+      ? 'processing' : jobs.some((job) => job.status === 'failed') ? 'failed' : 'complete',
+    pending_item_count: jobs.filter((job) => ['queued', 'processing', 'retry_wait'].includes(String(job.status))).length,
   }
 }

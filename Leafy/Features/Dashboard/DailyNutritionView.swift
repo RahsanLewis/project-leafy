@@ -4,38 +4,34 @@ enum NutritionPresentation {
     static let groupOrder = NutritionGroup.dailyOrder
 
     static func group(for nutrient: DailyNutrient) -> NutritionGroup {
-        if nutrient.targetKind == .limit { return .limits }
-        if nutrient.targetKind == .informational { return .other }
+        if nutrient.targetKind == .limit { return .other }
         switch nutrient.nutrientClass.lowercased() {
         case "vitamin": return .vitamins
         case "mineral": return .minerals
-        default: return .fiberAndCholine
+        default: return .other
         }
     }
 
-    static func focusNutrients(from nutrients: [DailyNutrient]) -> [DailyNutrient] {
-        nutrients
-            .filter {
-                $0.targetKind == .goal &&
-                !DailyNutritionSummary.macroCodes.contains($0.code) &&
-                $0.targetAmount != nil && $0.hasSufficientCoverage
+    static func sorted(_ nutrients: [DailyNutrient], in group: NutritionGroup) -> [DailyNutrient] {
+        nutrients.sorted { lhs, rhs in
+            if group == .other {
+                let lhsRank = otherRank(lhs), rhsRank = otherRank(rhs)
+                if lhsRank != rhsRank { return lhsRank < rhsRank }
+            } else {
+                let lhsProgress = lhs.percentOfTarget ?? .greatestFiniteMagnitude
+                let rhsProgress = rhs.percentOfTarget ?? .greatestFiniteMagnitude
+                if lhsProgress != rhsProgress { return lhsProgress < rhsProgress }
             }
-            .sorted {
-                let lhs = $0.percentOfTarget ?? .greatestFiniteMagnitude
-                let rhs = $1.percentOfTarget ?? .greatestFiniteMagnitude
-                return lhs == rhs ? $0.displayOrder < $1.displayOrder : lhs < rhs
-            }
-            .prefix(3)
-            .map { $0 }
+            return lhs.displayOrder < rhs.displayOrder
+        }
     }
 
-    static func limitNutrients(from nutrients: [DailyNutrient]) -> [DailyNutrient] {
-        nutrients
-            .filter {
-                $0.targetKind == .limit && $0.hasSufficientCoverage &&
-                ($0.percentOfTarget ?? 0) >= 0.8
-            }
-            .sorted { ($0.percentOfTarget ?? 0) > ($1.percentOfTarget ?? 0) }
+    private static func otherRank(_ nutrient: DailyNutrient) -> Int {
+        guard nutrient.targetKind == .limit else { return nutrient.targetKind == .goal ? 2 : 3 }
+        let percent = nutrient.percentOfTarget ?? 0
+        if percent >= 1 { return 0 }
+        if percent >= 0.8 { return 1 }
+        return 3
     }
 }
 
@@ -54,8 +50,6 @@ struct DailyNutritionView: View {
 
                 if let summary = app.dailyNutrition {
                     MacroNutritionSummary(summary: summary, plan: app.dailyPlan, showsDisclosure: false)
-                    coverageNotice(summary)
-                    focusContent(summary)
                     allNutrients(summary)
                     aboutTargets(summary)
                 } else if app.isDailyLoading {
@@ -107,48 +101,17 @@ struct DailyNutritionView: View {
         .tint(LeafyTheme.green)
     }
 
-    @ViewBuilder private func coverageNotice(_ summary: DailyNutritionSummary) -> some View {
-        if let coverage = summary.macroCoverage, coverage < 0.999 {
-            Label(
-                "Nutrition data covers \(coverage.formatted(.percent.precision(.fractionLength(0)))) of logged calories",
-                systemImage: "chart.bar.doc.horizontal"
-            )
-            .font(LeafyTypography.footnote)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("nutritionCoverageNotice")
-        }
-    }
-
-    @ViewBuilder private func focusContent(_ summary: DailyNutritionSummary) -> some View {
-        let goals = NutritionPresentation.focusNutrients(from: summary.nutrients)
-        let limits = NutritionPresentation.limitNutrients(from: summary.nutrients)
-        if !goals.isEmpty {
-            nutrientCollection(title: "Nutrients to focus on", subtitle: "Useful progress to keep in view today", nutrients: goals)
-        }
-        if !limits.isEmpty {
-            nutrientCollection(title: "Approaching daily limits", subtitle: "Nutrients nearing a general daily limit", nutrients: limits)
-        }
-    }
-
-    private func nutrientCollection(title: String, subtitle: String, nutrients: [DailyNutrient]) -> some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.compact) {
-            VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
-                Text(title).font(LeafyTypography.title3)
-                Text(subtitle).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
-            }
-            ForEach(nutrients) { nutrient in
-                NutrientProgressRow(nutrient: nutrient) { selectedNutrient = nutrient }
-            }
-        }
-    }
-
     private func allNutrients(_ summary: DailyNutritionSummary) -> some View {
         VStack(alignment: .leading, spacing: LeafySpacing.compact) {
-            Text("All nutrients").font(LeafyTypography.title3)
+            if summary.isEnriching {
+                Label("Estimating missing nutrient details…", systemImage: "sparkles")
+                    .font(LeafyTypography.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             ForEach(NutritionPresentation.groupOrder, id: \.self) { group in
-                let nutrients = summary.nutrients
+                let nutrients = NutritionPresentation.sorted(summary.nutrients
                     .filter { !DailyNutritionSummary.macroCodes.contains($0.code) && NutritionPresentation.group(for: $0) == group }
-                    .sorted { $0.displayOrder < $1.displayOrder }
+                , in: group)
                 if !nutrients.isEmpty {
                     nutrientDisclosure(group, nutrients: nutrients)
                 }
@@ -196,6 +159,13 @@ struct DailyNutritionView: View {
         }
         .font(LeafyTypography.subheadlineSemibold)
         .tint(LeafyTheme.green)
+        .task(id: summary.nutrients.map(\.code)) {
+            let hasUrgentOther = summary.nutrients.contains {
+                NutritionPresentation.group(for: $0) == .other &&
+                $0.targetKind == .limit && ($0.percentOfTarget ?? 0) >= 0.8
+            }
+            if hasUrgentOther { expandedGroups.insert(.other) }
+        }
     }
 
     private func move(_ days: Int) {
@@ -253,13 +223,13 @@ private struct MacroMetric: View {
             GeometryReader { proxy in
                 Capsule().fill(LeafyTheme.track)
                     .overlay(alignment: .leading) {
-                        Capsule().fill(LeafyTheme.green).frame(width: proxy.size.width * progress)
+                        Capsule().fill(status.color).frame(width: proxy.size.width * progress)
                     }
             }
             .frame(height: 5)
-            Text(target.map { "of \(format($0)) g" } ?? "No target")
+            Text(status.label)
                 .font(LeafyTypography.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(status.color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -269,6 +239,14 @@ private struct MacroMetric: View {
     private var progress: Double {
         guard let target, target > 0, let nutrient else { return 0 }
         return min(max(nutrient.amount / target, 0), 1)
+    }
+    private var status: (label: String, color: Color) {
+        guard let target, target > 0, let nutrient else { return ("No target", .secondary) }
+        let ratio = nutrient.amount / target
+        let upper = title == "Protein" ? 1.25 : 1.10
+        if ratio < 0.90 { return ("\(format(max(0, target - nutrient.amount))) g to target", .secondary) }
+        if ratio <= upper { return ("On target", LeafyTheme.green) }
+        return ("\(format(nutrient.amount - target)) g above target", .orange)
     }
     private func format(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...1))) }
 }
@@ -299,8 +277,8 @@ private struct NutrientProgressRow: View {
                 }
                 .frame(height: 5)
             }
-            if !hasKnownData {
-                Text("Not enough data").font(LeafyTypography.caption).foregroundStyle(.secondary)
+            if let statusText {
+                Text(statusText).font(LeafyTypography.caption).foregroundStyle(statusColor)
             }
         }
         .padding(.vertical, LeafySpacing.small)
@@ -308,14 +286,26 @@ private struct NutrientProgressRow: View {
 
     private var hasKnownData: Bool { nutrient.coverage == nil || (nutrient.coverage ?? 0) > 0 }
     private var amountAndTarget: String {
-        guard hasKnownData else { return "—" }
-        let amount = "\(format(nutrient.amount)) \(nutrient.unit)"
+        guard hasKnownData else { return "Estimating…" }
+        let estimateMark = nutrient.hasEstimate ? "≈" : ""
+        let amount = "\(estimateMark)\(format(nutrient.amount)) \(nutrient.unit)"
         guard let target = nutrient.targetAmount else { return amount }
         return "\(amount) of \(format(target))"
     }
     private var barColor: Color {
         nutrient.targetKind == .limit && (nutrient.percentOfTarget ?? 0) >= 0.8 ? .orange : LeafyTheme.green
     }
+    private var statusText: String? {
+        guard hasKnownData, let target = nutrient.targetAmount else { return nil }
+        let difference = target - nutrient.amount
+        if nutrient.targetKind == .limit {
+            if difference < 0 { return "\(format(abs(difference))) \(nutrient.unit) over limit" }
+            if (nutrient.percentOfTarget ?? 0) >= 0.8 { return "Near limit · \(format(difference)) \(nutrient.unit) remaining" }
+            return nil
+        }
+        return nil
+    }
+    private var statusColor: Color { nutrient.targetKind == .limit ? .orange : .secondary }
     private func format(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...2))) }
 }
 
