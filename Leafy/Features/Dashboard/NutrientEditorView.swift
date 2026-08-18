@@ -75,7 +75,7 @@ struct NutrientEditorView: View {
     }
 
     private func nutrientGroup(_ group: NutritionGroup) -> some View {
-        let items = NutrientCatalog.items.filter { $0.group == group }
+        let items = NutrientCatalog.items(in: group)
         return DisclosureGroup(isExpanded: binding(for: group)) {
             VStack(spacing: 0) {
                 ForEach(items) { nutrient in

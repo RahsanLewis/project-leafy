@@ -27,7 +27,7 @@ const nutrientCodes: Record<number, string> = {
   1177: 'folate_mcg_dfe', 1178: 'vitamin_b12_mcg', 1176: 'biotin_mcg', 1170: 'pantothenic_acid_mg',
   1091: 'phosphorus_mg', 1100: 'iodine_mcg', 1095: 'zinc_mg', 1103: 'selenium_mcg',
   1098: 'copper_mg', 1101: 'manganese_mg', 1096: 'chromium_mcg', 1102: 'molybdenum_mcg',
-  1088: 'chloride_mg', 1180: 'choline_mg', 1051: 'water_g', 1057: 'caffeine_mg', 1018: 'alcohol_g',
+  1088: 'chloride_mg', 1180: 'choline_mg', 1057: 'caffeine_mg',
 }
 
 Deno.serve(async (request) => {

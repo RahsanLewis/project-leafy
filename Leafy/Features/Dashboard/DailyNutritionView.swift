@@ -4,7 +4,6 @@ enum NutritionPresentation {
     static let groupOrder = NutritionGroup.dailyOrder
 
     static func group(for nutrient: DailyNutrient) -> NutritionGroup {
-        if nutrient.targetKind == .limit { return .other }
         switch nutrient.nutrientClass.lowercased() {
         case "vitamin": return .vitamins
         case "mineral": return .minerals
@@ -14,24 +13,29 @@ enum NutritionPresentation {
 
     static func sorted(_ nutrients: [DailyNutrient], in group: NutritionGroup) -> [DailyNutrient] {
         nutrients.sorted { lhs, rhs in
-            if group == .other {
-                let lhsRank = otherRank(lhs), rhsRank = otherRank(rhs)
-                if lhsRank != rhsRank { return lhsRank < rhsRank }
-            } else {
-                let lhsProgress = lhs.percentOfTarget ?? .greatestFiniteMagnitude
-                let rhsProgress = rhs.percentOfTarget ?? .greatestFiniteMagnitude
-                if lhsProgress != rhsProgress { return lhsProgress < rhsProgress }
-            }
+            let lhsStatus = statusRank(lhs), rhsStatus = statusRank(rhs)
+            if lhsStatus != rhsStatus { return lhsStatus < rhsStatus }
+            let lhsImportance = NutrientCatalog.importanceRank(for: lhs.code)
+            let rhsImportance = NutrientCatalog.importanceRank(for: rhs.code)
+            if lhsImportance != rhsImportance { return lhsImportance < rhsImportance }
             return lhs.displayOrder < rhs.displayOrder
         }
     }
 
-    private static func otherRank(_ nutrient: DailyNutrient) -> Int {
-        guard nutrient.targetKind == .limit else { return nutrient.targetKind == .goal ? 2 : 3 }
-        let percent = nutrient.percentOfTarget ?? 0
-        if percent >= 1 { return 0 }
-        if percent >= 0.8 { return 1 }
-        return 3
+    private static func statusRank(_ nutrient: DailyNutrient) -> Int {
+        guard let percent = nutrient.percentOfTarget else { return 5 }
+        switch nutrient.targetKind {
+        case .limit:
+            if percent >= 1 { return 0 }
+            if percent >= 0.8 { return 1 }
+            return 4
+        case .goal:
+            if percent < 0.5 { return 2 }
+            if percent < 0.9 { return 3 }
+            return 4
+        case .informational:
+            return 5
+        }
     }
 }
 
@@ -110,7 +114,10 @@ struct DailyNutritionView: View {
             }
             ForEach(NutritionPresentation.groupOrder, id: \.self) { group in
                 let nutrients = NutritionPresentation.sorted(summary.nutrients
-                    .filter { !DailyNutritionSummary.macroCodes.contains($0.code) && NutritionPresentation.group(for: $0) == group }
+                    .filter {
+                        !DailyNutritionSummary.macroCodes.contains($0.code) &&
+                        NutritionPresentation.group(for: $0) == group
+                    }
                 , in: group)
                 if !nutrients.isEmpty {
                     nutrientDisclosure(group, nutrients: nutrients)
@@ -220,6 +227,7 @@ private struct MacroMetric: View {
                 .font(LeafyTypography.metric(26))
                 .monospacedDigit()
                 .contentTransition(.numericText())
+                .foregroundStyle(status.color)
             GeometryReader { proxy in
                 Capsule().fill(LeafyTheme.track)
                     .overlay(alignment: .leading) {
@@ -244,7 +252,7 @@ private struct MacroMetric: View {
         guard let target, target > 0, let nutrient else { return ("No target", .secondary) }
         let ratio = nutrient.amount / target
         let upper = title == "Protein" ? 1.25 : 1.10
-        if ratio < 0.90 { return ("\(format(max(0, target - nutrient.amount))) g to target", .secondary) }
+        if ratio < 0.90 { return ("\(format(max(0, target - nutrient.amount))) g to target", LeafyTheme.green) }
         if ratio <= upper { return ("On target", LeafyTheme.green) }
         return ("\(format(nutrient.amount - target)) g above target", .orange)
     }

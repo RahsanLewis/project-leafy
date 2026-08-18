@@ -84,23 +84,37 @@ final class DailyNutritionModelsTests: XCTestCase {
 
         XCTAssertEqual(counts[.fiberAndCholine], 2)
         XCTAssertEqual(counts[.vitamins], 13)
-        XCTAssertEqual(counts[.minerals], 13)
-        XCTAssertEqual(counts[.limits], 4)
-        XCTAssertEqual(counts[.other], 5)
+        XCTAssertEqual(counts[.minerals], 14)
+        XCTAssertEqual(counts[.limits], 3)
+        XCTAssertEqual(counts[.other], 3)
+        XCTAssertNil(NutrientCatalog.items.first { $0.code == "water_g" || $0.code == "alcohol_g" })
     }
 
     func testDailyNutritionUsesFourBroadCategoriesAndSortsLimitsFirst() {
         let nutrients = [
             presentationNutrient(code: "fiber_g", kind: .goal, percent: 0.60, coverage: 0.95, order: 1),
             presentationNutrient(code: "vitamin_d_mcg", kind: .goal, percent: 0.20, coverage: 0.90, order: 2),
-            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 1.20, coverage: 0.90, order: 3),
+            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 1.20, coverage: 0.90, order: 3, nutrientClass: "mineral"),
             presentationNutrient(code: "choline_mg", kind: .goal, percent: 0.40, coverage: 0.85, order: 4)
         ]
 
         XCTAssertEqual(NutritionPresentation.group(for: nutrients[0]), .other)
         XCTAssertEqual(NutritionPresentation.group(for: nutrients[1]), .vitamins)
-        XCTAssertEqual(NutritionPresentation.group(for: nutrients[2]), .other)
-        XCTAssertEqual(NutritionPresentation.sorted(nutrients.filter { NutritionPresentation.group(for: $0) == .other }, in: .other).first?.code, "sodium_mg")
+        XCTAssertEqual(NutritionPresentation.group(for: nutrients[2]), .minerals)
+        XCTAssertEqual(NutritionPresentation.sorted(nutrients, in: .other).first?.code, "sodium_mg")
+    }
+
+    func testDailyNutritionSortsByUrgencyThenDietaryPriority() {
+        let nutrients = [
+            presentationNutrient(code: "calcium_mg", kind: .goal, percent: 0.20, coverage: 1, order: 1, nutrientClass: "mineral"),
+            presentationNutrient(code: "potassium_mg", kind: .goal, percent: 0.20, coverage: 1, order: 2, nutrientClass: "mineral"),
+            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 1.05, coverage: 1, order: 3, nutrientClass: "mineral")
+        ]
+
+        XCTAssertEqual(
+            NutritionPresentation.sorted(nutrients, in: .minerals).map(\.code),
+            ["sodium_mg", "potassium_mg", "calcium_mg"]
+        )
     }
 
     func testFoodEntryDecodesLinkedCatalogVersion() throws {
@@ -148,13 +162,14 @@ final class DailyNutritionModelsTests: XCTestCase {
         kind: NutrientTargetKind,
         percent: Double,
         coverage: Double,
-        order: Int
+        order: Int,
+        nutrientClass: String? = nil
     ) -> DailyNutrient {
         DailyNutrient(
             code: code,
             name: code,
             unit: "g",
-            nutrientClass: code.contains("vitamin") ? "vitamin" : "test",
+            nutrientClass: nutrientClass ?? (code.contains("vitamin") ? "vitamin" : "test"),
             displayOrder: order,
             targetKind: kind,
             amount: percent * 100,

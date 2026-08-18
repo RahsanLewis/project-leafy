@@ -99,7 +99,7 @@ struct NutritionValueDisclosure: View {
         VStack(alignment: .leading, spacing: LeafySpacing.compact) {
             Text(title).font(LeafyTypography.title3)
             ForEach(groups, id: \.self) { group in
-                let items = NutrientCatalog.items.filter { $0.group == group && amount(for: $0.code) != nil }
+                let items = NutrientCatalog.items(in: group).filter { amount(for: $0.code) != nil }
                 if !items.isEmpty {
                     DisclosureGroup(isExpanded: binding(for: group)) {
                         VStack(spacing: 0) {

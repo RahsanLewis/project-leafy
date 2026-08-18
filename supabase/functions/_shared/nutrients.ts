@@ -6,7 +6,7 @@ export const nutrientCodes = [
   'niacin_mg_ne', 'vitamin_b6_mg', 'folate_mcg_dfe', 'vitamin_b12_mcg', 'biotin_mcg',
   'pantothenic_acid_mg', 'phosphorus_mg', 'iodine_mcg', 'zinc_mg', 'selenium_mcg',
   'copper_mg', 'manganese_mg', 'chromium_mcg', 'molybdenum_mcg', 'chloride_mg',
-  'choline_mg', 'water_g', 'caffeine_mg', 'alcohol_g',
+  'choline_mg', 'caffeine_mg',
 ] as const
 
 export type NutrientCode = typeof nutrientCodes[number]
@@ -34,8 +34,7 @@ export const nutrientUnits: Record<NutrientCode, string> = {
   vitamin_b6_mg: 'mg', folate_mcg_dfe: 'mcg DFE', vitamin_b12_mcg: 'mcg', biotin_mcg: 'mcg',
   pantothenic_acid_mg: 'mg', phosphorus_mg: 'mg', iodine_mcg: 'mcg', zinc_mg: 'mg',
   selenium_mcg: 'mcg', copper_mg: 'mg', manganese_mg: 'mg', chromium_mcg: 'mcg',
-  molybdenum_mcg: 'mcg', chloride_mg: 'mg', choline_mg: 'mg', water_g: 'g',
-  caffeine_mg: 'mg', alcohol_g: 'g',
+  molybdenum_mcg: 'mcg', chloride_mg: 'mg', choline_mg: 'mg', caffeine_mg: 'mg',
 }
 
 export function normalizeNutrients(value: unknown): EstimatedNutrient[] {
@@ -56,5 +55,5 @@ export function normalizeNutrients(value: unknown): EstimatedNutrient[] {
 }
 
 export function nutrientPrompt() {
-  return `Estimate nutrients for each food in canonical units encoded in each nutrient code. Return every supported nutrient you can estimate, including values likely to be zero. Anchor protein, carbohydrate, fat, and alcohol to the calorie estimate using reasonable food-composition assumptions. Micronutrients are uncertain: use conservative central estimates and lower confidence when ingredients, fortification, preparation, or brand are unknown. Never present these estimates as laboratory measurements.`
+  return `Estimate nutrients for each food in canonical units encoded in each nutrient code. Return every supported nutrient you can estimate, including values likely to be zero. Anchor protein, carbohydrate, and fat to the calorie estimate using reasonable food-composition assumptions. Micronutrients are uncertain: use conservative central estimates and lower confidence when ingredients, fortification, preparation, or brand are unknown. Never present these estimates as laboratory measurements.`
 }

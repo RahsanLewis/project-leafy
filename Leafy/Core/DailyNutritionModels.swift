@@ -253,15 +253,43 @@ enum NutrientCatalog {
         .init(code: "chloride_mg", name: "Chloride", unit: "mg", group: .minerals),
         .init(code: "choline_mg", name: "Choline", unit: "mg", group: .fiberAndCholine),
         .init(code: "saturated_fat_g", name: "Saturated fat", unit: "g", group: .limits),
-        .init(code: "sodium_mg", name: "Sodium", unit: "mg", group: .limits),
+        .init(code: "sodium_mg", name: "Sodium", unit: "mg", group: .minerals),
         .init(code: "added_sugars_g", name: "Added sugars", unit: "g", group: .limits),
         .init(code: "cholesterol_mg", name: "Cholesterol", unit: "mg", group: .limits),
         .init(code: "sugars_g", name: "Total sugars", unit: "g", group: .other),
         .init(code: "trans_fat_g", name: "Trans fat", unit: "g", group: .other),
-        .init(code: "water_g", name: "Water", unit: "g", group: .other),
         .init(code: "caffeine_mg", name: "Caffeine", unit: "mg", group: .other),
-        .init(code: "alcohol_g", name: "Alcohol", unit: "g", group: .other),
     ]
+
+    private static let importanceOrder: [String] = [
+        // Macros
+        "protein_g", "carbohydrate_g", "fat_g",
+        // Vitamins
+        "vitamin_d_mcg", "folate_mcg_dfe", "vitamin_b12_mcg", "vitamin_a_mcg_rae",
+        "vitamin_c_mg", "vitamin_e_mg", "vitamin_k_mcg", "vitamin_b6_mg",
+        "thiamin_mg", "riboflavin_mg", "niacin_mg_ne", "pantothenic_acid_mg", "biotin_mcg",
+        // Minerals
+        "potassium_mg", "calcium_mg", "iron_mg", "magnesium_mg", "sodium_mg",
+        "zinc_mg", "iodine_mcg", "phosphorus_mg", "selenium_mcg", "copper_mg",
+        "manganese_mg", "chloride_mg", "chromium_mcg", "molybdenum_mcg",
+        // Other nutrients
+        "fiber_g", "saturated_fat_g", "added_sugars_g", "trans_fat_g",
+        "cholesterol_mg", "sugars_g", "choline_mg", "caffeine_mg",
+    ]
+
+    private static let importanceRanks = Dictionary(
+        uniqueKeysWithValues: importanceOrder.enumerated().map { ($0.element, $0.offset) }
+    )
+
+    static func importanceRank(for code: String) -> Int {
+        importanceRanks[code] ?? Int.max
+    }
+
+    static func items(in group: NutritionGroup) -> [Item] {
+        items.filter { $0.group == group }.sorted {
+            importanceRank(for: $0.code) < importanceRank(for: $1.code)
+        }
+    }
 }
 
 enum IntakeDayStatus: String, Codable, Sendable {

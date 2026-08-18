@@ -16,6 +16,9 @@ Deno.test('nutrient normalization keeps the FDA set and rejects invalid values',
   assertEquals(nutrients[0].code, 'protein_g')
   assertEquals(nutrients[0].amount, 42)
   assertEquals(nutrientCodes.includes('vitamin_b12_mcg'), true)
+  const supportedCodes: readonly string[] = nutrientCodes
+  assertEquals(supportedCodes.includes('water_g'), false)
+  assertEquals(supportedCodes.includes('alcohol_g'), false)
 })
 
 Deno.test('daily nutrition migration is versioned and preserves nutrient provenance', () => {
