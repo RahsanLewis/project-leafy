@@ -269,7 +269,7 @@ enum NutrientCatalog {
         "vitamin_c_mg", "vitamin_e_mg", "vitamin_k_mcg", "vitamin_b6_mg",
         "thiamin_mg", "riboflavin_mg", "niacin_mg_ne", "pantothenic_acid_mg", "biotin_mcg",
         // Minerals
-        "potassium_mg", "calcium_mg", "iron_mg", "magnesium_mg", "sodium_mg",
+        "sodium_mg", "potassium_mg", "calcium_mg", "iron_mg", "magnesium_mg",
         "zinc_mg", "iodine_mcg", "phosphorus_mg", "selenium_mcg", "copper_mg",
         "manganese_mg", "chloride_mg", "chromium_mcg", "molybdenum_mcg",
         // Other nutrients

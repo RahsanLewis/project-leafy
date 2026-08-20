@@ -13,6 +13,11 @@ enum NutritionPresentation {
 
     static func sorted(_ nutrients: [DailyNutrient], in group: NutritionGroup) -> [DailyNutrient] {
         nutrients.sorted { lhs, rhs in
+            if group == .minerals {
+                let lhsIsSodium = lhs.code == "sodium_mg"
+                let rhsIsSodium = rhs.code == "sodium_mg"
+                if lhsIsSodium != rhsIsSodium { return lhsIsSodium }
+            }
             let lhsStatus = statusRank(lhs), rhsStatus = statusRank(rhs)
             if lhsStatus != rhsStatus { return lhsStatus < rhsStatus }
             let lhsImportance = NutrientCatalog.importanceRank(for: lhs.code)

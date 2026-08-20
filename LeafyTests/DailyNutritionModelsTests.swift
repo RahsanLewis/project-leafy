@@ -117,6 +117,20 @@ final class DailyNutritionModelsTests: XCTestCase {
         )
     }
 
+    func testDailyNutritionAlwaysPinsSodiumToTopOfMinerals() {
+        let nutrients = [
+            presentationNutrient(code: "calcium_mg", kind: .goal, percent: 0.20, coverage: 1, order: 1, nutrientClass: "mineral"),
+            presentationNutrient(code: "sodium_mg", kind: .limit, percent: 0.40, coverage: 1, order: 2, nutrientClass: "mineral"),
+            presentationNutrient(code: "potassium_mg", kind: .goal, percent: 0.15, coverage: 1, order: 3, nutrientClass: "mineral")
+        ]
+
+        XCTAssertEqual(
+            NutritionPresentation.sorted(nutrients, in: .minerals).map(\.code),
+            ["sodium_mg", "potassium_mg", "calcium_mg"]
+        )
+        XCTAssertEqual(NutrientCatalog.items(in: .minerals).first?.code, "sodium_mg")
+    }
+
     func testFoodEntryDecodesLinkedCatalogVersion() throws {
         let versionID = UUID(uuidString: "FCE5542D-F6AA-44DA-A61B-A254B823A72A")!
         let json = """

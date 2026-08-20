@@ -589,27 +589,27 @@ final class LeafyUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["What matters most"].exists)
         app.buttons["Dismiss fluctuation range explanation"].tap()
 
-        let info = app.buttons["weightInsightInfo-pace"]
+        let info = app.buttons["weightInsightsInfo"]
         for _ in 0..<3 where !info.exists { app.swipeUp() }
         XCTAssertTrue(info.waitForExistence(timeout: 2))
+        XCTAssertGreaterThanOrEqual(info.frame.width, 43.9)
+        XCTAssertGreaterThanOrEqual(info.frame.height, 43.9)
 
         XCTAssertTrue(app.staticTexts["Pace"].exists)
         info.tap()
-        let explanation = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Compares your observed weekly trend with the weekly change")
-        ).firstMatch
-        XCTAssertTrue(explanation.waitForExistence(timeout: 2))
-        XCTAssertTrue(app.descendants(matching: .any)["weightInsightExplanation-pace"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["weightInsightsExplanation"].waitForExistence(timeout: 2))
+        for identifier in ["totalChange", "latestChange", "daysLogged", "pace"] {
+            XCTAssertTrue(app.descendants(matching: .any)["weightInsightDefinition-\(identifier)"].exists)
+        }
         XCTAssertFalse(app.popovers.firstMatch.exists)
-        app.buttons["dismissWeightInsightExplanation"].tap()
+        app.buttons["dismissWeightInsightsExplanation"].tap()
 
         let insightIdentifiers = [
             "totalChange", "latestChange", "daysLogged", "pace",
         ]
         for identifier in insightIdentifiers {
-            let control = app.buttons["weightInsightInfo-\(identifier)"]
-            for _ in 0..<4 where !control.exists { app.swipeUp() }
-            XCTAssertTrue(control.exists, "Missing insight control \(identifier)")
+            XCTAssertFalse(app.buttons["weightInsightInfo-\(identifier)"].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["weightInsight-\(identifier)"].exists)
         }
 
         for removedIdentifier in [

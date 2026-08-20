@@ -39,8 +39,8 @@ struct WeightView: View {
     @State private var showingHistory = false
     @State private var showingWeightExplanation = false
     @State private var showingFluctuationExplanation = false
+    @State private var showingInsightsExplanation = false
     @State private var showingPlanEditor = false
-    @State private var selectedInsightExplanation: WeightInsightExplanation?
 
     var body: some View {
         List {
@@ -94,8 +94,23 @@ struct WeightView: View {
 
             Section {
                 VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                    Text("Insights")
-                        .font(LeafyTypography.title3)
+                    HStack(spacing: LeafySpacing.xSmall) {
+                        Text("Insights")
+                            .font(LeafyTypography.title3)
+
+                        Button {
+                            showingInsightsExplanation = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(LeafyTypography.icon(14))
+                                .foregroundStyle(.secondary)
+                                .frame(width: LeafyTheme.minimumTouchTarget, height: LeafyTheme.minimumTouchTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("About weight insights")
+                        .accessibilityIdentifier("weightInsightsInfo")
+                    }
                     statsGrid
                 }
                 .padding(.vertical, LeafySpacing.small)
@@ -174,8 +189,8 @@ struct WeightView: View {
         .sheet(isPresented: $showingEditor) {
             WeightEntryEditorView(entry: editingEntry)
         }
-        .sheet(item: $selectedInsightExplanation) { insight in
-            WeightInsightExplanationView(insight: insight)
+        .sheet(isPresented: $showingInsightsExplanation) {
+            WeightInsightsExplanationView()
         }
         .fullScreenCover(isPresented: $showingPlanEditor) {
             PlanEditView(onSaved: {})
@@ -471,55 +486,23 @@ struct WeightView: View {
             WeightStat(
                 label: "Total change",
                 value: actualTotalChangeKG.map(formatChange) ?? "Learning",
-                identifier: "totalChange",
-                onInfo: {
-                    selectedInsightExplanation = WeightInsightExplanation(
-                        id: "totalChange",
-                        title: "Total change",
-                        explanation: "The difference between your first recorded scale weight and your latest reading.",
-                        status: actualTotalChangeKG == nil ? "Log at least two weigh-ins to calculate total change." : nil
-                    )
-                }
+                identifier: "totalChange"
             )
             WeightStat(
                 label: "Latest change",
                 value: actualLatestChangeKG.map(formatChange) ?? "Learning",
-                identifier: "latestChange",
-                onInfo: {
-                    selectedInsightExplanation = WeightInsightExplanation(
-                        id: "latestChange",
-                        title: "Latest change",
-                        explanation: "The difference between your two most recent scale readings. Water and digestion can influence this value.",
-                        status: actualLatestChangeKG == nil ? "Log at least two weigh-ins to compare readings." : nil
-                    )
-                }
+                identifier: "latestChange"
             )
             WeightStat(
                 label: "Days logged",
                 value: planLoggingConsistency.map { "\($0.percentage)%" } ?? "Learning",
-                identifier: "daysLogged",
-                onInfo: {
-                    selectedInsightExplanation = WeightInsightExplanation(
-                        id: "daysLogged",
-                        title: "Days logged",
-                        explanation: "The percentage of days since your current plan began that include a weigh-in. Leafy counts no more than one weigh-in per day.",
-                        status: planLoggingConsistency.map { "You logged weight on \($0.loggedDayCount) of \($0.totalDayCount) days since this plan began." } ?? "Log your first weight to begin measuring consistency."
-                    )
-                }
+                identifier: "daysLogged"
             )
             WeightStat(
                 label: "Pace",
                 value: paceComparisonLabel,
                 identifier: "pace",
-                valueColor: paceComparisonColor,
-                onInfo: {
-                    selectedInsightExplanation = WeightInsightExplanation(
-                        id: "pace",
-                        title: "Pace",
-                        explanation: "Compares your observed weekly trend with the weekly change in your current nutrition plan.",
-                        status: paceComparisonDetail
-                    )
-                }
+                valueColor: paceComparisonColor
             )
         }
     }
@@ -544,16 +527,6 @@ struct WeightView: View {
         case .fasterThanPlan: "Faster than plan"
         case .slowerThanPlan: "Slower than plan"
         case .movingAway: app.draft.goal == .maintain ? "Outside trend range" : "Not yet aligned"
-        }
-    }
-
-    private var paceComparisonDetail: String? {
-        switch insights.paceComparison {
-        case .learning: weeklyLearningDetail
-        case .onPace: "Your observed trend is within 20% of your planned pace."
-        case .fasterThanPlan: "Your observed trend is faster than planned. Review your plan if this pace feels difficult to sustain."
-        case .slowerThanPlan: "Your observed trend is slower than your planned pace."
-        case .movingAway: "Your weekly averages are not yet moving with your plan. Short-term readings do not affect this label."
         }
     }
 
@@ -958,36 +931,48 @@ private struct FluctuationRangeExplanationView: View {
     }
 }
 
-private struct WeightInsightExplanation: Identifiable {
-    let id: String
-    let title: String
-    let explanation: String
-    let status: String?
-}
-
-private struct WeightInsightExplanationView: View {
-    let insight: WeightInsightExplanation
-
+private struct WeightInsightsExplanationView: View {
     var body: some View {
         LeafyInfoSheet(
-            title: insight.title,
-            dismissIdentifier: "dismissWeightInsightExplanation"
+            title: "About insights",
+            dismissAccessibilityLabel: "Dismiss weight insights explanation",
+            dismissIdentifier: "dismissWeightInsightsExplanation"
         ) {
-            Text(insight.explanation)
+            insightDefinition(
+                id: "totalChange",
+                title: "Total change",
+                explanation: "The difference between your first and latest recorded weights."
+            )
+            insightDefinition(
+                id: "latestChange",
+                title: "Latest change",
+                explanation: "The difference between your two most recent weigh-ins. Normal daily fluctuations can affect it."
+            )
+            insightDefinition(
+                id: "daysLogged",
+                title: "Days logged",
+                explanation: "The percentage of days since your current plan began that include a weigh-in."
+            )
+            insightDefinition(
+                id: "pace",
+                title: "Pace",
+                explanation: "How your weekly weight direction compares with your current plan."
+            )
+        }
+        .accessibilityIdentifier("weightInsightsExplanation")
+    }
+
+    private func insightDefinition(id: String, title: String, explanation: String) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
+            Text(title)
+                .font(LeafyTypography.headline)
+            Text(explanation)
                 .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("weightInsightExplanation-\(insight.id)")
-
-            if let status = insight.status {
-                Divider()
-                Text(status)
-                    .font(LeafyTypography.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("weightInsightStatus-\(insight.id)")
-            }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("weightInsightDefinition-\(id)")
     }
 }
 
@@ -996,28 +981,14 @@ private struct WeightStat: View {
     let value: String
     let identifier: String
     var valueColor: Color = .primary
-    let onInfo: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
-            HStack(spacing: 0) {
-                Text(label)
-                    .font(LeafyTypography.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                Button(action: onInfo) {
-                    Image(systemName: "info.circle")
-                        .font(LeafyTypography.icon(14))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("About \(label)")
-                .accessibilityIdentifier("weightInsightInfo-\(identifier)")
-            }
+            Text(label)
+                .font(LeafyTypography.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             Text(value)
                 .font(LeafyTypography.headline)
@@ -1028,6 +999,7 @@ private struct WeightStat: View {
                 .accessibilityLabel("\(label), \(value)")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("weightInsight-\(identifier)")
     }
 }
 
