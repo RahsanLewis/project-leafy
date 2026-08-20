@@ -330,15 +330,32 @@ private struct NutrientExplanationSheet: View {
             title: nutrient.name,
             dismissIdentifier: "dismissNutrientExplanation"
         ) {
-            Text(targetExplanation)
-                .font(LeafyTypography.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let education = MicronutrientEducationCatalog.education(for: nutrient.code) {
+                educationSection("What it is", education.overview)
+                educationSection("What it supports", education.healthRole)
+                educationSection("Food sources", education.foodSources.joined(separator: ", "))
+            } else {
+                Text(targetExplanation)
+                    .font(LeafyTypography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
             LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
             if nutrient.hasEstimate {
                 LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
             }
+        }
+    }
+
+    private func educationSection(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
+            Text(title)
+                .font(LeafyTypography.headline)
+            Text(text)
+                .font(LeafyTypography.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

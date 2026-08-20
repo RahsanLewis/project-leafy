@@ -138,7 +138,7 @@ final class WeightProgressTests: XCTestCase {
         )
     }
 
-    func testFluctuationRangeIsUnavailableBeforeSevenReadings() {
+    func testFluctuationRangeStartsWithTheFirstReading() {
         let calendar = Calendar(identifier: .gregorian)
         let entries = (1...6).map { day in makeEntry(weightKG: 80, day: day) }
         let insights = WeightTrendInsights(
@@ -147,8 +147,24 @@ final class WeightProgressTests: XCTestCase {
             targetKG: 75, goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
         )
 
+        XCTAssertEqual(insights.fluctuationRangeSource, .expected)
+        XCTAssertNotNil(insights.fluctuationOffsetsKG)
+        XCTAssertEqual(insights.fluctuationCenterPoints.count, 6)
+        XCTAssertFalse(insights.hasTrend)
+        XCTAssertTrue(insights.trendPoints.isEmpty)
+    }
+
+    func testFluctuationRangeIsUnavailableWithoutReadings() {
+        let calendar = Calendar(identifier: .gregorian)
+        let insights = WeightTrendInsights(
+            entries: [], periodStart: nil,
+            periodEnd: calendar.date(from: DateComponents(year: 2026, month: 1, day: 6))!,
+            targetKG: 75, goal: .lose, plannedWeeklyChangeKG: 0.5, calendar: calendar
+        )
+
         XCTAssertEqual(insights.fluctuationRangeSource, .unavailable)
         XCTAssertNil(insights.fluctuationOffsetsKG)
+        XCTAssertTrue(insights.fluctuationCenterPoints.isEmpty)
     }
 
     func testFluctuationRangePersonalizesAfterFourteenUsableResiduals() {

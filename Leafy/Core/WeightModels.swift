@@ -178,6 +178,7 @@ struct WeightTrendInsights: Equatable, Sendable {
     let currentWindowCount: Int
     let previousWindowCount: Int
     let trendPoints: [WeightTrendPoint]
+    let fluctuationCenterPoints: [WeightTrendPoint]
     let latestDeviationKG: Double?
     let fluctuationStatus: WeightFluctuationStatus
     let fluctuationOffsetsKG: ClosedRange<Double>?
@@ -242,6 +243,17 @@ struct WeightTrendInsights: Equatable, Sendable {
             )
         }
 
+        fluctuationCenterPoints = ordered.indices.compactMap { index in
+            let startIndex = max(0, index + 1 - Self.minimumTrendReadings)
+            let window = Array(ordered[startIndex...index])
+            guard let average = Self.average(window) else { return nil }
+            return WeightTrendPoint(
+                date: calendar.startOfDay(for: ordered[index].recordedOn),
+                averageKG: average,
+                sampleCount: window.count
+            )
+        }
+
         let residualCutoff = calendar.date(byAdding: .day, value: -27, to: anchor) ?? .distantPast
         let recentEntries = ordered.filter { $0.recordedOn >= residualCutoff && $0.recordedOn <= anchor }
         let recentIDs = Set(recentEntries.map(\.id))
@@ -263,7 +275,7 @@ struct WeightTrendInsights: Equatable, Sendable {
             } else {
                 fluctuationStatus = .outsideRecentRange
             }
-        } else if ordered.count >= Self.minimumTrendReadings {
+        } else if !ordered.isEmpty {
             let width = Self.expectedFluctuationHalfWidthKG
             fluctuationOffsetsKG = (-width)...width
             fluctuationRangeSource = .expected

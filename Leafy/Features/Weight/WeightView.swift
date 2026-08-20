@@ -175,7 +175,7 @@ struct WeightView: View {
             }
         }
         .leafyBorderlessList()
-        .listSectionSpacing(LeafySpacing.xLarge)
+        .listSectionSpacing(LeafySpacing.large)
         .contentMargins(.top, LeafySpacing.medium, for: .scrollContent)
         .contentMargins(.bottom, LeafySpacing.medium, for: .scrollContent)
         .toolbar(.hidden, for: .navigationBar)
@@ -249,13 +249,6 @@ struct WeightView: View {
                 .padding(.bottom, -10)
             rangeChangeSummaryView
                 .padding(.top, 12)
-            if selectedChartDate == nil, let context = fluctuationContextMessage {
-                Label(context, systemImage: "drop.fill")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, LeafySpacing.small)
-            }
             if let target = progress.targetKG {
                 HStack(spacing: 0) {
                     goalDatum(
@@ -273,7 +266,7 @@ struct WeightView: View {
                     )
                     .padding(.leading, LeafySpacing.medium)
                 }
-                .padding(.top, LeafySpacing.large)
+                .padding(.top, LeafySpacing.medium)
             } else {
                 Label(
                     "Maintaining around \(formatWeight(progress.targetKG ?? progress.latestKG ?? app.draft.currentWeightKG))",
@@ -283,7 +276,8 @@ struct WeightView: View {
                 .foregroundStyle(LeafyTheme.green)
             }
         }
-        .padding(.vertical, LeafySpacing.medium)
+        .padding(.top, LeafySpacing.medium)
+        .padding(.bottom, LeafySpacing.small)
         .sheet(isPresented: $showingWeightExplanation) {
             WeightExplanationView()
         }
@@ -334,8 +328,7 @@ struct WeightView: View {
         }
         .sheet(isPresented: $showingFluctuationExplanation) {
             FluctuationRangeExplanationView(
-                goal: app.draft.goal,
-                source: insights.fluctuationRangeSource
+                goal: app.draft.goal
             )
         }
     }
@@ -641,18 +634,29 @@ struct WeightView: View {
         return insights.trendPoints.filter { $0.date >= cutoff }
     }
 
+    private var filteredFluctuationCenterPoints: [WeightTrendPoint] {
+        guard let cutoff = chartRange.startDate(relativeTo: .now, calendar: .current) else {
+            return insights.fluctuationCenterPoints
+        }
+        return insights.fluctuationCenterPoints.filter { $0.date >= cutoff }
+    }
+
     private var fluctuationBandPoints: [WeightTrendPoint] {
-        let points = filteredTrendPoints.sorted { $0.date < $1.date }
-        guard points.count == 1,
-              let point = points.first,
-              let firstDate = chartActualEntries.first?.recordedOn,
-              let lastDate = chartActualEntries.last?.recordedOn,
-              firstDate < lastDate else {
+        let points = filteredFluctuationCenterPoints.sorted { $0.date < $1.date }
+        guard points.count == 1, let point = points.first else {
             return points
         }
+        let calendar = Calendar.current
+        let start = chartRange.startDate(relativeTo: point.date, calendar: calendar)
+            ?? calendar.date(byAdding: .day, value: -1, to: point.date)
+            ?? point.date
+        let end = max(
+            Date.now,
+            calendar.date(byAdding: .day, value: 1, to: point.date) ?? point.date
+        )
         return [
-            WeightTrendPoint(date: firstDate, averageKG: point.averageKG, sampleCount: point.sampleCount),
-            WeightTrendPoint(date: lastDate, averageKG: point.averageKG, sampleCount: point.sampleCount),
+            WeightTrendPoint(date: start, averageKG: point.averageKG, sampleCount: point.sampleCount),
+            WeightTrendPoint(date: end, averageKG: point.averageKG, sampleCount: point.sampleCount),
         ]
     }
 
@@ -706,19 +710,6 @@ struct WeightView: View {
         )
     }
 
-    private var fluctuationContextMessage: String? {
-        guard insights.fluctuationStatus == .outsideRecentRange else { return nil }
-        let elevated = app.weightNutritionContext?.elevatedNutrients ?? []
-        let names = [
-            elevated.contains("sodium_mg") ? "sodium" : nil,
-            elevated.contains("carbohydrate_g") ? "carbohydrate" : nil,
-        ].compactMap { $0 }
-        if !names.isEmpty {
-            return "Your recent confirmed logs were higher than usual in \(names.joined(separator: " and ")). That can temporarily influence water weight, but Leafy can’t determine the cause of one reading."
-        }
-        return "Water, stored carbohydrate (glycogen), sodium, hormones, and digestion can all affect a short-term scale reading."
-    }
-
     private var weeklyLearningDetail: String? {
         guard insights.weeklyPaceKG == nil else { return nil }
         let currentNeeded = max(0, WeightTrendInsights.minimumWeeklySamples - insights.currentWindowCount)
@@ -742,7 +733,7 @@ struct WeightView: View {
     private var chartScaleWeightsKG: [Double] {
         var values = filteredEntries.map(\.weightKG)
         if let offsets = insights.fluctuationOffsetsKG {
-            for point in filteredTrendPoints {
+            for point in filteredFluctuationCenterPoints {
                 values.append(point.averageKG + offsets.lowerBound)
                 values.append(point.averageKG + offsets.upperBound)
             }
@@ -771,18 +762,7 @@ struct WeightView: View {
     }
 
     private var fluctuationRangeTitle: String {
-        insights.fluctuationRangeSource == .personalized ? "Typical range" : "Expected range"
-    }
-
-    private var fluctuationRangeExplanation: String {
-        switch insights.fluctuationRangeSource {
-        case .unavailable:
-            "After seven daily readings, Leafy can show an expected range around your rolling average to put ordinary day-to-day changes in context."
-        case .expected:
-            "This starting range shows how daily readings can move around your rolling seven-reading average. Leafy will replace it with a range learned from your own history after enough consistent check-ins."
-        case .personalized:
-            "This range contains the middle portion of recent differences between your scale readings and rolling trend. It helps put one higher or lower reading in context."
-        }
+        "Typical range"
     }
 
     private var weightChartAccessibilityLabel: String {
@@ -903,11 +883,10 @@ private struct WeightExplanationView: View {
 
 private struct FluctuationRangeExplanationView: View {
     let goal: WeightGoal
-    let source: WeightFluctuationRangeSource
 
     var body: some View {
         LeafyInfoSheet(
-            title: source == .personalized ? "Your typical range" : "Expected range",
+            title: "Typical range",
             dismissAccessibilityLabel: "Dismiss fluctuation range explanation",
             dismissIdentifier: "dismissFluctuationRangeExplanation"
         ) {

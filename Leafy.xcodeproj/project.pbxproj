@@ -77,6 +77,7 @@
 		B99D7ADF746663504D9B4358 /* MyContributionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6111284CB6D10F53ACB49B4 /* MyContributionsView.swift */; };
 		BCAFD180D0291529C6196E24 /* BeyondSolidSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A9E2FA2BB2C5945EF604EF /* BeyondSolidSplashView.swift */; };
 		C11A4949ECDB7395D9A8F340 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 8B801958BAC1CCD601FCB02C /* GoogleSignIn */; };
+		C8B1EFECD1B1444800ADC477 /* MicronutrientEducation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53432EB8B77A8A4FC0953BD0 /* MicronutrientEducation.swift */; };
 		C8FDFCC6E633B8372C6BBCDC /* PlusJakartaSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 47B8E14A0ED8F8E5A14A1CB8 /* PlusJakartaSans-SemiBold.ttf */; };
 		DF445BC7D9AC164027356000 /* ProductDiscoveryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90625FD770FAC63677B05E97 /* ProductDiscoveryModels.swift */; };
 		E02EC0534E99D67A3A7CC139 /* PlusJakartaSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 017869E9F6FA70BFB0743B60 /* PlusJakartaSans-Regular.ttf */; };
@@ -132,6 +133,7 @@
 		5186914E026A47CD8FAFB0DE /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		529BC2C7C6722E99CD9012D8 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		53369E8B5F0A362D4CDF4635 /* Leafy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Leafy.entitlements; sourceTree = "<group>"; };
+		53432EB8B77A8A4FC0953BD0 /* MicronutrientEducation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicronutrientEducation.swift; sourceTree = "<group>"; };
 		579A5F8E3ED9F131336497BC /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		58F59AA903B230B4552B30BC /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		656D87A3D1EED260DF182AC7 /* MorningCheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MorningCheckInView.swift; sourceTree = "<group>"; };
@@ -331,6 +333,7 @@
 				AF5733639929D077F181900A /* DailyReminderCoordinator.swift */,
 				F534B2D41EA5659E12C1B660 /* FoodImpactModels.swift */,
 				B78BE136F0A736115C288398 /* LeafyTheme.swift */,
+				53432EB8B77A8A4FC0953BD0 /* MicronutrientEducation.swift */,
 				7A15461D53272B43E860F39C /* NutritionCalculator.swift */,
 				4AD2DF03AE831FF68A09AE78 /* NutritionChatModels.swift */,
 				3D2E894FD8C58239BD5382AB /* NutritionModels.swift */,
@@ -627,6 +630,7 @@
 				589C890A6005B279A9F0ADA7 /* LeafyTheme.swift in Sources */,
 				1A5A21998472C91DB4AC021C /* LogFoodView.swift in Sources */,
 				7C4B5C80AB2990603087DAE2 /* MealCaptureSupport.swift in Sources */,
+				C8B1EFECD1B1444800ADC477 /* MicronutrientEducation.swift in Sources */,
 				33351AB99441019FA675F758 /* MorningCheckInView.swift in Sources */,
 				B99D7ADF746663504D9B4358 /* MyContributionsView.swift in Sources */,
 				9CD38D8B61EFB27A2A4C65F6 /* NutrientEditorView.swift in Sources */,

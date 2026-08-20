@@ -90,6 +90,25 @@ final class DailyNutritionModelsTests: XCTestCase {
         XCTAssertNil(NutrientCatalog.items.first { $0.code == "water_g" || $0.code == "alcohol_g" })
     }
 
+    func testEveryMicronutrientHasReviewedEducationalCopy() throws {
+        let micronutrients = NutrientCatalog.items.filter {
+            $0.group == .vitamins || $0.group == .minerals
+        }
+
+        XCTAssertFalse(micronutrients.isEmpty)
+        for nutrient in micronutrients {
+            let education = try XCTUnwrap(
+                MicronutrientEducationCatalog.education(for: nutrient.code),
+                "Missing educational copy for \(nutrient.code)"
+            )
+            XCTAssertFalse(education.overview.isEmpty)
+            XCTAssertFalse(education.healthRole.isEmpty)
+            XCTAssertFalse(education.foodSources.isEmpty)
+            XCTAssertTrue(education.sourceURL.hasPrefix("https://ods.od.nih.gov/"))
+            XCTAssertFalse(education.reviewedOn.isEmpty)
+        }
+    }
+
     func testDailyNutritionUsesFourBroadCategoriesAndSortsLimitsFirst() {
         let nutrients = [
             presentationNutrient(code: "fiber_g", kind: .goal, percent: 0.60, coverage: 0.95, order: 1),
