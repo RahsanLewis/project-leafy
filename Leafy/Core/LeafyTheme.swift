@@ -202,29 +202,17 @@ private struct LeafyDetachedBottomControlModifier: ViewModifier {
     }
 }
 
-private struct LeafySheetHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 private struct LeafySheetScaffold<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var measuredHeight: CGFloat = 260
 
     let title: String
     let dismissAccessibilityLabel: String
     let dismissIdentifier: String
     @ViewBuilder let content: Content
 
-    private var maximumHeight: CGFloat { UIScreen.main.bounds.height * 0.85 }
-    private var presentedHeight: CGFloat { min(max(measuredHeight, 180), maximumHeight) }
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: LeafySpacing.large) {
+            VStack(alignment: .leading, spacing: LeafySpacing.medium) {
                 HStack(alignment: .top) {
                     Text(title)
                         .font(LeafyTypography.title2)
@@ -247,21 +235,14 @@ private struct LeafySheetScaffold<Content: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(LeafyTheme.pageInset)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: LeafySheetHeightPreferenceKey.self, value: proxy.size.height)
-                }
-            }
         }
         .scrollBounceBehavior(.basedOnSize)
+        .fixedSize(horizontal: false, vertical: true)
         .background(LeafyTheme.canvas)
-        .onPreferenceChange(LeafySheetHeightPreferenceKey.self) { height in
-            guard height > 0 else { return }
-            measuredHeight = height
-        }
-        .presentationDetents([.height(presentedHeight)])
+        .presentationSizing(.fitted)
         .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
+        .accessibilityIdentifier("\(dismissIdentifier)Sheet")
     }
 }
 

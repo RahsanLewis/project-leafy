@@ -331,7 +331,6 @@ private struct NutrientExplanationSheet: View {
             dismissIdentifier: "dismissNutrientExplanation"
         ) {
             if let education = MicronutrientEducationCatalog.education(for: nutrient.code) {
-                educationSection("What it is", education.overview)
                 educationSection("What it supports", education.healthRole)
                 educationSection("Food sources", education.foodSources.joined(separator: ", "))
             } else {
@@ -339,11 +338,11 @@ private struct NutrientExplanationSheet: View {
                     .font(LeafyTypography.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-            LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
-            LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
-            if nutrient.hasEstimate {
-                LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
+                LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
+                LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
+                if nutrient.hasEstimate {
+                    LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
+                }
             }
         }
     }
