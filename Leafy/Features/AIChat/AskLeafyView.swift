@@ -47,10 +47,15 @@ struct AskLeafyView: View {
                 }
             }
         }
-        .confirmationDialog("Start a new chat?", isPresented: $confirmingNewChat) {
-            Button("Start New Chat", role: .destructive) { startNewChat() }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("Your current conversation stays in Conversations.") }
+        .sheet(isPresented: $confirmingNewChat) {
+            LeafyConfirmationSheet(
+                title: "Start a new chat?",
+                message: "Your current conversation stays in Conversations.",
+                confirmTitle: "Start New Chat",
+                confirmIdentifier: "confirmStartNewChatButton",
+                sheetIdentifier: "newChatConfirmationSheet"
+            ) { startNewChat() }
+        }
         .task { if app.chatThreads.isEmpty { await app.loadChatThreads() } }
         .onDisappear { focused = false; responseTask?.cancel() }
     }
@@ -397,9 +402,16 @@ private struct ConversationHistoryView: View {
             .leafyBorderlessList().searchable(text: $query, prompt: "Search conversations")
             .navigationTitle("Conversations")
             .toolbar { Button("Done") { isPresented = false } }
-            .confirmationDialog("Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-                Button("Delete Conversation", role: .destructive) { if let deleting { Task { await app.deleteChatThread(deleting) }; self.deleting = nil } }
-                Button("Cancel", role: .cancel) { deleting = nil }
+            .sheet(item: $deleting) { thread in
+                LeafyConfirmationSheet(
+                    title: "Delete this conversation?",
+                    confirmTitle: "Delete Conversation",
+                    isDestructive: true,
+                    confirmIdentifier: "confirmDeleteConversationButton",
+                    sheetIdentifier: "deleteConversationConfirmationSheet"
+                ) {
+                    Task { await app.deleteChatThread(thread) }
+                }
             }
         }
     }

@@ -66,9 +66,17 @@ struct CoreDataUseAcknowledgmentView: View {
         }
         .interactiveDismissDisabled()
         .sheet(item: $browser) { SafariWebView(url: $0.url).ignoresSafeArea() }
-        .confirmationDialog("Permanently delete your Leafy account and health history?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
-            Button("Delete account", role: .destructive) { Task { await app.deleteAccount() } }
-            Button("Cancel", role: .cancel) {}
+        .sheet(isPresented: $showDeleteConfirmation) {
+            LeafyConfirmationSheet(
+                title: "Permanently delete your Leafy account?",
+                message: "This permanently removes your profile, plans, food logs, and weight history.",
+                confirmTitle: "Delete account",
+                isDestructive: true,
+                confirmIdentifier: "confirmCoreDataAccountDeletionButton",
+                sheetIdentifier: "coreDataAccountDeletionConfirmationSheet"
+            ) {
+                Task { await app.deleteAccount() }
+            }
         }
         .accessibilityIdentifier("coreDataUseAcknowledgment")
     }

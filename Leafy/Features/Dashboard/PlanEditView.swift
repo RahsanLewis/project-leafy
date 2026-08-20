@@ -46,10 +46,17 @@ struct PlanEditView: View {
             }
         }
         .interactiveDismissDisabled(isDirty)
-        .confirmationDialog("Discard your changes?", isPresented: $showingDiscard, titleVisibility: .visible) {
-            Button("Discard changes", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
-        } message: { Text("Your plan will stay as it is now.") }
+        .sheet(isPresented: $showingDiscard) {
+            LeafyConfirmationSheet(
+                title: "Discard your changes?",
+                message: "Your plan will stay as it is now.",
+                confirmTitle: "Discard changes",
+                isDestructive: true,
+                confirmIdentifier: "confirmDiscardPlanChangesButton",
+                cancelTitle: "Keep editing",
+                sheetIdentifier: "discardPlanChangesConfirmationSheet"
+            ) { dismiss() }
+        }
         .alert("Unable to update plan", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
         )) { Button("OK", role: .cancel) {} } message: { Text(errorMessage ?? "") }

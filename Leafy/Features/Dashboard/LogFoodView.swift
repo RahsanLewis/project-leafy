@@ -46,15 +46,16 @@ struct LogFoodView: View {
                 }
             }
             .interactiveDismissDisabled(hasUnsavedDraft)
-            .confirmationDialog(
-                "Discard this food entry?",
-                isPresented: $showingDiscardConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Discard Entry", role: .destructive) { dismiss() }
-                Button("Keep Editing", role: .cancel) {}
-            } message: {
-                Text("Your unsaved description, photos, or food details will be lost.")
+            .sheet(isPresented: $showingDiscardConfirmation) {
+                LeafyConfirmationSheet(
+                    title: "Discard this food entry?",
+                    message: "Your unsaved description, photos, or food details will be lost.",
+                    confirmTitle: "Discard Entry",
+                    isDestructive: true,
+                    confirmIdentifier: "confirmDiscardFoodEntryButton",
+                    cancelTitle: "Keep Editing",
+                    sheetIdentifier: "discardFoodEntryConfirmationSheet"
+                ) { dismiss() }
             }
         }
     }

@@ -202,25 +202,25 @@ private struct LeafyDetachedBottomControlModifier: ViewModifier {
     }
 }
 
-struct LeafyInfoSheet<Content: View>: View {
+private struct LeafySheetHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct LeafySheetScaffold<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var measuredHeight: CGFloat = 260
 
     let title: String
     let dismissAccessibilityLabel: String
     let dismissIdentifier: String
     @ViewBuilder let content: Content
 
-    init(
-        title: String,
-        dismissAccessibilityLabel: String? = nil,
-        dismissIdentifier: String,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.title = title
-        self.dismissAccessibilityLabel = dismissAccessibilityLabel ?? "Dismiss \(title.lowercased()) explanation"
-        self.dismissIdentifier = dismissIdentifier
-        self.content = content()
-    }
+    private var maximumHeight: CGFloat { UIScreen.main.bounds.height * 0.85 }
+    private var presentedHeight: CGFloat { min(max(measuredHeight, 180), maximumHeight) }
 
     var body: some View {
         ScrollView {
@@ -247,11 +247,122 @@ struct LeafyInfoSheet<Content: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(LeafyTheme.pageInset)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: LeafySheetHeightPreferenceKey.self, value: proxy.size.height)
+                }
+            }
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(LeafyTheme.canvas)
-        .presentationSizing(.fitted)
+        .onPreferenceChange(LeafySheetHeightPreferenceKey.self) { height in
+            guard height > 0 else { return }
+            measuredHeight = height
+        }
+        .presentationDetents([.height(presentedHeight)])
+        .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
+    }
+}
+
+struct LeafyInfoSheet<Content: View>: View {
+    let title: String
+    let dismissAccessibilityLabel: String
+    let dismissIdentifier: String
+    @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        dismissAccessibilityLabel: String? = nil,
+        dismissIdentifier: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.dismissAccessibilityLabel = dismissAccessibilityLabel ?? "Dismiss \(title.lowercased()) explanation"
+        self.dismissIdentifier = dismissIdentifier
+        self.content = content()
+    }
+
+    var body: some View {
+        LeafySheetScaffold(
+            title: title,
+            dismissAccessibilityLabel: dismissAccessibilityLabel,
+            dismissIdentifier: dismissIdentifier,
+            content: { content }
+        )
+    }
+}
+
+struct LeafyConfirmationSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let message: String?
+    let confirmTitle: String
+    let isDestructive: Bool
+    let confirmIdentifier: String
+    let cancelTitle: String
+    let sheetIdentifier: String
+    let onConfirm: () -> Void
+
+    init(
+        title: String,
+        message: String? = nil,
+        confirmTitle: String,
+        isDestructive: Bool = false,
+        confirmIdentifier: String,
+        cancelTitle: String = "Cancel",
+        sheetIdentifier: String,
+        onConfirm: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.confirmTitle = confirmTitle
+        self.isDestructive = isDestructive
+        self.confirmIdentifier = confirmIdentifier
+        self.cancelTitle = cancelTitle
+        self.sheetIdentifier = sheetIdentifier
+        self.onConfirm = onConfirm
+    }
+
+    var body: some View {
+        LeafySheetScaffold(
+            title: title,
+            dismissAccessibilityLabel: "Cancel",
+            dismissIdentifier: "\(sheetIdentifier)Close"
+        ) {
+            if let message {
+                Text(message)
+                    .font(LeafyTypography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                dismiss()
+                onConfirm()
+            } label: {
+                Text(confirmTitle)
+                    .font(LeafyTypography.button)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .foregroundStyle(isDestructive ? Color.red : Color.white)
+                    .background(
+                        isDestructive ? Color.red.opacity(0.09) : LeafyTheme.green,
+                        in: .rect(cornerRadius: LeafyRadius.control)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(confirmIdentifier)
+
+            Button(cancelTitle) { dismiss() }
+                .font(LeafyTypography.button)
+                .foregroundStyle(LeafyTheme.green)
+                .frame(maxWidth: .infinity, minHeight: LeafyTheme.minimumTouchTarget)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("\(sheetIdentifier)Cancel")
+        }
+        .accessibilityIdentifier(sheetIdentifier)
     }
 }
 

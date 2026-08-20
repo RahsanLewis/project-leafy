@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct AccountCenterView: View {
-    private enum Confirmation { case signOutCurrent, signOutAll, delete }
+    private enum Confirmation: String, Identifiable {
+        case signOutAll, delete
+        var id: String { rawValue }
+    }
 
     @Environment(AppModel.self) private var app
     @Environment(AppLockCoordinator.self) private var appLock
@@ -42,7 +45,6 @@ struct AccountCenterView: View {
 
             Section("Account access") {
                 Menu {
-                    Button("Sign out of this device") { confirmation = .signOutCurrent }
                     Button("Sign out of all devices", role: .destructive) { confirmation = .signOutAll }
                 } label: {
                     settingsMenuLabel("Manage sessions", symbol: "rectangle.portrait.and.arrow.right")
@@ -69,17 +71,21 @@ struct AccountCenterView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await app.refreshAccount() }
         .sheet(item: $credentialKind) { CredentialChangeView(kind: $0) }
-        .confirmationDialog(confirmationTitle, isPresented: Binding(
-            get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }
-        ), titleVisibility: .visible) {
-            if confirmation == .signOutCurrent {
-                Button("Sign out") { Task { await app.signOut() } }
-            } else if confirmation == .signOutAll {
-                Button("Sign out everywhere", role: .destructive) { Task { await app.signOutEverywhere() } }
-            } else if confirmation == .delete {
-                Button("Delete account", role: .destructive) { Task { await app.deleteAccount() } }
+        .sheet(item: $confirmation) { choice in
+            LeafyConfirmationSheet(
+                title: confirmationTitle(for: choice),
+                message: confirmationMessage(for: choice),
+                confirmTitle: choice == .signOutAll ? "Sign out everywhere" : "Delete account",
+                isDestructive: true,
+                confirmIdentifier: choice == .signOutAll ? "confirmSignOutEverywhereButton" : "confirmDeleteAccountButton",
+                sheetIdentifier: choice == .signOutAll ? "signOutEverywhereConfirmationSheet" : "deleteAccountConfirmationSheet"
+            ) {
+                if choice == .signOutAll {
+                    Task { await app.signOutEverywhere() }
+                } else {
+                    Task { await app.deleteAccount() }
+                }
             }
-            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -89,12 +95,17 @@ struct AccountCenterView: View {
         return "\(status) · \(methods)"
     }
 
-    private var confirmationTitle: String {
+    private func confirmationTitle(for confirmation: Confirmation) -> String {
         switch confirmation {
-        case .signOutCurrent: "Sign out of this device?"
         case .signOutAll: "Sign out of every device?"
         case .delete: "Permanently delete your Leafy account?"
-        case nil: ""
+        }
+    }
+
+    private func confirmationMessage(for confirmation: Confirmation) -> String {
+        switch confirmation {
+        case .signOutAll: "Every device using this account will need to sign in again."
+        case .delete: "This permanently removes your profile, plans, food logs, weight history, and product contributions."
         }
     }
 

@@ -179,11 +179,16 @@ struct WeightEntryEditorView: View {
             }
         }
         .interactiveDismissDisabled(app.isWeightMutationInProgress || isDirty)
-        .confirmationDialog("Discard your changes?", isPresented: $showingDiscardConfirmation) {
-            Button("Discard Changes", role: .destructive) { dismiss() }
-            Button("Keep Editing", role: .cancel) {}
-        } message: {
-            Text("Your edited weight or date hasn’t been saved.")
+        .sheet(isPresented: $showingDiscardConfirmation) {
+            LeafyConfirmationSheet(
+                title: "Discard your changes?",
+                message: "Your edited weight or date hasn’t been saved.",
+                confirmTitle: "Discard Changes",
+                isDestructive: true,
+                confirmIdentifier: "confirmDiscardWeightChangesButton",
+                cancelTitle: "Keep Editing",
+                sheetIdentifier: "discardWeightChangesConfirmationSheet"
+            ) { dismiss() }
         }
         .onAppear {
             guard !didInitialize else { return }

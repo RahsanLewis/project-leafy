@@ -676,6 +676,33 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
+    func testSettingsProvidesDirectSignOutAndCompactBottomSheetConfirmations() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launch()
+
+        app.tabBars.buttons["Settings"].tap()
+        let signOut = app.buttons["settingsSignOutButton"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 3))
+        signOut.tap()
+
+        let sheet = app.descendants(matching: .any)["signOutConfirmationSheet"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 2))
+        XCTAssertFalse(app.popovers.firstMatch.exists)
+        XCTAssertLessThan(sheet.frame.height, app.frame.height * 0.6)
+        XCTAssertTrue(app.buttons["confirmSignOutButton"].exists)
+        app.buttons["signOutConfirmationSheetCancel"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 2))
+
+        app.buttons["nutritionPlanLink"].tap()
+        app.buttons["showPlanCalculation"].tap()
+        let explanation = app.descendants(matching: .any)["planCalculationView"]
+        XCTAssertTrue(explanation.waitForExistence(timeout: 2))
+        XCTAssertLessThanOrEqual(explanation.frame.height, app.frame.height * 0.86)
+        XCTAssertFalse(app.popovers.firstMatch.exists)
+    }
+
+    @MainActor
     func testAuthenticatedPlanEditingStaysSeparateFromAccountCreation() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]

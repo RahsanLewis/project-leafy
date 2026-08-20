@@ -5,17 +5,25 @@ struct SettingsView: View {
     @Environment(DailyReminderCoordinator.self) private var reminders
     @AppStorage(AppearanceMode.storageKey) private var appearanceRawValue = AppearanceMode.light.rawValue
     @State private var browser: SafariDestination?
+    @State private var showingSignOutConfirmation = false
 
     var body: some View {
         List {
             Section {
                 if app.isAuthenticated || app.isPreviewMode {
                     NavigationLink { AccountCenterView() } label: { identityHeader }
+
+                    Button {
+                        showingSignOutConfirmation = true
+                    } label: {
+                        Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                    .accessibilityIdentifier("settingsSignOutButton")
                 } else {
                     Button { app.presentAuthentication(.accessExistingAccount) } label: { identityHeader }
                 }
             }
-            .leafyBorderlessRows(separators: false)
+            .leafyBorderlessRows()
 
             Section("Plan & preferences") {
                 NavigationLink {
@@ -95,6 +103,17 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .task { await reminders.refresh() }
         .sheet(item: $browser) { SafariWebView(url: $0.url).ignoresSafeArea() }
+        .sheet(isPresented: $showingSignOutConfirmation) {
+            LeafyConfirmationSheet(
+                title: "Sign out?",
+                message: "You’ll need to sign in again to access your saved Leafy data on this device.",
+                confirmTitle: "Sign out",
+                confirmIdentifier: "confirmSignOutButton",
+                sheetIdentifier: "signOutConfirmationSheet"
+            ) {
+                Task { await app.signOut() }
+            }
+        }
         .overlay {
             if app.saveState == .deleting {
                 ProgressView("Deleting account…").padding().background(.regularMaterial, in: .rect(cornerRadius: LeafyRadius.control))

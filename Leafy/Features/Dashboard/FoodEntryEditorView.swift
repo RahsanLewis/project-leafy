@@ -181,15 +181,15 @@ struct FoodEntryEditorView: View {
                     .accessibilityIdentifier("saveFoodButton")
             }
             .interactiveDismissDisabled(app.isFoodMutationInProgress)
-            .confirmationDialog(
-                "Delete this food entry?",
-                isPresented: $confirmingDeletion,
-                titleVisibility: .visible
-            ) {
-                Button("Delete Food", role: .destructive) { deleteEntry() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes the item from your food log and updates your calorie total.")
+            .sheet(isPresented: $confirmingDeletion) {
+                LeafyConfirmationSheet(
+                    title: "Delete this food entry?",
+                    message: "This removes the item from your food log and updates your calorie total.",
+                    confirmTitle: "Delete Food",
+                    isDestructive: true,
+                    confirmIdentifier: "confirmDeleteFoodEntryButton",
+                    sheetIdentifier: "deleteFoodEntryConfirmationSheet"
+                ) { deleteEntry() }
             }
             .overlay {
                 if app.isFoodMutationInProgress {
