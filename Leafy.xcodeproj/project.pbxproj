@@ -75,7 +75,6 @@
 		B51B26AE73B7DABE2DA93127 /* GoogleAuthenticationButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C50F34CE294B76089F773D6 /* GoogleAuthenticationButton.swift */; };
 		B67EE2FD13729EEAFA327F68 /* FoodImpactDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF1D7756D3332B88CF614975 /* FoodImpactDashboard.swift */; };
 		B99D7ADF746663504D9B4358 /* MyContributionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6111284CB6D10F53ACB49B4 /* MyContributionsView.swift */; };
-		BCAFD180D0291529C6196E24 /* BeyondSolidSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A9E2FA2BB2C5945EF604EF /* BeyondSolidSplashView.swift */; };
 		C11A4949ECDB7395D9A8F340 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 8B801958BAC1CCD601FCB02C /* GoogleSignIn */; };
 		C8B1EFECD1B1444800ADC477 /* MicronutrientEducation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53432EB8B77A8A4FC0953BD0 /* MicronutrientEducation.swift */; };
 		C8FDFCC6E633B8372C6BBCDC /* PlusJakartaSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 47B8E14A0ED8F8E5A14A1CB8 /* PlusJakartaSans-SemiBold.ttf */; };
@@ -178,7 +177,6 @@
 		DBF8A9973504AE9181D274DF /* AIMealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealView.swift; sourceTree = "<group>"; };
 		E11A21F9326DBCBCB9809954 /* AppLockCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockCoordinator.swift; sourceTree = "<group>"; };
 		E1509DF8AA51D0F046D71E7F /* OAuthNonce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthNonce.swift; sourceTree = "<group>"; };
-		E4A9E2FA2BB2C5945EF604EF /* BeyondSolidSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeyondSolidSplashView.swift; sourceTree = "<group>"; };
 		E74F3E7CB1C1653F57166BFF /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		EBF9D62635316B299B94CD6A /* ProductDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailView.swift; sourceTree = "<group>"; };
 		EF5E85E0A25E0E0E0BCBC184 /* DailyReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyReminderTests.swift; sourceTree = "<group>"; };
@@ -410,7 +408,6 @@
 			isa = PBXGroup;
 			children = (
 				3E20C0C3895F2E56263C5991 /* AppModel.swift */,
-				E4A9E2FA2BB2C5945EF604EF /* BeyondSolidSplashView.swift */,
 				B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */,
 			);
 			path = App;
@@ -611,7 +608,6 @@
 				50A54765648AC14DE6C8272A /* AuthenticationModels.swift in Sources */,
 				A5DEEAB785BA06A4E4FB39C3 /* AuthenticationView.swift in Sources */,
 				E569C834AFF9E575F63F3BF2 /* BarcodeScannerView.swift in Sources */,
-				BCAFD180D0291529C6196E24 /* BeyondSolidSplashView.swift in Sources */,
 				4A00ACA9C4914D3C5D4C4654 /* CatalogContributionModels.swift in Sources */,
 				5734B8C6A7AB56D80302707B /* CatalogContributionView.swift in Sources */,
 				1B6F4E7818C9A8E7030F1621 /* CoreDataUseAcknowledgmentView.swift in Sources */,

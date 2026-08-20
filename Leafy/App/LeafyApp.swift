@@ -7,25 +7,15 @@ import SwiftUI
     @State private var reminders = DailyReminderCoordinator()
     @State private var appLock = AppLockCoordinator()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var splashCompleted = ProcessInfo.processInfo.arguments.contains("-SkipBrandSplash")
     @AppStorage(AppearanceMode.storageKey) private var appearanceRawValue = AppearanceMode.light.rawValue
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if splashCompleted {
-                    switch model.route {
-                    case .launching:
-                        ZStack {
-                            LeafyTheme.canvas.ignoresSafeArea()
-                            ProgressView("Loading Leafy…")
-                        }
-                    case .onboarding: OnboardingView()
-                    case .dashboard: DashboardView()
-                    }
-                } else {
-                    LeafySplashView()
-                        .transition(.opacity)
+                switch model.route {
+                case .launching: LaunchLoadingView()
+                case .onboarding: OnboardingView()
+                case .dashboard: DashboardView()
                 }
             }
             .font(LeafyTypography.body)
@@ -37,16 +27,7 @@ import SwiftUI
             .task {
                 async let restoration: Void = model.restore()
                 async let reminderRefresh: Void = reminders.refresh()
-                if !splashCompleted {
-                    let splashMilliseconds = ProcessInfo.processInfo.arguments.contains("-HoldBrandSplash") ? 4_000 : 1_200
-                    try? await Task.sleep(for: .milliseconds(splashMilliseconds))
-                }
                 _ = await (restoration, reminderRefresh)
-                if !splashCompleted {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        splashCompleted = true
-                    }
-                }
                 openPendingMorningCheckIn()
             }
             .onReceive(NotificationCenter.default.publisher(for: .leafyOpenMorningCheckIn)) { _ in
@@ -85,9 +66,32 @@ import SwiftUI
     }
 
     private func openPendingMorningCheckIn() {
-        guard splashCompleted, model.route == .dashboard, !model.showCoreDataAcknowledgment,
+        guard model.route == .dashboard, !model.showCoreDataAcknowledgment,
               reminders.consumePendingMorningCheckIn() else { return }
         model.presentMorningCheckIn()
+    }
+}
+
+private struct LaunchLoadingView: View {
+    @State private var showProgress = false
+
+    var body: some View {
+        ZStack {
+            LeafyTheme.canvas.ignoresSafeArea()
+            if showProgress {
+                ProgressView()
+                    .tint(LeafyTheme.green)
+                    .accessibilityLabel("Loading Leafy")
+            }
+        }
+        .task {
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+            } catch {
+                return
+            }
+            showProgress = true
+        }
     }
 }
 

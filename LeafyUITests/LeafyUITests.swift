@@ -4,7 +4,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testWelcomeAndEligibilityGate() {
         let app = XCUIApplication()
-        app.launchArguments = ["-SkipBrandSplash", "-ForceOnboarding"]
+        app.launchArguments = ["-ForceOnboarding"]
         app.launch()
         XCTAssertTrue(app.staticTexts["Your nutrition, made clear"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["welcomeSignInButton"].exists)
@@ -29,7 +29,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testReturningUserCanOpenSignInBeforeOnboarding() {
         let app = XCUIApplication()
-        app.launchArguments = ["-SkipBrandSplash", "-ForceOnboarding"]
+        app.launchArguments = ["-ForceOnboarding"]
         app.launch()
 
         let signIn = app.buttons["welcomeSignInButton"]
@@ -47,7 +47,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testImperialHeightWheelsChangeIndependently() {
         let app = XCUIApplication()
-        app.launchArguments = ["-SkipBrandSplash", "-ForceOnboarding"]
+        app.launchArguments = ["-ForceOnboarding"]
         app.launch()
 
         app.buttons["Continue"].tap()
@@ -82,7 +82,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testMorningCheckInPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview"]
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Is yesterday’s food log complete?"].waitForExistence(timeout: 3))
@@ -125,7 +125,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testEmptyMorningCheckInExplainsFastingAndMissingLogs() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-EmptyMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-EmptyMorningCheckIn"]
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Did you eat yesterday?"].waitForExistence(timeout: 3))
@@ -155,7 +155,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testMorningCheckInCanOpenYesterdayLoggerAndReturn() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-EmptyMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-EmptyMorningCheckIn"]
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Did you eat yesterday?"].waitForExistence(timeout: 3))
@@ -175,7 +175,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testWeightEntryUsesSharedWheelPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Progress"].tap()
@@ -191,7 +191,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAIMealTextReviewAndConfirmationPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -221,7 +221,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAIMealClarificationCanContinueWithoutAnAnswerPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -241,7 +241,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAskLeafyCanReviewAndLogAnEatenMealInlinePreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Ask"].tap()
@@ -262,7 +262,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAskLeafyResponseCanBeCancelledWithoutLosingDraftPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash", "-HoldChatResponse"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-HoldChatResponse"]
         app.launch()
 
         app.tabBars.buttons["Ask"].tap()
@@ -280,7 +280,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAskLeafyWarmlyRedirectsOffTopicRequestsPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Ask"].tap()
@@ -300,7 +300,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAskLeafyKeyboardCanDismissWithoutLosingDraftPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Ask"].tap()
@@ -326,7 +326,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAIMealLoadingCanBeCancelledWithoutLosingDraftPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash", "-HoldAIMealEstimate"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-HoldAIMealEstimate"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -346,7 +346,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testUnifiedFoodLoggingKeepsSearchDescribePhotoAndScanTogetherPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -372,7 +372,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testLogFoodChooseFromLibraryOpensSystemPhotoPicker() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -389,7 +389,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testLogFoodConfirmsBeforeDiscardingDescribeDraft() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -407,7 +407,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testFoodEntryOpensNutritionAndOffersEditAndDeleteActionsPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.buttons["logFoodButton"].tap()
@@ -457,7 +457,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testBorderlessListScreensRemainNavigablePreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
@@ -486,22 +486,19 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
-    func testLeafySplashAppearsOnlyDuringColdLaunch() {
+    func testColdLaunchDoesNotRenderSecondInAppSplash() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-HoldBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
-        let splash = app.descendants(matching: .any)["leafySplash"]
-        XCTAssertTrue(splash.waitForExistence(timeout: 2))
-        XCTAssertLessThan(splash.frame.midY, app.frame.midY)
-        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 4))
-        XCTAssertFalse(splash.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["leafySplash"].exists)
     }
 
     @MainActor
     func testTodayDayNavigationFinishesOnThePreviousDay() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         XCTAssertTrue(app.staticTexts["selectedLogDayTitle"].waitForExistence(timeout: 3))
@@ -515,7 +512,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testCalorieRingSupportsCalendarSwipeNavigation() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         let ring = app.descendants(matching: .any)["calorieBudgetCard"]
@@ -531,7 +528,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testDailyNutritionSummaryOpensFullNutrientView() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         let summary = app.descendants(matching: .any)["homeMacroSummary"]
@@ -560,7 +557,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testWeightInsightsUseCompactExplanationsPreview() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Progress"].tap()
@@ -631,7 +628,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testWeightChartSupportsEveryTimeframe() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Progress"].tap()
@@ -649,7 +646,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testTrendWeightIsHiddenBeforeSevenReadings() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SixWeightReadings", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SixWeightReadings", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Progress"].tap()
@@ -662,7 +659,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testSettingsNutritionPlanUsesBorderlessTargetOverviewAndCalculationSheet() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         XCTAssertTrue(app.tabBars.buttons["Scan"].exists)
@@ -686,7 +683,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testSettingsProvidesDirectSignOutAndCompactBottomSheetConfirmations() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Settings"].tap()
@@ -713,7 +710,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testAuthenticatedPlanEditingStaysSeparateFromAccountCreation() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Settings"].tap()
@@ -749,7 +746,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testOnboardingPlanResultsUsesDetachedActions() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-PlanResultsPreview", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-PlanResultsPreview"]
         app.launch()
 
         XCTAssertTrue(app.descendants(matching: .any)["onboardingPlanResults"].waitForExistence(timeout: 3))
@@ -761,7 +758,7 @@ final class LeafyUITests: XCTestCase {
     @MainActor
     func testWeightHistoryUsesFiveEntryPreviewAndFullHistoryDestination() {
         let app = XCUIApplication()
-        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-SkipBrandSplash"]
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
         app.tabBars.buttons["Progress"].tap()
