@@ -1,6 +1,4 @@
 import AuthenticationServices
-import CryptoKit
-import Security
 import SwiftUI
 import UIKit
 
@@ -100,10 +98,10 @@ struct AuthenticationView: View {
     private var providerButtons: some View {
         VStack(spacing: LeafySpacing.compact) {
             SignInWithAppleButton(.signIn) { request in
-                let nonce = Self.randomNonce()
+                let nonce = OAuthNonce.generate()
                 rawNonce = nonce
                 request.requestedScopes = [.email]
-                request.nonce = Self.sha256(nonce)
+                request.nonce = OAuthNonce.sha256(nonce)
             } onCompletion: { result in handleApple(result) }
             .signInWithAppleButtonStyle(.black)
             .frame(height: 52)
@@ -140,18 +138,6 @@ struct AuthenticationView: View {
         }
     }
 
-    private static func sha256(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func randomNonce(length: Int = 32) -> String {
-        let characters = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-        return String((0..<length).map { _ in
-            var byte: UInt8 = 0
-            precondition(SecRandomCopyBytes(kSecRandomDefault, 1, &byte) == errSecSuccess)
-            return characters[Int(byte) % characters.count]
-        })
-    }
 }
 
 struct AuthField: View {

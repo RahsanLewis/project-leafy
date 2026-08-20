@@ -88,10 +88,15 @@ actor PlanService {
         return session.accessToken
     }
 
-    func signInWithGoogle(identityToken: String, nonce: String? = nil) async throws -> String {
+    func signInWithGoogle(identityToken: String, accessToken: String, nonce: String) async throws -> String {
         guard configuration.isConfigured else { throw ServiceError.notConfigured }
         let session = try await supabase.auth.signInWithIdToken(
-            credentials: OpenIDConnectCredentials(provider: .google, idToken: identityToken, nonce: nonce)
+            credentials: OpenIDConnectCredentials(
+                provider: .google,
+                idToken: identityToken,
+                accessToken: accessToken,
+                nonce: nonce
+            )
         )
         activeAccessToken = session.accessToken
         return session.accessToken

@@ -2,6 +2,25 @@ import XCTest
 @testable import Leafy
 
 final class AuthenticationModelsTests: XCTestCase {
+    func testOAuthNonceGenerationIsSecurelyShapedAndUnique() {
+        let first = OAuthNonce.generate()
+        let second = OAuthNonce.generate()
+        let allowed = CharacterSet(charactersIn: "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+
+        XCTAssertEqual(first.count, 32)
+        XCTAssertEqual(second.count, 32)
+        XCTAssertNotEqual(first, second)
+        XCTAssertNil(first.unicodeScalars.first(where: { !allowed.contains($0) }))
+        XCTAssertNil(second.unicodeScalars.first(where: { !allowed.contains($0) }))
+    }
+
+    func testOAuthNonceSHA256UsesLowercaseHexEncoding() {
+        XCTAssertEqual(
+            OAuthNonce.sha256("leafy-test-nonce"),
+            "652d226dd5ac46085f19f8429c1d185767af8448d57fcc0cf912512176db2ae2"
+        )
+    }
+
     private func configuration(
         iosClientID: String,
         serverClientID: String,

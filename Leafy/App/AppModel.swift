@@ -245,17 +245,25 @@ final class AppModel {
         }
     }
 
-    func saveAfterGoogle(identityToken: String) async {
+    func saveAfterGoogle(identityToken: String, accessToken: String, nonce: String) async {
         await perform(.authenticating) {
-            let accessToken = try await service.signInWithGoogle(identityToken: identityToken)
-            try await saveAuthenticatedDraft(accessToken: accessToken, recordLegalAcceptance: true)
+            let sessionAccessToken = try await service.signInWithGoogle(
+                identityToken: identityToken,
+                accessToken: accessToken,
+                nonce: nonce
+            )
+            try await saveAuthenticatedDraft(accessToken: sessionAccessToken, recordLegalAcceptance: true)
         }
     }
 
-    func loadAfterGoogle(identityToken: String) async {
+    func loadAfterGoogle(identityToken: String, accessToken: String, nonce: String) async {
         await perform(.authenticating) {
-            let accessToken = try await service.signInWithGoogle(identityToken: identityToken)
-            try await loadAuthenticatedAccount(accessToken: accessToken)
+            let sessionAccessToken = try await service.signInWithGoogle(
+                identityToken: identityToken,
+                accessToken: accessToken,
+                nonce: nonce
+            )
+            try await loadAuthenticatedAccount(accessToken: sessionAccessToken)
         }
     }
 
@@ -1406,6 +1414,11 @@ final class AppModel {
         }
         if message.localizedCaseInsensitiveContains("email not confirmed") {
             return "Confirm your email using the link we sent, then try again."
+        }
+        if message.localizedCaseInsensitiveContains("nonce")
+            || message.localizedCaseInsensitiveContains("id_token")
+            || message.localizedCaseInsensitiveContains("identity token") {
+            return "Leafy couldn’t verify this sign-in. Please try again."
         }
         return message
     }

@@ -22,6 +22,7 @@
 		1B6F4E7818C9A8E7030F1621 /* CoreDataUseAcknowledgmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F4D821BF264B6BF74DCAE8 /* CoreDataUseAcknowledgmentView.swift */; };
 		1F4DA8D52977B6A79818113F /* LeafyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */; };
 		209AC11E48247DEA57AE97E4 /* AIMealModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3625248BE1EAD25739E6E4ED /* AIMealModels.swift */; };
+		21716E6EDF589E9475F3115B /* OAuthNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1509DF8AA51D0F046D71E7F /* OAuthNonce.swift */; };
 		2CD1FD255FE878524056A213 /* DailyNutritionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4823444D8D290CCB13B160C5 /* DailyNutritionView.swift */; };
 		32299D125C2DBB327B7880C6 /* WeightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A8B90A19EA640712A8CFFD /* WeightView.swift */; };
 		33351AB99441019FA675F758 /* MorningCheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 656D87A3D1EED260DF182AC7 /* MorningCheckInView.swift */; };
@@ -174,6 +175,7 @@
 		D085A58149BEB16F433AC118 /* PlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanView.swift; sourceTree = "<group>"; };
 		DBF8A9973504AE9181D274DF /* AIMealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealView.swift; sourceTree = "<group>"; };
 		E11A21F9326DBCBCB9809954 /* AppLockCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockCoordinator.swift; sourceTree = "<group>"; };
+		E1509DF8AA51D0F046D71E7F /* OAuthNonce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthNonce.swift; sourceTree = "<group>"; };
 		E4A9E2FA2BB2C5945EF604EF /* BeyondSolidSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeyondSolidSplashView.swift; sourceTree = "<group>"; };
 		E74F3E7CB1C1653F57166BFF /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		EBF9D62635316B299B94CD6A /* ProductDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailView.swift; sourceTree = "<group>"; };
@@ -235,6 +237,7 @@
 				41FEB4B67C991061A6E0DDDA /* AccountCreationView.swift */,
 				13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */,
 				4C50F34CE294B76089F773D6 /* GoogleAuthenticationButton.swift */,
+				E1509DF8AA51D0F046D71E7F /* OAuthNonce.swift */,
 				F2651CB30DA700BC5712DBB6 /* PasswordRecoveryView.swift */,
 			);
 			path = Auth;
@@ -630,6 +633,7 @@
 				95A80EA122227291A2C9C976 /* NutritionCalculator.swift in Sources */,
 				0D90146AC2AE59F70EF54341 /* NutritionChatModels.swift in Sources */,
 				808DF33F1231CFC28B60A7B8 /* NutritionModels.swift in Sources */,
+				21716E6EDF589E9475F3115B /* OAuthNonce.swift in Sources */,
 				41D48E29C7A09E97E210B3E6 /* OnboardingDraft.swift in Sources */,
 				03E0A19393B6A2D0517B2F39 /* OnboardingView.swift in Sources */,
 				3D47B9ADC250612F6E789670 /* PasswordRecoveryView.swift in Sources */,

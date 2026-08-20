@@ -55,13 +55,23 @@ struct GoogleAuthenticationButton: View {
             serverClientID: app.configuration.googleServerClientID
         )
         do {
-            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
+            let rawNonce = OAuthNonce.generate()
+            let result = try await GIDSignIn.sharedInstance.signIn(
+                withPresenting: presenter,
+                hint: nil,
+                additionalScopes: nil,
+                nonce: OAuthNonce.sha256(rawNonce)
+            )
             guard let token = result.user.idToken?.tokenString else {
                 errorMessage = "Google did not return a secure identity token."
                 return
             }
-            if purpose == .createAndSave { await app.saveAfterGoogle(identityToken: token) }
-            else { await app.loadAfterGoogle(identityToken: token) }
+            let accessToken = result.user.accessToken.tokenString
+            if purpose == .createAndSave {
+                await app.saveAfterGoogle(identityToken: token, accessToken: accessToken, nonce: rawNonce)
+            } else {
+                await app.loadAfterGoogle(identityToken: token, accessToken: accessToken, nonce: rawNonce)
+            }
         } catch {
             if (error as NSError).code != GIDSignInError.canceled.rawValue {
                 errorMessage = "Google couldn’t complete sign-in. Try again."
