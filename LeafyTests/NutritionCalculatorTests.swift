@@ -85,7 +85,7 @@ final class NutritionCalculatorTests: XCTestCase {
     func testEligibleAnswersCompleteSafetyCheck() {
         let draft = OnboardingDraft()
         draft.confirmsAdult = true
-        draft.hasContraindication = false
+        answerHealthQuestions(draft)
 
         XCTAssertTrue(draft.hasCompletedEligibility)
         XCTAssertTrue(draft.isEligible)
@@ -95,7 +95,7 @@ final class NutritionCalculatorTests: XCTestCase {
     func testUnderageAnswerIsIneligible() {
         let draft = OnboardingDraft()
         draft.confirmsAdult = false
-        draft.hasContraindication = false
+        answerHealthQuestions(draft)
 
         XCTAssertTrue(draft.hasCompletedEligibility)
         XCTAssertFalse(draft.isEligible)
@@ -105,7 +105,7 @@ final class NutritionCalculatorTests: XCTestCase {
     func testHealthConsiderationIsIneligible() {
         let draft = OnboardingDraft()
         draft.confirmsAdult = true
-        draft.hasContraindication = true
+        answerHealthQuestions(draft, pregnantOrBreastfeeding: true)
 
         XCTAssertTrue(draft.hasCompletedEligibility)
         XCTAssertFalse(draft.isEligible)
@@ -117,6 +117,31 @@ final class NutritionCalculatorTests: XCTestCase {
 
         XCTAssertTrue(draft.hasValidMeasurements)
         XCTAssertEqual(draft.goalDifferenceKG, 6, accuracy: 0.0001)
+    }
+
+    func testHealthQuestionsRemainIncompleteUntilEachIsAnswered() {
+        let draft = OnboardingDraft()
+        draft.confirmsAdult = true
+        draft.isPregnantOrBreastfeeding = false
+        draft.isInEatingDisorderRecovery = false
+
+        XCTAssertNil(draft.hasContraindication)
+        XCTAssertFalse(draft.hasCompletedEligibility)
+
+        draft.followsClinicianDirectedDiet = false
+        XCTAssertEqual(draft.hasContraindication, false)
+        XCTAssertTrue(draft.hasCompletedEligibility)
+    }
+
+    func testEachHealthConsiderationMakesDraftIneligible() {
+        let draft = OnboardingDraft()
+        draft.confirmsAdult = true
+
+        answerHealthQuestions(draft, eatingDisorderRecovery: true)
+        XCTAssertTrue(draft.isIneligible)
+
+        answerHealthQuestions(draft, clinicianDirectedDiet: true)
+        XCTAssertTrue(draft.isIneligible)
     }
 
     func testImperialHeightFeetAndInchesRemainIndependent() {
@@ -182,7 +207,18 @@ final class NutritionCalculatorTests: XCTestCase {
         XCTAssertEqual(OnboardingDraft.Step.legacy(1, draft: draft), .adultEligibility)
         draft.confirmsAdult = true
         XCTAssertEqual(OnboardingDraft.Step.legacy(1, draft: draft), .healthConsiderations)
-        draft.hasContraindication = false
+        answerHealthQuestions(draft)
         XCTAssertEqual(OnboardingDraft.Step.legacy(1, draft: draft), .goal)
+    }
+
+    private func answerHealthQuestions(
+        _ draft: OnboardingDraft,
+        pregnantOrBreastfeeding: Bool = false,
+        eatingDisorderRecovery: Bool = false,
+        clinicianDirectedDiet: Bool = false
+    ) {
+        draft.isPregnantOrBreastfeeding = pregnantOrBreastfeeding
+        draft.isInEatingDisorderRecovery = eatingDisorderRecovery
+        draft.followsClinicianDirectedDiet = clinicianDirectedDiet
     }
 }

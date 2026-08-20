@@ -55,7 +55,9 @@ struct ImperialHeightSelection: Equatable, Sendable {
     }
     var step: Step = .welcome
     var confirmsAdult: Bool?
-    var hasContraindication: Bool?
+    var isPregnantOrBreastfeeding: Bool?
+    var isInEatingDisorderRecovery: Bool?
+    var followsClinicianDirectedDiet: Bool?
     var birthDate = Calendar.current.date(byAdding: .year, value: -30, to: .now)!
     var calculationSex: CalculationSex = .female
     var heightCM = 168.0
@@ -73,6 +75,13 @@ struct ImperialHeightSelection: Equatable, Sendable {
 
     var hasCompletedEligibility: Bool {
         confirmsAdult != nil && hasContraindication != nil
+    }
+
+    var hasContraindication: Bool? {
+        guard let isPregnantOrBreastfeeding,
+              let isInEatingDisorderRecovery,
+              let followsClinicianDirectedDiet else { return nil }
+        return isPregnantOrBreastfeeding || isInEatingDisorderRecovery || followsClinicianDirectedDiet
     }
 
     var isEligible: Bool {

@@ -83,8 +83,24 @@ struct OnboardingView: View {
             binaryChoices(selection: $draft.confirmsAdult, title: "Are you 18 or older?")
             if draft.confirmsAdult == false { eligibilityGuidance(adult: false) }
         case .healthConsiderations:
-            question("Do any of these apply to you?", "Select Yes if you are pregnant or breastfeeding, in eating-disorder recovery, or following a clinician-directed diet.")
-            binaryChoices(selection: $draft.hasContraindication, title: "Do any of these apply to you?")
+            question("A few health questions", "Answer each question so Leafy can determine whether its general wellness estimates are appropriate for you.")
+            VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                healthQuestion(
+                    "Are you pregnant or breastfeeding?",
+                    selection: $draft.isPregnantOrBreastfeeding,
+                    identifier: "pregnancyAnswer"
+                )
+                healthQuestion(
+                    "Are you in eating-disorder recovery?",
+                    selection: $draft.isInEatingDisorderRecovery,
+                    identifier: "recoveryAnswer"
+                )
+                healthQuestion(
+                    "Are you following a diet directed by a clinician?",
+                    selection: $draft.followsClinicianDirectedDiet,
+                    identifier: "clinicianDietAnswer"
+                )
+            }
             if draft.hasContraindication == true { eligibilityGuidance(adult: true) }
         case .goal:
             question("What’s your goal?", "You can change this later and Leafy will recalculate your plan.")
@@ -144,6 +160,46 @@ struct OnboardingView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
+    }
+
+    private func healthQuestion(
+        _ title: String,
+        selection: Binding<Bool?>,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Text(title)
+                .font(LeafyTypography.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: LeafySpacing.xLarge) {
+                healthAnswer("Yes", value: true, selection: selection, identifier: identifier + "Yes")
+                healthAnswer("No", value: false, selection: selection, identifier: identifier + "No")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+
+    private func healthAnswer(
+        _ label: String,
+        value: Bool,
+        selection: Binding<Bool?>,
+        identifier: String
+    ) -> some View {
+        let selected = selection.wrappedValue == value
+        return Button {
+            selection.wrappedValue = value
+            UISelectionFeedbackGenerator().selectionChanged()
+        } label: {
+            Label(label, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                .font(LeafyTypography.body)
+                .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selected ? LeafyTheme.green : Color.primary)
+        .accessibilityIdentifier(identifier)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func choiceRows<Value: Identifiable & Equatable>(
