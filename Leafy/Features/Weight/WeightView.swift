@@ -938,71 +938,23 @@ private struct FluctuationRangeExplanationView: View {
             dismissAccessibilityLabel: "Dismiss fluctuation range explanation",
             dismissIdentifier: "dismissFluctuationRangeExplanation"
         ) {
-            explanationSection(
-                title: "What it means",
-                text: introduction,
-                identifier: "fluctuationRangeMeaning"
-            )
-
-            explanationSection(
-                title: "Inside the range",
-                text: "A reading inside the shaded area is consistent with ordinary day-to-day movement.",
-                identifier: "fluctuationRangeInside"
-            )
-
-            explanationSection(
-                title: "Outside the range",
-                text: "A reading above or below the shaded area can still be temporary. Look for several readings moving in the same direction before treating it as a change in progress.",
-                identifier: "fluctuationRangeOutside"
-            )
-
-            explanationSection(
-                title: "What matters most",
-                text: goalMessage,
-                identifier: "fluctuationRangeGoal"
-            )
-
-            Text("Water retention, sodium, carbohydrates, hormones, digestion, exercise, and time of day can all temporarily move the scale without changing your underlying progress.")
-                .font(LeafyTypography.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("fluctuationRangeFactors")
-        }
-    }
-
-    private func explanationSection(
-        title: String,
-        text: String,
-        identifier: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.small) {
-            Text(title)
-                .font(LeafyTypography.headline)
-            Text(text)
+            Text(explanation)
                 .font(LeafyTypography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("fluctuationRangeExplanation")
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(identifier)
     }
 
-    private var goalMessage: String {
+    private var explanation: String {
         switch goal {
         case .lose:
-            "For weight loss, look for the shaded range to move lower over time. Individual readings may rise even while your overall progress remains on track."
+            "The shaded area represents normal day-to-day weight fluctuations. Focus on the overall direction over time—you want the range to trend downward."
         case .gain:
-            "For weight gain, look for the shaded range to move higher over time. Individual readings may fall even while your overall progress remains on track."
+            "The shaded area represents normal day-to-day weight fluctuations. Focus on the overall direction over time—you want the range to trend upward."
         case .maintain:
-            "For maintenance, look for the shaded range to remain broadly stable over time. Individual readings can still move above or below it."
+            "The shaded area represents normal day-to-day weight fluctuations. Focus on the overall direction over time—you want the range to remain generally stable."
         }
-    }
-
-    private var introduction: String {
-        if source == .personalized {
-            return "The shaded area shows the amount your weight commonly moves from day to day. Use it as context for a single weigh-in, not as a target you need to stay inside."
-        }
-        return "The shaded area gives context for day-to-day changes that can happen even when your longer-term direction has not changed. It is not a target you need to stay inside."
     }
 }
 

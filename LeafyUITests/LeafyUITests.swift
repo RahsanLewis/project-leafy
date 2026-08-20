@@ -576,10 +576,17 @@ final class LeafyUITests: XCTestCase {
         let fluctuationInfo = app.buttons["weightFluctuationRangeInfo"]
         XCTAssertTrue(fluctuationInfo.waitForExistence(timeout: 2))
         fluctuationInfo.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["fluctuationRangeMeaning"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.descendants(matching: .any)["fluctuationRangeInside"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["fluctuationRangeOutside"].exists)
-        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "smoothed seven-reading trend")).firstMatch.exists)
+        let rangeExplanation = app.descendants(matching: .any)["fluctuationRangeExplanation"]
+        XCTAssertTrue(rangeExplanation.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "normal day-to-day weight fluctuations")
+        ).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "trend downward")
+        ).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["Inside the range"].exists)
+        XCTAssertFalse(app.staticTexts["Outside the range"].exists)
+        XCTAssertFalse(app.staticTexts["What matters most"].exists)
         app.buttons["Dismiss fluctuation range explanation"].tap()
 
         let info = app.buttons["weightInsightInfo-pace"]
