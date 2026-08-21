@@ -1,67 +1,169 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { cors, json } from '../_shared/http.ts'
 import { calculateAndPersistPFQS } from '../_shared/pfqs/persistence.ts'
+import { additiveRegistry } from '../_shared/pfqs/additive-registry.ts'
 import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
 
-type Row = Record<string, unknown>
+type Row = Record<string, any>
+type Reviewer = { kind: 'admin'; user_id: string; email: string } | { kind: 'key'; user_id: null; email: 'review-key' }
+const allowedOrigins = new Set([
+  'https://admin.projectleafy.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  ...(Deno.env.get('CATALOG_ADMIN_ORIGINS') ?? '').split(',').map((value) => value.trim()).filter(Boolean),
+])
 
 Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  const origin = request.headers.get('origin') ?? ''
+  const headers = corsHeaders(origin)
+  if (request.method === 'OPTIONS') return new Response('ok', { headers })
+  const respond = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { ...headers, 'Content-Type': 'application/json' } })
   try {
-    const reviewKey = Deno.env.get('CATALOG_REVIEW_KEY')
-    if (!reviewKey || request.headers.get('x-leafy-admin-key') !== reviewKey) return json({ error: 'Unauthorized' }, 401)
     const url = Deno.env.get('SUPABASE_URL')!
     const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const admin = createClient(url, secret)
-    const body = await request.json().catch(() => ({})) as { action?: string; contribution_id?: string; reason?: string }
-    if ((body.action ?? 'list') === 'list') {
-      const result = await admin.from('catalog_contributions').select('*').eq('status', 'pending_review').order('last_submitted_at').limit(100)
-      if (result.error) throw result.error
-      return json({ contributions: result.data ?? [] })
+    const admin = createClient(url, secret, { auth: { persistSession: false } })
+    const reviewer = await authorize(request, admin)
+    const body = await request.json().catch(() => ({})) as Row
+    const action = body.action ?? 'list'
+
+    if (action === 'summary') {
+      const [pending, catalog] = await Promise.all([
+        admin.from('catalog_contributions').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
+        admin.from('food_versions').select('id', { count: 'exact', head: true }).is('superseded_at', null).neq('verification_status', 'rejected'),
+      ])
+      if (pending.error) throw pending.error
+      if (catalog.error) throw catalog.error
+      return respond({ pending: pending.count ?? 0, catalog: catalog.count ?? 0, additives: additiveRegistry.length })
     }
-    if (!body.contribution_id) throw new Error('A contribution identifier is required.')
-    const contributionResult = await admin.from('catalog_contributions').select('*').eq('id', body.contribution_id).single()
+
+    if (action === 'list') {
+      let query = admin.from('catalog_contributions').select('*').eq('status', body.status ?? 'pending_review').order('last_submitted_at', { ascending: true }).limit(Math.min(Number(body.limit ?? 100), 100))
+      if (body.query) query = query.or(`gtin.ilike.%${safeFilter(body.query)}%,confirmed_fields->>product_name.ilike.%${safeFilter(body.query)}%`)
+      const result = await query
+      if (result.error) throw result.error
+      return respond({ contributions: result.data ?? [] })
+    }
+
+    if (action === 'search_foods') {
+      const term = String(body.query ?? '').trim()
+      if (!term) return respond({ foods: [] })
+      const result = await admin.rpc('search_food_catalog', { p_query: term, p_limit: Math.min(Number(body.limit ?? 30), 50) })
+      if (result.error) throw result.error
+      return respond({ foods: result.data ?? [] })
+    }
+
+    if (action === 'food_detail') {
+      const id = requireID(body.food_version_id, 'food version')
+      const version = await admin.from('food_versions').select('*,foods(*)').eq('id', id).single()
+      if (version.error) throw version.error
+      const [nutrients, portions, scores] = await Promise.all([
+        admin.from('food_version_nutrients').select('*,nutrient_definitions(name,unit,nutrient_class)').eq('food_version_id', id).order('nutrient_code'),
+        admin.from('food_portions').select('*').eq('food_version_id', id).order('amount'),
+        admin.from('pfqs_scores').select('*').eq('food_version_id', id).order('created_at', { ascending: false }).limit(1),
+      ])
+      for (const result of [nutrients, portions, scores]) if (result.error) throw result.error
+      return respond({ food: version.data, nutrients: nutrients.data ?? [], portions: portions.data ?? [], pfqs: scores.data?.[0] ?? null })
+    }
+
+    if (action === 'search_additives') {
+      const term = String(body.query ?? '').trim().toLowerCase()
+      const additives = additiveRegistry.filter((item) => !term || [item.canonical_name, item.canonical_id, item.family ?? '', ...item.aliases].some((value) => value.toLowerCase().includes(term))).slice(0, 100)
+      return respond({ additives })
+    }
+
+    if (action === 'additive_detail') {
+      const additive = additiveRegistry.find((item) => item.canonical_id === body.canonical_id)
+      if (!additive) return respond({ error: 'Additive not found.' }, 404)
+      return respond({ additive })
+    }
+
+    const contributionID = requireID(body.contribution_id, 'contribution')
+    const contributionResult = await admin.from('catalog_contributions').select('*').eq('id', contributionID).single()
     if (contributionResult.error) throw contributionResult.error
     const contribution = contributionResult.data
-    if (body.action === 'detail') return json({ contribution: await withEvidence(admin, contribution) })
-    if (contribution.status !== 'pending_review') throw new Error('Only pending submissions can be moderated.')
-    if (body.action === 'request_changes') return json({ contribution: await transition(admin, contribution, 'needs_review', body.reason || 'Please review the submitted label information.', 'admin') })
-    if (body.action === 'reject') return json({ contribution: await transition(admin, contribution, 'rejected', body.reason || 'This submission could not be verified.', 'admin') })
-    if (body.action === 'approve') {
-      const existing = await admin.from('food_versions').select('id').eq('gtin', contribution.gtin).eq('market_country', contribution.market_country).is('superseded_at', null).neq('verification_status', 'rejected').maybeSingle()
-      if (existing.error) throw existing.error
-      const foodVersionID = existing.data?.id ?? await publish(admin, contribution)
+    if (action === 'detail') return respond({ contribution: await withEvidence(admin, contribution) })
+    if (contribution.status !== 'pending_review') return respond({ error: 'This submission has already been reviewed.' }, 409)
+
+    const reason = String(body.reason ?? '').trim()
+    if (action === 'request_changes') return respond({ contribution: await transition(admin, contribution, 'needs_review', reason || 'Please retake the package photos so the label can be verified.', reviewer) })
+    if (action === 'reject') return respond({ contribution: await transition(admin, contribution, 'rejected', reason || 'This submission could not be verified.', reviewer) })
+    if (action === 'approve') {
       const now = new Date().toISOString()
-      const update = await admin.from('catalog_contributions').update({ status: 'accepted', accepted_food_version_id: foodVersionID, reviewed_at: now, review_reason: body.reason || 'Approved by Leafy review.', updated_at: now }).eq('id', contribution.id).select('*').single()
-      if (update.error) throw update.error
-      await addEvent(admin, contribution.id, 'pending_review', 'accepted', body.reason || 'Approved by Leafy review.')
-      return json({ contribution: update.data, food_version_id: foodVersionID })
+      const claim = await admin.from('catalog_contributions').update({ status: 'processing', updated_at: now }).eq('id', contribution.id).eq('status', 'pending_review').select('*').maybeSingle()
+      if (claim.error) throw claim.error
+      if (!claim.data) return respond({ error: 'This submission is already being reviewed.' }, 409)
+      try {
+        const existing = await admin.from('food_versions').select('id').eq('gtin', contribution.gtin).eq('market_country', contribution.market_country).is('superseded_at', null).neq('verification_status', 'rejected').maybeSingle()
+        if (existing.error) throw existing.error
+        const foodVersionID = existing.data?.id ?? await publish(admin, contribution)
+        const update = await admin.from('catalog_contributions').update({ status: 'accepted', accepted_food_version_id: foodVersionID, reviewed_at: now, review_reason: reason || 'Approved by Leafy review.', updated_at: now }).eq('id', contribution.id).eq('status', 'processing').select('*').maybeSingle()
+        if (update.error) throw update.error
+        if (!update.data) throw new Error('This submission changed while it was being published.')
+        await addEvent(admin, contribution.id, 'pending_review', 'accepted', reason || 'Approved by Leafy review.', reviewer)
+        return respond({ contribution: update.data, food_version_id: foodVersionID })
+      } catch (error) {
+        await admin.from('catalog_contributions').update({ status: 'pending_review', updated_at: new Date().toISOString() }).eq('id', contribution.id).eq('status', 'processing')
+        throw error
+      }
     }
-    throw new Error('Unsupported review action.')
+    return respond({ error: 'Unsupported admin action.' }, 400)
   } catch (error) {
-    console.error('review-catalog-contribution failed', error)
-    return json({ error: error instanceof Error ? error.message : 'Unable to review that product.' }, 400)
+    console.error('catalog admin failed', error)
+    const message = error instanceof Error ? error.message : 'The catalog request could not be completed.'
+    return respond({ error: message }, message === 'Unauthorized' ? 401 : 400)
   }
 })
 
+function corsHeaders(origin: string) {
+  return {
+    ...(allowedOrigins.has(origin) ? { 'Access-Control-Allow-Origin': origin } : {}),
+    'Vary': 'Origin',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-leafy-admin-key',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  }
+}
+
+async function authorize(request: Request, admin: any): Promise<Reviewer> {
+  const reviewKey = Deno.env.get('CATALOG_REVIEW_KEY')
+  if (reviewKey && request.headers.get('x-leafy-admin-key') === reviewKey) return { kind: 'key', user_id: null, email: 'review-key' }
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  if (!token) throw new Error('Unauthorized')
+  const userResult = await admin.auth.getUser(token)
+  if (userResult.error || !userResult.data.user) throw new Error('Unauthorized')
+  const user = userResult.data.user
+  const bootstrapEmails = new Set((Deno.env.get('CATALOG_BOOTSTRAP_ADMIN_EMAILS') ?? 'rahsan@beyondsolid.dev').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean))
+  if (user.email && bootstrapEmails.has(user.email.toLowerCase())) {
+    const bootstrap = await admin.from('admin_memberships').upsert({ user_id: user.id, role: 'catalog_admin', active: true }, { onConflict: 'user_id' })
+    if (bootstrap.error) throw bootstrap.error
+  }
+  const membership = await admin.from('admin_memberships').select('role,active').eq('user_id', user.id).eq('role', 'catalog_admin').eq('active', true).maybeSingle()
+  if (membership.error || !membership.data) throw new Error('Unauthorized')
+  return { kind: 'admin', user_id: user.id, email: user.email ?? 'unknown' }
+}
+
 async function withEvidence(admin: any, contribution: Row) {
-  const assets = await admin.from('product_label_assets').select('id,asset_kind,object_path').eq('contribution_id', contribution.id)
-  if (assets.error) throw assets.error
+  const [assets, nutrients, revisions, events, sources, jobs] = await Promise.all([
+    admin.from('product_label_assets').select('id,asset_kind,object_path').eq('contribution_id', contribution.id),
+    admin.from('catalog_contribution_nutrients').select('*').eq('contribution_id', contribution.id).eq('revision', contribution.revision).order('nutrient_code'),
+    admin.from('catalog_contribution_revisions').select('*').eq('contribution_id', contribution.id).order('revision', { ascending: false }),
+    admin.from('catalog_contribution_events').select('*').eq('contribution_id', contribution.id).order('created_at', { ascending: false }),
+    admin.from('catalog_verification_sources').select('*').eq('contribution_id', contribution.id).eq('revision', contribution.revision).order('source_kind'),
+    admin.from('catalog_contribution_jobs').select('*').eq('contribution_id', contribution.id).maybeSingle(),
+  ])
+  for (const result of [assets, nutrients, revisions, events, sources, jobs]) if (result.error) throw result.error
   const evidence = await Promise.all((assets.data ?? []).map(async (asset: Row) => {
     const signed = await admin.storage.from('nutrition-media').createSignedUrl(String(asset.object_path), 900)
     if (signed.error) throw signed.error
     return { id: asset.id, asset_kind: asset.asset_kind, signed_url: signed.data.signedUrl }
   }))
-  const nutrients = await admin.from('catalog_contribution_nutrients').select('*').eq('contribution_id', contribution.id).eq('revision', contribution.revision)
-  if (nutrients.error) throw nutrients.error
-  return { ...contribution, evidence, nutrients: nutrients.data ?? [] }
+  return { ...contribution, evidence, nutrients: nutrients.data ?? [], revisions: revisions.data ?? [], events: events.data ?? [], verification_sources: sources.data ?? [], job: jobs.data ?? null }
 }
 
-async function transition(admin: any, contribution: Row, status: string, reason: string, actor: string) {
-  const update = await admin.from('catalog_contributions').update({ status, review_reason: reason, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', contribution.id).select('*').single()
+async function transition(admin: any, contribution: Row, status: string, reason: string, reviewer: Reviewer) {
+  const now = new Date().toISOString()
+  const update = await admin.from('catalog_contributions').update({ status, review_reason: reason, reviewed_at: now, updated_at: now }).eq('id', contribution.id).eq('status', 'pending_review').select('*').maybeSingle()
   if (update.error) throw update.error
-  const event = await admin.from('catalog_contribution_events').insert({ contribution_id: contribution.id, actor_type: actor, from_status: contribution.status, to_status: status, reason })
-  if (event.error) throw event.error
+  if (!update.data) throw new Error('This submission was reviewed in another session.')
+  await addEvent(admin, contribution.id, contribution.status, status, reason, reviewer)
   return update.data
 }
 
@@ -71,42 +173,20 @@ async function publish(admin: any, contribution: Row) {
   if (nutrientsResult.error) throw nutrientsResult.error
   const foods = await admin.from('foods').insert({ canonical_name: fields.product_name }).select('id').single()
   if (foods.error) throw foods.error
-  const version = await admin.from('food_versions').insert({
-    food_id: foods.data.id, source_system: 'leafy', source_record_id: String(contribution.id), source_data_type: 'community_label',
-    description: fields.product_name, brand_name: fields.brand_not_shown ? null : fields.brand_name, gtin: contribution.gtin,
-    market_country: contribution.market_country, ingredients_text: fields.ingredients, allergens: fields.allergens ?? [],
-    serving_size: fields.serving_grams, serving_unit: 'g', verification_status: 'community_confirmed',
-    raw_source: { contribution_id: contribution.id, revision: contribution.revision, reviewed: true },
-  }).select('id').single()
+  const version = await admin.from('food_versions').insert({ food_id: foods.data.id, source_system: 'leafy', source_record_id: String(contribution.id), source_data_type: 'community_label', description: fields.product_name, brand_name: fields.brand_not_shown ? null : fields.brand_name, gtin: contribution.gtin, market_country: contribution.market_country, ingredients_text: fields.ingredients, allergens: fields.allergens ?? [], serving_size: fields.serving_grams, serving_unit: 'g', verification_status: 'community_confirmed', raw_source: { contribution_id: contribution.id, revision: contribution.revision, reviewed: true } }).select('id').single()
   if (version.error) throw version.error
   const per100 = (nutrientsResult.data ?? []).map((item: Row) => ({ food_version_id: version.data.id, nutrient_code: item.nutrient_code, amount_per_100g: Number((Number(item.amount_per_serving) * 100 / Number(fields.serving_grams)).toFixed(6)), derivation_method: 'label' }))
-  const nutrients = await admin.from('food_version_nutrients').insert(per100)
-  if (nutrients.error) throw nutrients.error
+  if (per100.length) { const result = await admin.from('food_version_nutrients').insert(per100); if (result.error) throw result.error }
   const portion = await admin.from('food_portions').insert({ food_version_id: version.data.id, amount: 1, unit: 'serving', description: fields.serving_description, gram_weight: fields.serving_grams, source: 'leafy_label' })
   if (portion.error) throw portion.error
   const pfqsNutrients = (nutrientsResult.data ?? []).filter((item: Row) => isPFQSNutrient(String(item.nutrient_code)))
-  const labelWrite = await admin.from('pfqs_label_nutrients').upsert(pfqsNutrients.map((item: Row) => ({
-    food_version_id: version.data.id, nutrient_code: item.nutrient_code, amount_per_serving: item.amount_per_serving,
-    unit: item.unit, explicitly_reported: item.printed_on_label === true, source_method: 'human_review',
-    source_version: `leafy-contribution:${contribution.id}:${contribution.revision}`, confidence: item.confidence ?? 1,
-  })), { onConflict: 'food_version_id,nutrient_code' })
+  const labelWrite = await admin.from('pfqs_label_nutrients').upsert(pfqsNutrients.map((item: Row) => ({ food_version_id: version.data.id, nutrient_code: item.nutrient_code, amount_per_serving: item.amount_per_serving, unit: item.unit, explicitly_reported: item.printed_on_label === true, source_method: 'human_review', source_version: `leafy-contribution:${contribution.id}:${contribution.revision}`, confidence: item.confidence ?? 1 })), { onConflict: 'food_version_id,nutrient_code' })
   if (labelWrite.error) throw labelWrite.error
-  await calculateAndPersistPFQS(admin, version.data.id, {
-    product_name: String(fields.product_name), jurisdiction: String(contribution.market_country ?? 'US'),
-    assessment_date: new Date().toISOString().slice(0, 10),
-    serving_size: { amount: Number(fields.serving_grams), unit: 'g', description: String(fields.serving_description ?? '') },
-    nutrition: Object.fromEntries(pfqsNutrients.map((item: Row) => [String(item.nutrient_code), Number(item.amount_per_serving)])) as PFQSNutrients,
-    explicitly_reported_nutrients: pfqsNutrients.filter((item: Row) => item.printed_on_label === true).map((item: Row) => String(item.nutrient_code) as PFQSNutrientCode),
-    ingredients_raw: String(fields.ingredients ?? ''), verification_status: 'community_confirmed', product_type: 'food',
-  })
+  await calculateAndPersistPFQS(admin, version.data.id, { product_name: String(fields.product_name), jurisdiction: String(contribution.market_country ?? 'US'), assessment_date: new Date().toISOString().slice(0, 10), serving_size: { amount: Number(fields.serving_grams), unit: 'g', description: String(fields.serving_description ?? '') }, nutrition: Object.fromEntries(pfqsNutrients.map((item: Row) => [String(item.nutrient_code), Number(item.amount_per_serving)])) as PFQSNutrients, explicitly_reported_nutrients: pfqsNutrients.filter((item: Row) => item.printed_on_label === true).map((item: Row) => String(item.nutrient_code) as PFQSNutrientCode), ingredients_raw: String(fields.ingredients ?? ''), verification_status: 'community_confirmed', product_type: 'food' })
   return String(version.data.id)
 }
 
-function isPFQSNutrient(value: string): value is PFQSNutrientCode {
-  return ['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'trans_fat_g', 'protein_g'].includes(value)
-}
-
-async function addEvent(admin: any, id: string, from: string, to: string, reason: string) {
-  const result = await admin.from('catalog_contribution_events').insert({ contribution_id: id, actor_type: 'admin', from_status: from, to_status: to, reason })
-  if (result.error) throw result.error
-}
+function isPFQSNutrient(value: string): value is PFQSNutrientCode { return ['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'trans_fat_g', 'protein_g'].includes(value) }
+async function addEvent(admin: any, id: string, from: string, to: string, reason: string, reviewer: Reviewer) { const result = await admin.from('catalog_contribution_events').insert({ contribution_id: id, actor_type: 'admin', from_status: from, to_status: to, reason, metadata: { reviewer_id: reviewer.user_id, reviewer_email: reviewer.email, auth_kind: reviewer.kind } }); if (result.error) throw result.error }
+function requireID(value: unknown, name: string) { const id = String(value ?? ''); if (!id) throw new Error(`A ${name} identifier is required.`); return id }
+function safeFilter(value: unknown) { return String(value).replace(/[,%()]/g, ' ').trim() }

@@ -13,8 +13,25 @@ major_version = 17
 [auth]
 enabled = true
 site_url = "https://auth.projectleafy.app/auth/callback"
-additional_redirect_urls = ["https://auth.projectleafy.app/auth/**", "leafy://auth/**"]
+additional_redirect_urls = ["https://auth.projectleafy.app/auth/**", "https://admin.projectleafy.app/**", "leafy://auth/**"]
 enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+secure_password_change = true
+max_frequency = "1m"
+otp_length = 8
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.external.apple]
+enabled = true
+client_id = "com.beyondsolid.projectleafy"
+secret = ""
 
 [functions.save-nutrition-plan]
 verify_jwt = false
