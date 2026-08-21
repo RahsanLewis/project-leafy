@@ -13,7 +13,7 @@ major_version = 17
 [auth]
 enabled = true
 site_url = "https://auth.projectleafy.app/auth/callback"
-additional_redirect_urls = ["https://auth.projectleafy.app/auth/**", "https://admin.projectleafy.app/**", "leafy://auth/**"]
+additional_redirect_urls = ["https://auth.projectleafy.app/auth/**", "https://admin.projectleafy.app/**", "https://leafy-catalog-admin.rahsanlewis.chatgpt.site/**", "leafy://auth/**"]
 enable_signup = true
 minimum_password_length = 8
 
