@@ -26,17 +26,22 @@ Deno.serve(async (request) => {
     const action = body.action ?? 'list'
 
     if (action === 'summary') {
-      const [pending, catalog] = await Promise.all([
-        admin.from('catalog_contributions').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
+      const statuses = ['draft', 'processing', 'pending_review', 'needs_review', 'accepted', 'rejected']
+      const [statusResults, catalog] = await Promise.all([
+        Promise.all(statuses.map((status) => admin.from('catalog_contributions').select('id', { count: 'exact', head: true }).eq('status', status))),
         admin.from('food_versions').select('id', { count: 'exact', head: true }).is('superseded_at', null).neq('verification_status', 'rejected'),
       ])
-      if (pending.error) throw pending.error
+      for (const result of statusResults) if (result.error) throw result.error
       if (catalog.error) throw catalog.error
-      return respond({ pending: pending.count ?? 0, catalog: catalog.count ?? 0, additives: additiveRegistry.length })
+      const contributions = Object.fromEntries(statuses.map((status, index) => [status, statusResults[index].count ?? 0]))
+      return respond({ pending: contributions.pending_review, contributions, catalog: catalog.count ?? 0, additives: additiveRegistry.length })
     }
 
     if (action === 'list') {
-      let query = admin.from('catalog_contributions').select('*').eq('status', body.status ?? 'pending_review').order('last_submitted_at', { ascending: true }).limit(Math.min(Number(body.limit ?? 100), 100))
+      const statuses = Array.isArray(body.statuses) ? body.statuses.map(String) : [String(body.status ?? 'pending_review')]
+      const limit = Math.min(Math.max(Number(body.limit ?? 100), 1), 100)
+      const offset = Math.max(Number(body.offset ?? 0), 0)
+      let query = admin.from('catalog_contributions').select('*').in('status', statuses).order('updated_at', { ascending: false }).range(offset, offset + limit - 1)
       if (body.query) query = query.or(`gtin.ilike.%${safeFilter(body.query)}%,confirmed_fields->>product_name.ilike.%${safeFilter(body.query)}%`)
       const result = await query
       if (result.error) throw result.error
@@ -45,10 +50,36 @@ Deno.serve(async (request) => {
 
     if (action === 'search_foods') {
       const term = String(body.query ?? '').trim()
-      if (!term) return respond({ foods: [] })
-      const result = await admin.rpc('search_food_catalog', { p_query: term, p_limit: Math.min(Number(body.limit ?? 30), 50) })
-      if (result.error) throw result.error
-      return respond({ foods: result.data ?? [] })
+      const limit = Math.min(Math.max(Number(body.limit ?? 30), 1), 50)
+      let localRows: Row[] = []
+      if (term) {
+        const result = await admin.rpc('search_food_catalog', { p_query: term, p_limit: limit })
+        if (result.error) throw result.error
+        localRows = result.data ?? []
+      } else {
+        const result = await admin.from('food_versions').select('id,description,brand_name,gtin,market_country,image_url,verification_status,source_system,source_record_id,source_updated_at,effective_from')
+          .is('superseded_at', null).neq('verification_status', 'rejected')
+          .order('source_updated_at', { ascending: false, nullsFirst: false }).order('effective_from', { ascending: false }).limit(limit)
+        if (result.error) throw result.error
+        localRows = (result.data ?? []).map((row: Row) => ({ ...row, food_version_id: row.id }))
+      }
+      const local = localRows.map(localFoodSummary)
+      const external = term.length >= 2 && local.length < limit ? await searchUSDA(term, Math.min(20, limit - local.length)) : []
+      return respond({ foods: deduplicateFoods([...local, ...external]), local_count: local.length, external_count: external.length })
+    }
+
+    if (action === 'import_usda') {
+      const fdcID = Number(body.fdc_id)
+      if (!Number.isInteger(fdcID) || fdcID <= 0) return respond({ error: 'A USDA food identifier is required.' }, 400)
+      const publicKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
+      const imported = await fetch(`${url}/functions/v1/discover-food-product`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: request.headers.get('authorization') ?? '', apikey: publicKey },
+        body: JSON.stringify({ action: 'detail', fdc_id: fdcID, record_history: false }),
+      })
+      const payload = await imported.json().catch(() => ({})) as Row
+      if (!imported.ok || !payload.product?.food_version_id) throw new Error(payload.error ?? 'USDA product import failed.')
+      return respond({ food_version_id: payload.product.food_version_id })
     }
 
     if (action === 'food_detail') {
@@ -190,3 +221,40 @@ function isPFQSNutrient(value: string): value is PFQSNutrientCode { return ['ene
 async function addEvent(admin: any, id: string, from: string, to: string, reason: string, reviewer: Reviewer) { const result = await admin.from('catalog_contribution_events').insert({ contribution_id: id, actor_type: 'admin', from_status: from, to_status: to, reason, metadata: { reviewer_id: reviewer.user_id, reviewer_email: reviewer.email, auth_kind: reviewer.kind } }); if (result.error) throw result.error }
 function requireID(value: unknown, name: string) { const id = String(value ?? ''); if (!id) throw new Error(`A ${name} identifier is required.`); return id }
 function safeFilter(value: unknown) { return String(value).replace(/[,%()]/g, ' ').trim() }
+
+function localFoodSummary(row: Row) {
+  return {
+    id: String(row.food_version_id ?? row.id), food_version_id: String(row.food_version_id ?? row.id), fdc_id: null,
+    description: row.description, brand_name: row.brand_name, gtin: row.gtin, market_country: row.market_country,
+    image_url: row.image_url, verification_status: row.verification_status,
+    source: row.source_system === 'usda_fdc' ? 'USDA FoodData Central' : 'Leafy catalog',
+    source_kind: 'leafy', imported: true,
+  }
+}
+
+async function searchUSDA(query: string, limit: number) {
+  if (limit <= 0) return []
+  const key = Deno.env.get('FDC_API_KEY') ?? 'DEMO_KEY'
+  const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(key)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, dataType: ['Branded'], pageSize: limit }),
+  })
+  if (!response.ok) throw new Error('The USDA food catalog is temporarily unavailable.')
+  const payload = await response.json() as Row
+  return (payload.foods ?? []).map((food: Row) => ({
+    id: `usda:${food.fdcId}`, food_version_id: null, fdc_id: Number(food.fdcId),
+    description: food.description, brand_name: food.brandOwner ?? food.brandName ?? null,
+    gtin: food.gtinUpc ?? null, market_country: food.marketCountry ?? 'US', image_url: null,
+    verification_status: 'external', source: 'USDA FoodData Central', source_kind: 'usda', imported: false,
+  }))
+}
+
+function deduplicateFoods(rows: Row[]) {
+  const seen = new Set<string>()
+  return rows.filter((row) => {
+    const key = String(row.gtin || `${row.source_kind}:${row.id}`).replace(/^0+/, '')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
