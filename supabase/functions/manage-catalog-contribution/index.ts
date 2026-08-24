@@ -7,7 +7,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
 type Row = Record<string, unknown>
 type Body = {
-  action?: 'start' | 'register_asset' | 'extract' | 'enqueue' | 'submit' | 'list' | 'detail' | 'delete_draft' | 'log'
+  action?: 'start' | 'register_asset' | 'extract' | 'enqueue' | 'submit' | 'list' | 'detail' | 'delete_draft' | 'log' | 'admin_retry'
   contribution_id?: string
   barcode?: string
   market_country?: string
@@ -31,10 +31,16 @@ type NutrientInput = {
   confidence?: number
 }
 
-const requiredNutrients = [
+const knownNutrients = [
   'energy_kcal', 'fat_g', 'saturated_fat_g', 'trans_fat_g', 'cholesterol_mg',
   'sodium_mg', 'carbohydrate_g', 'fiber_g', 'sugars_g', 'added_sugars_g',
   'protein_g', 'vitamin_d_mcg', 'calcium_mg', 'iron_mg', 'potassium_mg',
+]
+// These are the nutrients needed to publish a useful consumer record. Optional
+// micronutrients may be absent from a U.S. label and must not block recognition.
+const requiredNutrients = [
+  'energy_kcal', 'fat_g', 'saturated_fat_g', 'sodium_mg',
+  'carbohydrate_g', 'fiber_g', 'added_sugars_g', 'protein_g',
 ]
 const units: Record<string, string> = {
   energy_kcal: 'kcal', protein_g: 'g', carbohydrate_g: 'g', fat_g: 'g', fiber_g: 'g',
@@ -50,7 +56,7 @@ const extractionSchema = {
     serving_description: { type: 'string' }, serving_grams: { type: 'number' }, servings_per_container: { type: 'string' },
     ingredients: { type: 'string' }, allergens: { type: 'array', items: { type: 'string' }, maxItems: 30 },
     nutrients: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['code', 'amount_per_serving', 'unit', 'percent_daily_value', 'confidence'], properties: {
-      code: { type: 'string', enum: requiredNutrients }, amount_per_serving: { type: 'number' },
+      code: { type: 'string', enum: knownNutrients }, amount_per_serving: { type: 'number' },
       unit: { type: 'string', enum: ['kcal', 'g', 'mg', 'mcg'] }, percent_daily_value: { type: ['number', 'null'] },
       confidence: { type: 'number', minimum: 0, maximum: 1 },
     } } },
@@ -63,11 +69,18 @@ const extractionSchema = {
 
 const verificationSchema = {
   type: 'object', additionalProperties: false,
-  required: ['exact_gtin_match', 'product_name', 'brand_name', 'source_quality', 'matched_fields', 'conflict_fields', 'summary'],
+  required: ['exact_gtin_match', 'product_name', 'brand_name', 'serving_description', 'serving_grams', 'ingredients', 'nutrients', 'source_quality', 'matched_fields', 'conflict_fields', 'summary'],
   properties: {
     exact_gtin_match: { type: 'boolean' },
     product_name: { type: 'string' },
     brand_name: { type: 'string' },
+    serving_description: { type: 'string' },
+    serving_grams: { type: 'number' },
+    ingredients: { type: 'string' },
+    nutrients: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['code', 'amount_per_serving', 'unit', 'confidence'], properties: {
+      code: { type: 'string', enum: knownNutrients }, amount_per_serving: { type: 'number' },
+      unit: { type: 'string', enum: ['kcal', 'g', 'mg', 'mcg'] }, confidence: { type: 'number', minimum: 0, maximum: 1 },
+    } } },
     source_quality: { type: 'string', enum: ['manufacturer', 'usda', 'retailer', 'database', 'other', 'none'] },
     matched_fields: { type: 'array', items: { type: 'string' }, maxItems: 20 },
     conflict_fields: { type: 'array', items: { type: 'string' }, maxItems: 20 },
@@ -82,12 +95,20 @@ Deno.serve(async (request) => {
     const url = Deno.env.get('SUPABASE_URL')!
     const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
     const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
+    const body = await request.json().catch(() => ({})) as Body
+    const action = body.action ?? 'list'
+    if (action === 'admin_retry') {
+      const internalKey = Deno.env.get('CATALOG_REVIEW_KEY') ?? secret
+      if (request.headers.get('x-leafy-admin-key') !== internalKey) return json({ error: 'Unauthorized' }, 401)
+      if (!body.contribution_id) return json({ error: 'A contribution identifier is required.' }, 400)
+      const contribution = await byID(adminClient(url, secret), body.contribution_id)
+      EdgeRuntime.waitUntil(runAutomation(adminClient(url, secret), String(contribution.user_id), String(contribution.id)).catch((error) => console.error('admin retry failed', error)))
+      return json({ outcome: 'processing' }, 202)
+    }
     const auth = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
     const { data: { user }, error: authError } = await auth.auth.getUser()
     if (authError || !user) return json({ error: 'Unauthorized' }, 401)
     const admin = createClient(url, secret)
-    const body = await request.json().catch(() => ({})) as Body
-    const action = body.action ?? 'list'
 
     if (action === 'start') return json(await start(admin, user.id, body))
     if (action === 'list') {
@@ -115,6 +136,14 @@ Deno.serve(async (request) => {
     return json({ error: error instanceof Error ? error.message : 'Unable to update that product.' }, 400)
   }
 })
+
+function adminClient(url: string, secret: string) { return createClient(url, secret, { auth: { persistSession: false } }) }
+
+async function byID(admin: any, id: string) {
+  const result = await admin.from('catalog_contributions').select('*').eq('id', id).single()
+  if (result.error) throw result.error
+  return result.data
+}
 
 async function start(admin: any, userID: string, body: Body) {
   const gtin = normalizeBarcode(body.barcode ?? '')
@@ -265,14 +294,38 @@ async function runAutomation(admin: any, userID: string, contributionID: string)
   if (!claimed.data) return
   try {
     let contribution = await owned(admin, userID, contributionID)
-    const extractedContribution = await extract(admin, userID, contribution)
-    const diagnostics = extractedContribution.extraction_diagnostics ?? extractionDiagnostics(extractedContribution as unknown as Row)
+    // Search the exact barcode while vision reads the package. This mirrors the
+    // stronger consumer workflow: package evidence plus current primary sources.
+    const onlinePromise = verifyIdentityOnline(userID, String(contribution.gtin), String(contribution.market_country), {})
+    await extract(admin, userID, contribution)
+    const verification = await onlinePromise
+    contribution = await owned(admin, userID, contributionID)
+    const visualFields = normalizeFields(contribution.extracted_fields as Row ?? {})
+    const visualNutrients = normalizeNutrients((contribution.extracted_fields as Row)?.nutrients ?? [])
+    const merged = mergeTrustedProductData(visualFields, visualNutrients, verification.result)
+    const mergedExtracted = {
+      ...(contribution.extracted_fields as Row ?? {}),
+      ...merged.fields,
+      nutrients: merged.nutrients,
+      online_verification: verification.result,
+      field_provenance: merged.provenance,
+    }
+    const validation = validate(merged.fields, merged.nutrients, mergedExtracted)
+    const revisionNumber = Number(contribution.revision ?? 1)
+    await persistAutomatedRevision(admin, contributionID, revisionNumber, mergedExtracted, merged.fields, merged.nutrients, validation)
+    await persistVerificationSources(
+      admin, contributionID, revisionNumber, verification.sources,
+      verification.result.exact_gtin_match === true, verification.result.matched_fields,
+    )
+    const diagnostics = extractionDiagnostics({ ...contribution, extracted_fields: mergedExtracted, validation_results: validation })
     if (diagnostics?.status === 'needs_photos') {
       const firstRetake = Number(contribution.retake_count ?? 0) < 1
       const status = firstRetake ? 'needs_review' : 'pending_review'
       const message = firstRetake ? String(diagnostics.message) : 'Leafy could not confidently read every required label detail. Our catalog team will review it.'
       const updated = await admin.from('catalog_contributions').update({
         status, retake_count: firstRetake ? 1 : contribution.retake_count,
+        extracted_fields: mergedExtracted, confirmed_fields: merged.fields,
+        validation_results: validation, verification_results: verification.result,
         review_reason: message, updated_at: new Date().toISOString(),
       }).eq('id', contributionID)
       if (updated.error) throw updated.error
@@ -281,20 +334,11 @@ async function runAutomation(admin: any, userID: string, contributionID: string)
       return
     }
 
-    contribution = await owned(admin, userID, contributionID)
-    const fields = normalizeFields(contribution.extracted_fields as Row ?? {})
-    const nutrients = normalizeNutrients((contribution.extracted_fields as Row)?.nutrients ?? [])
-    const validation = validate(fields, nutrients, contribution.extracted_fields as Row ?? {})
-    const revisionNumber = Number(contribution.revision ?? 1)
-    await persistAutomatedRevision(admin, contributionID, revisionNumber, contribution.extracted_fields as Row ?? {}, fields, nutrients, validation)
+    const fields = merged.fields
+    const nutrients = merged.nutrients
 
     const verifying = await admin.from('catalog_contribution_jobs').update({ status: 'verifying', updated_at: new Date().toISOString() }).eq('contribution_id', contributionID)
     if (verifying.error) throw verifying.error
-    const verification = await verifyIdentityOnline(userID, String(contribution.gtin), String(contribution.market_country), fields)
-    await persistVerificationSources(
-      admin, contributionID, revisionNumber, verification.sources,
-      verification.result.exact_gtin_match === true, verification.result.matched_fields,
-    )
     const identityAgreement = verification.result.exact_gtin_match === true &&
       verification.result.conflict_fields.length === 0 &&
       namesAgree(String(fields.product_name), verification.result.product_name) &&
@@ -336,7 +380,7 @@ async function runAutomation(admin: any, userID: string, contributionID: string)
     }
     const now = new Date().toISOString()
     const update = await admin.from('catalog_contributions').update({
-      status, confirmed_fields: fields, validation_results: validation,
+      status, extracted_fields: mergedExtracted, confirmed_fields: fields, validation_results: validation,
       verification_results: verification.result, accepted_food_version_id: foodVersionID,
       last_submitted_at: now, reviewed_at: status === 'accepted' ? now : null,
       review_reason: reason, updated_at: now,
@@ -385,11 +429,12 @@ async function verifyIdentityOnline(userID: string, gtin: string, market: string
   const key = Deno.env.get('OPENAI_API_KEY')
   if (!key) throw new Error('Online product verification is not configured yet.')
   const model = Deno.env.get('OPENAI_MEAL_MODEL') ?? 'gpt-5.6-terra'
-  const prompt = `Verify the identity of packaged food barcode ${gtin} sold in ${market}. The photographed package reads product name "${fields.product_name}" and brand "${fields.brand_name}". Search exact-barcode manufacturer/brand pages and USDA branded-food records first, then reputable retailers or product databases. Do not use search-result snippets alone. Mark exact_gtin_match true only when a consulted page explicitly associates this exact barcode with the product. Report identity conflicts; do not replace package nutrition or ingredients.`
+  const photographed = fields.product_name ? `The photographed package appears to read product name "${fields.product_name}" and brand "${fields.brand_name}".` : 'Package vision is running in parallel, so identify the product independently from its barcode.'
+  const prompt = `Research packaged food barcode ${gtin} sold in ${market}. ${photographed} Search the exact GTIN on official manufacturer or brand pages and USDA branded-food records first, then reputable retailers and established product databases. Open sources rather than relying on snippets. Return the official product identity, serving, ingredients, and all nutrition values explicitly supported by an exact-barcode source. Use -1 for unsupported nutrient values. Mark exact_gtin_match true only when a consulted source explicitly associates this exact barcode with the product. Report any conflicts conservatively.`
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model, store: false, reasoning: { effort: 'low' }, safety_identifier: await safetyID(userID),
+      model, store: false, reasoning: { effort: 'medium' }, safety_identifier: await safetyID(userID),
       tools: [{ type: 'web_search' }], include: ['web_search_call.action.sources'],
       input: [{ role: 'system', content: [{ type: 'input_text', text: 'You verify packaged-food identity. Prefer primary sources and exact barcode matches. Return conservative structured results.' }] }, { role: 'user', content: [{ type: 'input_text', text: prompt }] }],
       text: { format: { type: 'json_schema', name: 'leafy_catalog_identity', strict: true, schema: verificationSchema } },
@@ -399,6 +444,28 @@ async function verifyIdentityOnline(userID: string, gtin: string, market: string
   if (!response.ok) throw new Error(payload?.error?.message ?? 'Leafy could not verify that product online.')
   const result = JSON.parse(extractOutputText(payload))
   return { result, sources: collectWebSources(payload, result.source_quality) }
+}
+
+function mergeTrustedProductData(visualFields: Row, visualNutrients: NutrientInput[], online: Row) {
+  const trusted = online.exact_gtin_match === true && ['manufacturer', 'usda', 'retailer', 'database'].includes(String(online.source_quality))
+  const onlineFields: Row = normalizeFields({
+    product_name: online.product_name, brand_name: online.brand_name,
+    brand_not_shown: false, serving_description: online.serving_description,
+    serving_grams: online.serving_grams, ingredients: online.ingredients,
+  })
+  const fields = { ...visualFields }
+  const provenance: Row = {}
+  for (const key of ['product_name', 'brand_name', 'serving_description', 'serving_grams', 'ingredients']) {
+    const visualValue = fields[key]
+    const lookupValue = onlineFields[key]
+    if (visualValue !== '' && visualValue !== 0 && visualValue != null) provenance[key] = 'package_image'
+    else if (trusted && lookupValue !== '' && lookupValue !== 0 && lookupValue != null) { fields[key] = lookupValue; provenance[key] = 'verified_exact_barcode_source' }
+  }
+  const onlineNutrients = trusted ? normalizeNutrients(online.nutrients) : []
+  const nutrientMap = new Map(visualNutrients.map((item) => [item.code, { ...item }]))
+  for (const nutrient of onlineNutrients) if (!nutrientMap.has(nutrient.code)) nutrientMap.set(nutrient.code, { ...nutrient, confidence: Math.min(0.95, nutrient.confidence ?? 0.9) })
+  provenance.nutrients = Object.fromEntries([...nutrientMap].map(([code]) => [code, visualNutrients.some((item) => item.code === code) ? 'package_image' : 'verified_exact_barcode_source']))
+  return { fields, nutrients: [...nutrientMap.values()], provenance }
 }
 
 function collectWebSources(payload: Row, fallbackKind: string) {
@@ -580,7 +647,9 @@ function validate(fields: Row, nutrients: NutrientInput[], extracted: Row) {
   const map = new Map(nutrients.map((item) => [item.code, item]))
   for (const code of requiredNutrients) if (!map.has(code)) missing.push(code)
   const evidence = extracted.evidence as Row ?? {}
-  const evidenceComplete = evidence.front_legible === true && evidence.nutrition_facts_legible === true && evidence.ingredients_legible === true
+  const online = extracted.online_verification as Row ?? {}
+  const trustedExactLookup = online.exact_gtin_match === true && ['manufacturer', 'usda', 'retailer', 'database'].includes(String(online.source_quality))
+  const evidenceComplete = (evidence.front_legible === true && evidence.nutrition_facts_legible === true && evidence.ingredients_legible === true) || trustedExactLookup
   if (!evidenceComplete) missing.push('Clear package evidence')
   const calories = Number(map.get('energy_kcal')?.amount_per_serving)
   const macroCalories = Number(map.get('protein_g')?.amount_per_serving ?? 0) * 4 + Number(map.get('carbohydrate_g')?.amount_per_serving ?? 0) * 4 + Number(map.get('fat_g')?.amount_per_serving ?? 0) * 9
@@ -607,7 +676,7 @@ function normalizeNutrients(raw: unknown): NutrientInput[] {
   return raw.flatMap((value) => {
     const item = value as Row; const code = String(item.code ?? '')
     const amount = Number(item.amount_per_serving)
-    if (!requiredNutrients.includes(code) || seen.has(code) || !Number.isFinite(amount) || amount < 0) return []
+    if (!knownNutrients.includes(code) || seen.has(code) || !Number.isFinite(amount) || amount < 0) return []
     seen.add(code)
     return [{ code, amount_per_serving: amount, unit: units[code], percent_daily_value: item.percent_daily_value == null ? null : number(item.percent_daily_value, 0, 10000), confidence: number(item.confidence ?? 1, 0, 1) }]
   })
@@ -624,16 +693,18 @@ function extractionDiagnostics(contribution: Row) {
     ? validation.missing_fields.map(String)
     : []
   const evidence = extracted.evidence as Row ?? {}
+  const online = extracted.online_verification as Row ?? {}
+  const trustedExactLookup = online.exact_gtin_match === true && ['manufacturer', 'usda', 'retailer', 'database'].includes(String(online.source_quality))
   const requested = new Set<string>()
-  if (evidence.front_legible !== true || missing.some((field) => field === 'Product name' || field === 'Brand')) {
+  if ((!trustedExactLookup && evidence.front_legible !== true) || missing.some((field) => field === 'Product name' || field === 'Brand')) {
     requested.add('front')
   }
   if (
-    evidence.nutrition_facts_legible !== true ||
+    (!trustedExactLookup && evidence.nutrition_facts_legible !== true) ||
     validation.calorie_consistent === false ||
     missing.some((field) => field === 'Serving weight' || field === 'Serving description' || requiredNutrients.includes(field))
   ) requested.add('nutrition_facts')
-  if (evidence.ingredients_legible !== true || missing.includes('Ingredients')) requested.add('ingredients')
+  if ((!trustedExactLookup && evidence.ingredients_legible !== true) || missing.includes('Ingredients')) requested.add('ingredients')
   if (missing.includes('Clear package evidence')) {
     if (evidence.front_legible !== true) requested.add('front')
     if (evidence.nutrition_facts_legible !== true) requested.add('nutrition_facts')
@@ -660,7 +731,7 @@ function joinReadable(values: string[]) {
   if (values.length === 2) return `${values[0]} and ${values[1]}`
   return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`
 }
-function extractionPrompt(barcode: string) { return `The scanned barcode is ${barcode}. Read the product front and U.S. Nutrition Facts / ingredients evidence. Product name should be specific but concise. Capture printed amounts per serving for every standard nutrient code in the schema. For a nutrient not visible, return -1 so it can be flagged for review. Ingredients must be a faithful transcription. Do not invent a brand, serving, ingredient, nutrient, or allergen.` }
+function extractionPrompt(barcode: string) { return `The scanned barcode is ${barcode}. Read the product front and U.S. Nutrition Facts / ingredients evidence. Product name should be specific but concise. Capture printed amounts per serving for every standard nutrient visible in the schema. For a nutrient not visible, return -1; optional micronutrients must not be invented. Ingredients must be a faithful transcription. Do not invent a brand, serving, ingredient, nutrient, or allergen.` }
 function clean(value: unknown, max: number) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }
 function number(value: unknown, min: number, max: number) { const parsed = Number(value); return Number.isFinite(parsed) ? Math.min(Math.max(parsed, min), max) : min }
 function normalizeBarcode(value: string) { const digits = String(value).replace(/\D/g, ''); return digits.length >= 8 && digits.length <= 14 ? digits : '' }

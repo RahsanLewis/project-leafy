@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -26,4 +27,11 @@ test("runtime configuration never renders server secrets into HTML", async () =>
   const response = await render();
   const html = await response.text();
   assert.doesNotMatch(html, /SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|CATALOG_REVIEW_KEY/);
+});
+
+test("review workspace exposes the complete moderation workflow", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  for (const label of ["Save edits", "Approve & publish", "Retry recognition", "Request photos", "Reject"]) {
+    assert.match(source, new RegExp(label));
+  }
 });

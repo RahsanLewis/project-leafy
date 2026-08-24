@@ -87,11 +87,33 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
-  async function moderate(action: "approve" | "request_changes" | "reject") {
+  async function moderate(action: "approve" | "request_photos" | "reject" | "retry", payload: Row = {}) {
     if (!selected) return;
     setLoading(true); setError("");
-    try { await api({ action, contribution_id: selected.id, reason }); setReason(""); await refresh(); }
+    try {
+      const result = await api({ action, contribution_id: selected.id, reason, ...payload });
+      setReason("");
+      if (result.contribution) setSelected(result.contribution);
+      await refreshListOnly();
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Review failed."); setLoading(false); }
+  }
+
+  async function saveReview(confirmed_fields: Row, nutrients: Row[]) {
+    if (!selected) return;
+    setLoading(true); setError("");
+    try {
+      const result = await api({ action: "save", contribution_id: selected.id, expected_revision: selected.revision, confirmed_fields, nutrients });
+      setSelected(result.contribution);
+      await refreshListOnly();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Edits could not be saved."); }
+    finally { setLoading(false); }
+  }
+
+  async function refreshListOnly() {
+    const result = tab === "queue" ? await api({ action: "list", statuses: queueFilter === "active" ? ["pending_review", "needs_review", "processing", "draft"] : [queueFilter], query }) : { contributions: rows };
+    if (tab === "queue") setRows(result.contributions ?? []);
+    setLoading(false);
   }
 
   if (!config) return <main className="login"><div className="login-mark">●</div><p className="eyebrow">Leafy internal</p><h1>Catalog operations</h1>{error ? <div className="error">{error}</div> : <p>Preparing the secure workspace…</p>}</main>;
@@ -118,7 +140,7 @@ export default function Home() {
           <div className="list">
             {loading && !rows.length ? <p className="muted">Loading…</p> : rows.length ? rows.map((row) => <ResultRow key={row.id ?? row.food_version_id ?? row.canonical_id} row={row} tab={tab} active={selected?.id === row.id || selected?.id === row.food_version_id || selected?.canonical_id === row.canonical_id} onClick={() => void open(row)}/>) : <Empty tab={tab}/>} 
           </div>
-          <div className="detail">{selected ? <Detail tab={tab} data={selected} reason={reason} setReason={setReason} moderate={moderate} loading={loading}/> : <div className="empty-detail"><span>↗</span><h2>Select a record</h2><p>Its evidence, structured data, and history will appear here.</p></div>}</div>
+          <div className="detail">{selected ? <Detail tab={tab} data={selected} reason={reason} setReason={setReason} moderate={moderate} saveReview={saveReview} loading={loading}/> : <div className="empty-detail"><span>↗</span><h2>Select a record</h2><p>Its evidence, structured data, and history will appear here.</p></div>}</div>
         </div>
       </section>
     </main>
@@ -140,25 +162,42 @@ function ResultRow({ row, tab, active, onClick }: { row: Row; tab: Tab; active: 
   return <button className={`result ${active ? "selected" : ""}`} onClick={onClick}><div><b>{title}</b><small>{subtitle}</small>{tab === "queue" && <em className={`status ${row.status}`}>{statusLabel(row.status)}</em>}{tab === "foods" && <em className={`status ${row.source_kind}`}>{row.source_kind === "usda" ? "USDA · import to inspect" : row.source || "Leafy catalog"}</em>}</div><span>›</span></button>;
 }
 
-function Detail({ tab, data, reason, setReason, moderate, loading }: { tab: Tab; data: Row; reason: string; setReason: (value: string) => void; moderate: (action: any) => void; loading: boolean }) {
-  if (tab === "queue") return <ReviewDetail data={data} reason={reason} setReason={setReason} moderate={moderate} loading={loading}/>;
+function Detail({ tab, data, reason, setReason, moderate, saveReview, loading }: { tab: Tab; data: Row; reason: string; setReason: (value: string) => void; moderate: (action: any, payload?: Row) => void; saveReview: (fields: Row, nutrients: Row[]) => void; loading: boolean }) {
+  if (tab === "queue") return <ReviewDetail key={`${data.id}:${data.revision}:${data.status}`} data={data} reason={reason} setReason={setReason} moderate={moderate} saveReview={saveReview} loading={loading}/>;
   if (tab === "foods") return <FoodDetail data={data}/>;
   return <AdditiveDetail data={data}/>;
 }
 
-function ReviewDetail({ data, reason, setReason, moderate, loading }: any) {
-  const fields = data.confirmed_fields ?? {};
-  const canModerate = data.status === "pending_review";
+function ReviewDetail({ data, reason, setReason, moderate, saveReview, loading }: any) {
+  const [fields, setFields] = useState<Row>(data.confirmed_fields ?? {});
+  const [nutrients, setNutrients] = useState<Row[]>(() => editableNutrients(data.nutrients));
+  const canModerate = ["pending_review", "needs_review"].includes(data.status);
+  const canRetry = ["pending_review", "needs_review", "processing", "draft"].includes(data.status);
+  const original = JSON.stringify({ fields: data.confirmed_fields ?? {}, nutrients: editableNutrients(data.nutrients) });
+  const dirty = JSON.stringify({ fields, nutrients }) !== original;
+  const updateField = (key: string, value: any) => setFields((current) => ({ ...current, [key]: value }));
+  const updateNutrient = (code: string, value: string) => setNutrients((current) => current.map((item) => item.code === code ? { ...item, amount_per_serving: value } : item));
   return <article><div className="detail-heading"><div><p className="eyebrow">{statusLabel(data.status)}</p><h2>{fields.product_name || `Barcode ${data.gtin}`}</h2><p>{fields.brand_name || "Brand not shown"} · {data.gtin}</p></div></div>
     {!canModerate && <section><h3>Current state</h3><p className="bodycopy">{statusDescription(data.status, data.review_reason)}</p>{data.job && <dl><Field label="Processor" value={data.job.status}/><Field label="Attempts" value={data.job.attempt_count}/><Field label="Last issue" value={data.job.last_error}/></dl>}</section>}
     <section><h3>Package evidence</h3><div className="photos">{data.evidence?.map((image: Row) => <a href={image.signed_url} target="_blank" rel="noreferrer" key={image.id}><img src={image.signed_url} alt={image.asset_kind}/><small>{image.asset_kind.replaceAll("_", " ")}</small></a>)}</div></section>
-    <section><h3>Extracted label</h3><dl><Field label="Serving" value={`${fields.serving_description || "—"} (${fields.serving_grams || "—"} g)`}/><Field label="Ingredients" value={fields.ingredients || "—"}/><Field label="Allergens" value={(fields.allergens || []).join(", ") || "None declared"}/></dl></section>
-    <section><h3>Nutrition per serving</h3><div className="nutrients">{data.nutrients?.map((item: Row) => <div key={item.nutrient_code}><span>{item.nutrient_code.replaceAll("_", " ")}</span><b>{item.amount_per_serving} {item.unit}</b></div>)}</div></section>
+    <section><div className="section-title"><h3>Product details</h3>{canModerate && <span className={dirty ? "unsaved" : "saved"}>{dirty ? "Unsaved changes" : `Revision ${data.revision}`}</span>}</div>
+      {canModerate ? <div className="editor-grid"><label>Product name<input value={fields.product_name ?? ""} onChange={(event) => updateField("product_name", event.target.value)}/></label><label>Brand<input disabled={fields.brand_not_shown} value={fields.brand_name ?? ""} onChange={(event) => updateField("brand_name", event.target.value)}/></label><label className="checkbox"><input type="checkbox" checked={fields.brand_not_shown === true} onChange={(event) => updateField("brand_not_shown", event.target.checked)}/>Brand is not shown</label><label>Serving description<input value={fields.serving_description ?? ""} onChange={(event) => updateField("serving_description", event.target.value)}/></label><label>Serving weight (g)<input inputMode="decimal" value={fields.serving_grams ?? ""} onChange={(event) => updateField("serving_grams", event.target.value)}/></label><label>Servings per container<input value={fields.servings_per_container ?? ""} onChange={(event) => updateField("servings_per_container", event.target.value)}/></label><label className="wide">Ingredients<textarea value={fields.ingredients ?? ""} onChange={(event) => updateField("ingredients", event.target.value)}/></label><label className="wide">Allergens (comma separated)<input value={(fields.allergens ?? []).join(", ")} onChange={(event) => updateField("allergens", event.target.value.split(",").map((value) => value.trim()).filter(Boolean))}/></label></div> : <dl><Field label="Serving" value={`${fields.serving_description || "—"} (${fields.serving_grams || "—"} g)`}/><Field label="Ingredients" value={fields.ingredients || "—"}/><Field label="Allergens" value={(fields.allergens || []).join(", ") || "None declared"}/></dl>}
+    </section>
+    <section><h3>Nutrition per serving</h3><div className="nutrient-editor">{nutrients.map((item: Row) => <label key={item.code}><span>{nutrientLabel(item.code)} <small>{item.required ? "required" : "optional"}</small></span><div><input disabled={!canModerate} inputMode="decimal" value={item.amount_per_serving ?? ""} placeholder="—" onChange={(event) => updateNutrient(item.code, event.target.value)}/><b>{item.unit}</b></div></label>)}</div></section>
+    {Array.isArray(data.validation_results?.missing_fields) && data.validation_results.missing_fields.length > 0 && <section className="issues"><h3>Needs attention</h3><p>{data.validation_results.missing_fields.join(" · ")}</p></section>}
     <section><h3>Verification</h3><p className="bodycopy">{data.verification_results?.summary || "Review the package images and any source matches before publishing."}</p>{data.verification_sources?.map((source: Row) => <a className="source" href={source.url} target="_blank" rel="noreferrer" key={source.id}>{source.title || source.domain || source.url} ↗</a>)}</section>
-    {canModerate && <section><h3>Decision note</h3><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Optional internal reason or clear instructions for the contributor"/><div className="actions"><button className="approve" disabled={loading} onClick={() => moderate("approve")}>Approve & publish</button><button disabled={loading} onClick={() => moderate("request_changes")}>Request changes</button><button className="reject" disabled={loading} onClick={() => moderate("reject")}>Reject</button></div></section>}
+    {(canModerate || canRetry) && <section><h3>Review actions</h3><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Optional internal note or photo instructions"/><div className="actions">{canModerate && <button className="save" disabled={loading || !dirty} onClick={() => saveReview(fields, nutrients.filter((item) => item.amount_per_serving !== ""))}>Save edits</button>}{canModerate && <button className="approve" disabled={loading || dirty} title={dirty ? "Save edits before publishing" : ""} onClick={() => moderate("approve")}>Approve & publish</button>}{canRetry && <button disabled={loading || dirty} onClick={() => moderate("retry")}>Retry recognition</button>}{canModerate && <button disabled={loading} onClick={() => moderate("request_photos")}>Request photos</button>}{canModerate && <button className="reject" disabled={loading} onClick={() => moderate("reject")}>Reject</button>}</div>{dirty && <p className="hint">Save edits before approving or retrying recognition.</p>}</section>}
     <section><h3>Event history</h3>{data.events?.map((event: Row) => <div className="event" key={event.id}><span>{event.from_status || "created"} → {event.to_status}</span><small>{date(event.created_at)} · {event.actor_type}</small></div>)}</section>
   </article>;
 }
+
+const nutrientDefinitions = [
+  ["energy_kcal", "Cal", true], ["fat_g", "g", true], ["saturated_fat_g", "g", true], ["trans_fat_g", "g", false], ["cholesterol_mg", "mg", false],
+  ["sodium_mg", "mg", true], ["carbohydrate_g", "g", true], ["fiber_g", "g", true], ["sugars_g", "g", false], ["added_sugars_g", "g", true],
+  ["protein_g", "g", true], ["vitamin_d_mcg", "mcg", false], ["calcium_mg", "mg", false], ["iron_mg", "mg", false], ["potassium_mg", "mg", false],
+] as const;
+function editableNutrients(values: Row[] = []) { const map = new Map(values.map((item) => [item.nutrient_code ?? item.code, item])); return nutrientDefinitions.map(([code, unit, required]) => ({ code, unit, required, amount_per_serving: map.get(code)?.amount_per_serving ?? "", percent_daily_value: map.get(code)?.percent_daily_value ?? null, confidence: map.get(code)?.confidence ?? 1 })); }
+function nutrientLabel(code: string) { return code.replaceAll("_", " ").replace("energy kcal", "Calories").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 
 function FoodDetail({ data }: { data: Row }) { return <article><p className="eyebrow">Active catalog record</p><h2>{data.description}</h2><p>{data.brand_name || "No brand"} · {data.gtin || "No barcode"}</p><section><h3>Identity & provenance</h3><dl><Field label="Canonical name" value={data.foods?.canonical_name}/><Field label="Source" value={`${data.source_system} · ${data.source_data_type || "record"}`}/><Field label="Verification" value={data.verification_status}/><Field label="Market" value={data.market_country}/></dl></section><section><h3>Portions</h3>{data.portions?.map((portion: Row) => <div className="event" key={portion.id}><span>{portion.amount} {portion.unit} · {portion.description}</span><b>{portion.gram_weight} g</b></div>)}</section><section><h3>Nutrients per 100 g</h3><div className="nutrients">{data.nutrients?.map((item: Row) => <div key={item.nutrient_code}><span>{item.nutrient_definitions?.name || item.nutrient_code}</span><b>{Number(item.amount_per_100g).toFixed(2)} {item.nutrient_definitions?.unit}</b></div>)}</div></section><section><h3>Ingredients</h3><p className="bodycopy">{data.ingredients_text || "No ingredients recorded."}</p></section>{data.pfqs && <section><h3>PFQS</h3><div className="score"><strong>{data.pfqs.score_100 ?? "—"}</strong><span>{data.pfqs.rating || data.pfqs.score_status}<small>{data.pfqs.model_version}</small></span></div></section>}</article>; }
 

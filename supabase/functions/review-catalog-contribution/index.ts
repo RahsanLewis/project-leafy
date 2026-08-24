@@ -3,8 +3,19 @@ import { calculateAndPersistPFQS } from '../_shared/pfqs/persistence.ts'
 import { additiveRegistry } from '../_shared/pfqs/additive-registry.ts'
 import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
 
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
+
 type Row = Record<string, any>
 type Reviewer = { kind: 'admin'; user_id: string; email: string } | { kind: 'key'; user_id: null; email: 'review-key' }
+type NutrientInput = { code: string; amount_per_serving: number; unit: string; percent_daily_value?: number | null; confidence?: number }
+const reviewableStatuses = ['needs_review', 'pending_review']
+const nutrientUnits: Record<string, string> = {
+  energy_kcal: 'kcal', protein_g: 'g', carbohydrate_g: 'g', fat_g: 'g', fiber_g: 'g',
+  sugars_g: 'g', added_sugars_g: 'g', saturated_fat_g: 'g', trans_fat_g: 'g',
+  cholesterol_mg: 'mg', sodium_mg: 'mg', potassium_mg: 'mg', calcium_mg: 'mg',
+  iron_mg: 'mg', vitamin_d_mcg: 'mcg',
+}
+const publicationNutrients = ['energy_kcal', 'fat_g', 'saturated_fat_g', 'sodium_mg', 'carbohydrate_g', 'fiber_g', 'added_sugars_g', 'protein_g']
 const allowedOrigins = new Set([
   'https://admin.projectleafy.app',
   'http://localhost:3000',
@@ -112,14 +123,26 @@ Deno.serve(async (request) => {
     if (contributionResult.error) throw contributionResult.error
     const contribution = contributionResult.data
     if (action === 'detail') return respond({ contribution: await withEvidence(admin, contribution) })
-    if (contribution.status !== 'pending_review') return respond({ error: 'This submission has already been reviewed.' }, 409)
+    if (action === 'save') {
+      if (!reviewableStatuses.includes(String(contribution.status))) return respond({ error: 'Only submissions awaiting review can be edited.' }, 409)
+      const saved = await saveReview(admin, contribution, body, reviewer)
+      return respond({ contribution: await withEvidence(admin, saved) })
+    }
+    if (action === 'retry') {
+      if (!['draft', 'needs_review', 'pending_review', 'processing'].includes(String(contribution.status))) return respond({ error: 'This submission can no longer be reprocessed.' }, 409)
+      const retried = await retryRecognition(admin, contribution, reviewer, url, secret)
+      return respond({ contribution: await withEvidence(admin, retried) }, 202)
+    }
+    if (!reviewableStatuses.includes(String(contribution.status))) return respond({ error: 'This submission is not awaiting review.' }, 409)
 
     const reason = String(body.reason ?? '').trim()
-    if (action === 'request_changes') return respond({ contribution: await transition(admin, contribution, 'needs_review', reason || 'Please retake the package photos so the label can be verified.', reviewer) })
+    if (action === 'request_changes' || action === 'request_photos') return respond({ contribution: await transition(admin, contribution, 'needs_review', reason || 'Please add clearer photos of the package front, Nutrition Facts, and ingredients.', reviewer) })
     if (action === 'reject') return respond({ contribution: await transition(admin, contribution, 'rejected', reason || 'This submission could not be verified.', reviewer) })
     if (action === 'approve') {
       const now = new Date().toISOString()
-      const claim = await admin.from('catalog_contributions').update({ status: 'processing', updated_at: now }).eq('id', contribution.id).eq('status', 'pending_review').select('*').maybeSingle()
+      const issues = publicationIssues(contribution.confirmed_fields as Row ?? {}, await currentNutrients(admin, contribution))
+      if (issues.length) return respond({ error: `Complete these fields before publishing: ${issues.join(', ')}.` }, 422)
+      const claim = await admin.from('catalog_contributions').update({ status: 'processing', updated_at: now }).eq('id', contribution.id).eq('revision', contribution.revision).in('status', reviewableStatuses).select('*').maybeSingle()
       if (claim.error) throw claim.error
       if (!claim.data) return respond({ error: 'This submission is already being reviewed.' }, 409)
       try {
@@ -129,10 +152,10 @@ Deno.serve(async (request) => {
         const update = await admin.from('catalog_contributions').update({ status: 'accepted', accepted_food_version_id: foodVersionID, reviewed_at: now, review_reason: reason || 'Approved by Leafy review.', updated_at: now }).eq('id', contribution.id).eq('status', 'processing').select('*').maybeSingle()
         if (update.error) throw update.error
         if (!update.data) throw new Error('This submission changed while it was being published.')
-        await addEvent(admin, contribution.id, 'pending_review', 'accepted', reason || 'Approved by Leafy review.', reviewer)
+        await addEvent(admin, contribution.id, String(contribution.status), 'accepted', reason || 'Approved by Leafy review.', reviewer)
         return respond({ contribution: update.data, food_version_id: foodVersionID })
       } catch (error) {
-        await admin.from('catalog_contributions').update({ status: 'pending_review', updated_at: new Date().toISOString() }).eq('id', contribution.id).eq('status', 'processing')
+        await admin.from('catalog_contributions').update({ status: contribution.status, updated_at: new Date().toISOString() }).eq('id', contribution.id).eq('status', 'processing')
         throw error
       }
     }
@@ -191,12 +214,93 @@ async function withEvidence(admin: any, contribution: Row) {
 
 async function transition(admin: any, contribution: Row, status: string, reason: string, reviewer: Reviewer) {
   const now = new Date().toISOString()
-  const update = await admin.from('catalog_contributions').update({ status, review_reason: reason, reviewed_at: now, updated_at: now }).eq('id', contribution.id).eq('status', 'pending_review').select('*').maybeSingle()
+  const update = await admin.from('catalog_contributions').update({ status, review_reason: reason, reviewed_at: now, updated_at: now }).eq('id', contribution.id).eq('revision', contribution.revision).in('status', reviewableStatuses).select('*').maybeSingle()
   if (update.error) throw update.error
   if (!update.data) throw new Error('This submission was reviewed in another session.')
   await addEvent(admin, contribution.id, contribution.status, status, reason, reviewer)
   return update.data
 }
+
+async function currentNutrients(admin: any, contribution: Row) {
+  const result = await admin.from('catalog_contribution_nutrients').select('*').eq('contribution_id', contribution.id).eq('revision', contribution.revision)
+  if (result.error) throw result.error
+  return result.data ?? []
+}
+
+async function saveReview(admin: any, contribution: Row, body: Row, reviewer: Reviewer) {
+  const expected = Number(body.expected_revision)
+  if (!Number.isInteger(expected) || expected !== Number(contribution.revision)) throw new Error('This submission changed in another session. Reload it before saving.')
+  const fields = normalizeReviewFields(body.confirmed_fields as Row ?? {})
+  const nutrients = normalizeReviewNutrients(body.nutrients)
+  const issues = publicationIssues(fields, nutrients)
+  const nextRevision = expected + 1
+  const validation = { ...(contribution.validation_results as Row ?? {}), manual_review: true, missing_fields: issues, auto_approve: false, reason: issues.length ? `Still missing: ${issues.join(', ')}` : 'Ready for human approval.' }
+  const revision = await admin.from('catalog_contribution_revisions').insert({ contribution_id: contribution.id, revision: nextRevision, extracted_fields: contribution.extracted_fields ?? {}, confirmed_fields: fields, validation_results: validation })
+  if (revision.error) throw revision.error
+  if (nutrients.length) {
+    const write = await admin.from('catalog_contribution_nutrients').insert(nutrients.map((item) => ({ contribution_id: contribution.id, revision: nextRevision, nutrient_code: item.code, amount_per_serving: item.amount_per_serving, unit: item.unit, percent_daily_value: item.percent_daily_value ?? null, confidence: item.confidence ?? 1, printed_on_label: true })))
+    if (write.error) throw write.error
+  }
+  const sources = await admin.from('catalog_verification_sources').select('*').eq('contribution_id', contribution.id).eq('revision', expected)
+  if (sources.error) throw sources.error
+  if (sources.data?.length) {
+    const copies = sources.data.map(({ id: _id, created_at: _created, ...source }: Row) => ({ ...source, revision: nextRevision }))
+    const copy = await admin.from('catalog_verification_sources').insert(copies)
+    if (copy.error) throw copy.error
+  }
+  const now = new Date().toISOString()
+  const update = await admin.from('catalog_contributions').update({ revision: nextRevision, confirmed_fields: fields, validation_results: validation, updated_at: now }).eq('id', contribution.id).eq('revision', expected).in('status', reviewableStatuses).select('*').maybeSingle()
+  if (update.error) throw update.error
+  if (!update.data) throw new Error('This submission changed in another session. Reload it before saving.')
+  await addEvent(admin, contribution.id, String(contribution.status), String(contribution.status), 'Review edits saved.', reviewer, { from_revision: expected, to_revision: nextRevision, remaining_issues: issues })
+  return update.data
+}
+
+async function retryRecognition(admin: any, contribution: Row, reviewer: Reviewer, url: string, secret: string) {
+  const now = new Date().toISOString()
+  const job = await admin.from('catalog_contribution_jobs').upsert({ contribution_id: contribution.id, user_id: contribution.user_id, status: 'queued', attempts: 0, next_attempt_at: now, last_error: null, started_at: null, completed_at: null, updated_at: now }, { onConflict: 'contribution_id' })
+  if (job.error) throw job.error
+  const update = await admin.from('catalog_contributions').update({ status: 'processing', review_reason: null, updated_at: now }).eq('id', contribution.id).eq('revision', contribution.revision).select('*').single()
+  if (update.error) throw update.error
+  await addEvent(admin, contribution.id, String(contribution.status), 'processing', 'Recognition retried by catalog review.', reviewer)
+  const key = Deno.env.get('CATALOG_REVIEW_KEY') ?? secret
+  EdgeRuntime.waitUntil(fetch(`${url}/functions/v1/manage-catalog-contribution`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-leafy-admin-key': key }, body: JSON.stringify({ action: 'admin_retry', contribution_id: contribution.id }) }).then(async (response) => { if (!response.ok) throw new Error((await response.json().catch(() => ({})))?.error ?? 'Recognition retry failed.') }).catch((error) => console.error('admin catalog retry failed', error)))
+  return update.data
+}
+
+function normalizeReviewFields(raw: Row) {
+  return {
+    product_name: String(raw.product_name ?? '').trim().slice(0, 180), brand_name: String(raw.brand_name ?? '').trim().slice(0, 120), brand_not_shown: raw.brand_not_shown === true,
+    serving_description: String(raw.serving_description ?? '').trim().slice(0, 120), serving_grams: finiteNumber(raw.serving_grams), servings_per_container: String(raw.servings_per_container ?? '').trim().slice(0, 80),
+    ingredients: String(raw.ingredients ?? '').trim().slice(0, 5000), allergens: Array.isArray(raw.allergens) ? raw.allergens.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 30) : [],
+  }
+}
+
+function normalizeReviewNutrients(value: unknown): NutrientInput[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  return value.flatMap((raw) => {
+    const item = raw as Row; const code = String(item.code ?? item.nutrient_code ?? '')
+    const amount = Number(item.amount_per_serving)
+    if (!nutrientUnits[code] || seen.has(code) || !Number.isFinite(amount) || amount < 0) return []
+    seen.add(code)
+    return [{ code, amount_per_serving: amount, unit: nutrientUnits[code], percent_daily_value: item.percent_daily_value == null ? null : finiteNumber(item.percent_daily_value), confidence: Math.min(1, Math.max(0, Number(item.confidence ?? 1))) }]
+  })
+}
+
+function publicationIssues(fields: Row, nutrients: Row[]) {
+  const issues: string[] = []
+  if (!String(fields.product_name ?? '').trim()) issues.push('product name')
+  if (!fields.brand_not_shown && !String(fields.brand_name ?? '').trim()) issues.push('brand')
+  if (!(Number(fields.serving_grams) > 0)) issues.push('serving weight')
+  if (!String(fields.serving_description ?? '').trim()) issues.push('serving description')
+  if (!String(fields.ingredients ?? '').trim()) issues.push('ingredients')
+  const codes = new Set(nutrients.map((item) => String(item.code ?? item.nutrient_code)))
+  for (const code of publicationNutrients) if (!codes.has(code)) issues.push(code.replaceAll('_', ' '))
+  return issues
+}
+
+function finiteNumber(value: unknown) { const number = Number(value); return Number.isFinite(number) && number >= 0 ? number : 0 }
 
 async function publish(admin: any, contribution: Row) {
   const fields = contribution.confirmed_fields as Row
@@ -218,7 +322,7 @@ async function publish(admin: any, contribution: Row) {
 }
 
 function isPFQSNutrient(value: string): value is PFQSNutrientCode { return ['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'trans_fat_g', 'protein_g'].includes(value) }
-async function addEvent(admin: any, id: string, from: string, to: string, reason: string, reviewer: Reviewer) { const result = await admin.from('catalog_contribution_events').insert({ contribution_id: id, actor_type: 'admin', from_status: from, to_status: to, reason, metadata: { reviewer_id: reviewer.user_id, reviewer_email: reviewer.email, auth_kind: reviewer.kind } }); if (result.error) throw result.error }
+async function addEvent(admin: any, id: string, from: string, to: string, reason: string, reviewer: Reviewer, metadata: Row = {}) { const result = await admin.from('catalog_contribution_events').insert({ contribution_id: id, actor_type: 'admin', from_status: from, to_status: to, reason, metadata: { reviewer_id: reviewer.user_id, reviewer_email: reviewer.email, auth_kind: reviewer.kind, ...metadata } }); if (result.error) throw result.error }
 function requireID(value: unknown, name: string) { const id = String(value ?? ''); if (!id) throw new Error(`A ${name} identifier is required.`); return id }
 function safeFilter(value: unknown) { return String(value).replace(/[,%()]/g, ' ').trim() }
 
