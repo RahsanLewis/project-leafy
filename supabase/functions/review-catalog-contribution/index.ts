@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { calculateAndPersistPFQS } from "../_shared/pfqs/persistence.ts";
 import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
+import { PFQS_INGREDIENT_DATABASE_VERSION } from "../_shared/pfqs/types.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
 import { nutrientUnits as sharedNutrientUnits } from "../_shared/nutrients.ts";
 
@@ -75,7 +76,7 @@ Deno.serve(async (request) => {
         "accepted",
         "rejected",
       ];
-      const [statusResults, catalog] = await Promise.all([
+      const [statusResults, catalog, ingredients] = await Promise.all([
         Promise.all(
           statuses.map((status) =>
             admin.from("catalog_contributions").select("id", {
@@ -86,9 +87,12 @@ Deno.serve(async (request) => {
         ),
         admin.from("food_versions").select("id", { count: "exact", head: true })
           .is("superseded_at", null).neq("verification_status", "rejected"),
+        admin.from("pfqs_ingredients").select("canonical_id", { count: "exact", head: true })
+          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION),
       ]);
       for (const result of statusResults) if (result.error) throw result.error;
       if (catalog.error) throw catalog.error;
+      if (ingredients.error) throw ingredients.error;
       const contributions = Object.fromEntries(
         statuses.map((
           status,
@@ -99,6 +103,7 @@ Deno.serve(async (request) => {
         pending: contributions.pending_review,
         contributions,
         catalog: catalog.count ?? 0,
+        ingredients: ingredients.count ?? 0,
         additives: additiveRegistry.length,
       });
     }
@@ -235,6 +240,80 @@ Deno.serve(async (request) => {
         ].some((value) => value.toLowerCase().includes(term))
       ).slice(0, 100);
       return respond({ additives });
+    }
+
+    if (action === "search_ingredients") {
+      const term = String(body.query ?? "").trim();
+      const limit = Math.min(Math.max(Number(body.limit ?? 100), 1), 100);
+      let ingredientQuery = admin.from("pfqs_ingredients").select("*")
+        .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+        .order("canonical_name").limit(limit);
+      if (term) {
+        const pattern = `%${safeFilter(term)}%`;
+        const aliasMatches = await admin.from("pfqs_ingredient_aliases").select("canonical_id")
+          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+          .ilike("normalized_alias", pattern).limit(200);
+        if (aliasMatches.error) throw aliasMatches.error;
+        const directMatches = await admin.from("pfqs_ingredients").select("canonical_id")
+          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+          .or(`canonical_name.ilike.${pattern},category.ilike.${pattern},family_id.ilike.${pattern}`)
+          .limit(200);
+        if (directMatches.error) throw directMatches.error;
+        const ids = [...new Set([...(aliasMatches.data ?? []), ...(directMatches.data ?? [])].map((row: Row) => row.canonical_id))];
+        if (!ids.length) return respond({ ingredients: [] });
+        ingredientQuery = admin.from("pfqs_ingredients").select("*")
+          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+          .in("canonical_id", ids).order("canonical_name").limit(limit);
+      }
+      const ingredientRows = await ingredientQuery;
+      if (ingredientRows.error) throw ingredientRows.error;
+      const ids = (ingredientRows.data ?? []).map((row: Row) => row.canonical_id);
+      const counts = new Map<string, Set<string>>();
+      if (ids.length) {
+        const occurrences = await admin.from("pfqs_food_ingredient_occurrences")
+          .select("canonical_id,food_version_id")
+          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION).in("canonical_id", ids);
+        if (occurrences.error) throw occurrences.error;
+        for (const row of occurrences.data ?? []) {
+          if (!counts.has(row.canonical_id)) counts.set(row.canonical_id, new Set());
+          counts.get(row.canonical_id)!.add(row.food_version_id);
+        }
+      }
+      return respond({ ingredients: (ingredientRows.data ?? []).map((row: Row) => ({
+        ...row,
+        product_count: counts.get(row.canonical_id)?.size ?? 0,
+      })) });
+    }
+
+    if (action === "ingredient_detail") {
+      const canonicalID = String(body.canonical_id ?? "");
+      const ingredient = await admin.from("pfqs_ingredients").select("*")
+        .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+        .eq("canonical_id", canonicalID).single();
+      if (ingredient.error) throw ingredient.error;
+      const [aliases, occurrences] = await Promise.all([
+        admin.from("pfqs_ingredient_aliases").select("alias").eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION).eq("canonical_id", canonicalID).order("alias"),
+        admin.from("pfqs_food_ingredient_occurrences").select("food_version_id,raw_text,ingredient_path").eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION).eq("canonical_id", canonicalID).limit(100),
+      ]);
+      if (aliases.error) throw aliases.error;
+      if (occurrences.error) throw occurrences.error;
+      const foodIDs = [...new Set((occurrences.data ?? []).map((row: Row) => row.food_version_id))];
+      let products: Row[] = [];
+      if (foodIDs.length) {
+        const foods = await admin.from("food_versions").select("id,description,brand_name,gtin")
+          .in("id", foodIDs).is("superseded_at", null).limit(100);
+        if (foods.error) throw foods.error;
+        products = foods.data ?? [];
+      }
+      const concern = ingredient.data.risk_canonical_id
+        ? additiveRegistry.find((item) => item.canonical_id === ingredient.data.risk_canonical_id) ?? null
+        : null;
+      return respond({ ingredient: {
+        ...ingredient.data,
+        aliases: (aliases.data ?? []).map((row: Row) => row.alias),
+        products,
+        concern,
+      } });
     }
 
     if (action === "additive_detail") {

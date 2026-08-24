@@ -151,7 +151,6 @@ struct ProductDiscoveryView: View {
                         Capsule().fill(.secondary.opacity(0.1)).frame(width: 130, height: 12)
                     }
                     Spacer()
-                    Circle().fill(.secondary.opacity(0.1)).frame(width: 38, height: 38)
                 }
                 .frame(minHeight: 64)
             }
@@ -167,13 +166,12 @@ struct ProductDiscoveryView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(product.name.capitalized)
                             .font(LeafyTypography.headline).foregroundStyle(.primary).lineLimit(2)
-                        Text(productMetadata(product))
-                            .font(LeafyTypography.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        if let brand = product.brand?.trimmingCharacters(in: .whitespacesAndNewlines), !brand.isEmpty {
+                            Text(brand)
+                                .font(LeafyTypography.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
                     Spacer(minLength: LeafySpacing.compact)
-                    if let score = product.score, score.isAvailable {
-                        scoreView(score.score)
-                    }
                     Image(systemName: "chevron.right").font(LeafyTypography.caption).foregroundStyle(.tertiary)
                 }
                 .frame(minHeight: 68)
@@ -182,20 +180,6 @@ struct ProductDiscoveryView: View {
             .buttonStyle(.plain)
             if index < products.count - 1 { Divider().overlay(LeafyTheme.hairline) }
         }
-    }
-
-    private func scoreView(_ score: Int?) -> some View {
-        VStack(spacing: 1) {
-            Text(score.map(String.init) ?? "—")
-                .font(LeafyTypography.headline)
-                .foregroundStyle(score.map(scoreColor) ?? .secondary)
-            Text("Leafy Score")
-                .font(LeafyTypography.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(width: 46)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(score.map { "Leafy Score \($0) out of 100" } ?? "Leafy Score unavailable")
     }
 
     private var emptySearchState: some View {
@@ -276,15 +260,6 @@ struct ProductDiscoveryView: View {
             unknownBarcode = nil
         }
     }
-
-    private func productMetadata(_ product: ProductSummary) -> String {
-        var parts = [product.brand].compactMap { $0 }
-        if let serving = product.servingSize { parts.append("\(serving.formatted()) \(product.servingUnit ?? "g")") }
-        if let calories = product.caloriesPer100G { parts.append("\(Int(calories.rounded())) Cal / 100 g") }
-        return parts.joined(separator: " • ")
-    }
-
-    private func scoreColor(_ score: Int) -> Color { score >= 60 ? LeafyTheme.green : score >= 40 ? .orange : .red }
 
     private func completeLog() {
         detail = nil; showingContribution = false; hasUnsavedDraft = false

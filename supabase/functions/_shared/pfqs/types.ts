@@ -1,6 +1,7 @@
 export const PFQS_MODEL_VERSION = 'PFQS-1.0'
 export const PFQS_TAXONOMY_VERSION = 'PFQS-TAXONOMY-1.0'
 export const PFQS_ADDITIVE_DATABASE_VERSION = 'PFQS-ADDITIVES-2026-08-13'
+export const PFQS_INGREDIENT_DATABASE_VERSION = 'PFQS-INGREDIENTS-2026-08-24'
 
 export type PFQSNutrientCode =
   | 'energy_kcal'
@@ -87,14 +88,35 @@ export type PFQSAdditiveResult = {
   sources?: { organization: string; document: string; url?: string | null }[]
 }
 
+export type PFQSIngredientResult = {
+  canonical_id: string
+  canonical_name: string
+  raw: string
+  position: number
+  depth: number
+  parent_canonical_id: string | null
+  percentage: number | null
+  ingredient_path: string
+  quality_class: 'A' | 'B' | 'C' | 'D' | 'E' | null
+  quality_coefficient: number | null
+  beneficial: boolean
+  classification_confidence: number | null
+  classification_source: 'curated' | 'ai' | 'human_review' | null
+  review_status: 'reviewed' | 'classified' | 'unclassified'
+  risk_canonical_id: string | null
+}
+
 export type PFQSResult = {
   score: number | null
   rating: string | null
   score_status: 'complete' | 'incomplete' | 'ineligible'
   base_score: number | null
   additive_penalty: number
+  ingredient_concern_penalty: number
   components: Record<string, PFQSComponent>
   additives: PFQSAdditiveResult[]
+  ingredient_concerns: PFQSAdditiveResult[]
+  ingredients: PFQSIngredientResult[]
   flags: {
     tier_4_additive_present: boolean
     score_ceiling_applied: boolean
@@ -110,6 +132,7 @@ export type PFQSResult = {
   model_version: string
   ingredient_taxonomy_version: string
   additive_database_version: string
+  ingredient_database_version: string
   jurisdiction: string
   assessment_date: string
 }

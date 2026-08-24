@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 
-type Tab = "queue" | "foods" | "additives";
+type Tab = "queue" | "foods" | "ingredients";
 type Row = Record<string, any>;
 type RuntimeConfig = { supabaseUrl: string; supabaseAnonKey: string; adminApiUrl: string };
 type QueueFilter = "active" | "pending_review" | "needs_review" | "processing" | "draft" | "accepted" | "rejected";
@@ -59,10 +59,10 @@ export default function Home() {
     try {
       const [counts, result] = await Promise.all([
         api({ action: "summary" }),
-        tab === "queue" ? api({ action: "list", statuses: queueFilter === "active" ? ["pending_review", "needs_review", "processing", "draft"] : [queueFilter], query: search }) : tab === "foods" ? api({ action: "search_foods", query: search }) : api({ action: "search_additives", query: search }),
+        tab === "queue" ? api({ action: "list", statuses: queueFilter === "active" ? ["pending_review", "needs_review", "processing", "draft"] : [queueFilter], query: search }) : tab === "foods" ? api({ action: "search_foods", query: search }) : api({ action: "search_ingredients", query: search }),
       ]);
       setSummary(counts);
-      setRows(result.contributions ?? result.foods ?? result.additives ?? []);
+      setRows(result.contributions ?? result.foods ?? result.ingredients ?? []);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load data."); }
     finally { setLoading(false); }
   }, [api, tab, queueFilter]);
@@ -80,8 +80,8 @@ export default function Home() {
         const foodVersionID = row.food_version_id ?? (await api({ action: "import_usda", fdc_id: row.fdc_id })).food_version_id;
         result = await api({ action: "food_detail", food_version_id: foodVersionID });
         await refresh(query);
-      } else result = await api({ action: "additive_detail", canonical_id: row.canonical_id });
-      setSelected(result.contribution ?? result.food ?? result.additive ?? null);
+      } else result = await api({ action: "ingredient_detail", canonical_id: row.canonical_id });
+      setSelected(result.contribution ?? result.food ?? result.ingredient ?? null);
       if (result.food) setSelected({ ...result.food, nutrients: result.nutrients, portions: result.portions, pfqs: result.pfqs });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load details."); }
     finally { setLoading(false); }
@@ -127,14 +127,14 @@ export default function Home() {
         <nav>
           <button className={tab === "queue" ? "active" : ""} onClick={() => setTab("queue")}>Product activity <span>{activeContributionCount(summary)}</span></button>
           <button className={tab === "foods" ? "active" : ""} onClick={() => setTab("foods")}>Food catalog <span>{summary.catalog ?? "—"}</span></button>
-          <button className={tab === "additives" ? "active" : ""} onClick={() => setTab("additives")}>Additives <span>{summary.additives ?? "—"}</span></button>
+          <button className={tab === "ingredients" ? "active" : ""} onClick={() => setTab("ingredients")}>Ingredients <span>{summary.ingredients ?? "—"}</span></button>
         </nav>
         <button className="signout" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </aside>
       <section className="workspace">
-        <header><div><p className="eyebrow">Leafy operations</p><h1>{tab === "queue" ? "Product activity" : tab === "foods" ? "Food catalog" : "PFQS additive registry"}</h1><p>{tab === "queue" ? "Track every community submission from draft through approval." : tab === "foods" ? "Browse Leafy records or search USDA FoodData Central and import a verified source." : "Search the exact versioned registry used by the PFQS scorer."}</p></div></header>
+        <header><div><p className="eyebrow">Leafy operations</p><h1>{tab === "queue" ? "Product activity" : tab === "foods" ? "Food catalog" : "Ingredient catalog"}</h1><p>{tab === "queue" ? "Track every community submission from draft through approval." : tab === "foods" ? "Browse Leafy records or search USDA FoodData Central and import a verified source." : "Search every ingredient Leafy has observed, its aliases, product usage, classification, and reviewed concerns."}</p></div></header>
         {tab === "queue" && <div className="filters">{queueFilters.map((filter) => <button key={filter.value} className={queueFilter === filter.value ? "active" : ""} onClick={() => setQueueFilter(filter.value)}>{filter.label}<span>{filter.value === "active" ? activeContributionCount(summary) : summary.contributions?.[filter.value] ?? 0}</span></button>)}</div>}
-        <form className="search" onSubmit={(event) => { event.preventDefault(); void refresh(query); }}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "additives" ? "Name, alias, E-number, family, or tier" : tab === "foods" ? "Search Leafy and USDA by name, brand, or barcode" : "Name, brand, or barcode"}/><button>Search</button></form>
+        <form className="search" onSubmit={(event) => { event.preventDefault(); void refresh(query); }}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "ingredients" ? "Ingredient name, alias, category, or family" : tab === "foods" ? "Search Leafy and USDA by name, brand, or barcode" : "Name, brand, or barcode"}/><button>Search</button></form>
         {error && <div className="error">{error}</div>}
         <div className="content">
           <div className="list">
@@ -158,14 +158,14 @@ function SignIn({ supabase }: { supabase: ReturnType<typeof createClient> }) {
 
 function ResultRow({ row, tab, active, onClick }: { row: Row; tab: Tab; active: boolean; onClick: () => void }) {
   const title = tab === "queue" ? row.confirmed_fields?.product_name || `Barcode ${row.gtin}` : tab === "foods" ? row.description : row.canonical_name;
-  const subtitle = tab === "queue" ? `${row.confirmed_fields?.brand_name || "Brand not shown"} · ${date(row.last_submitted_at || row.updated_at || row.created_at)}` : tab === "foods" ? `${row.brand_name || "No brand"} · ${row.gtin || row.market_country || "No barcode"}` : `${row.family || "Uncategorized"} · ${maxTier(row)} tier`;
+  const subtitle = tab === "queue" ? `${row.confirmed_fields?.brand_name || "Brand not shown"} · ${date(row.last_submitted_at || row.updated_at || row.created_at)}` : tab === "foods" ? `${row.brand_name || "No brand"} · ${row.gtin || row.market_country || "No barcode"}` : `${titleCase(row.review_status || "unclassified")} · ${row.product_count ?? 0} products`;
   return <button className={`result ${active ? "selected" : ""}`} onClick={onClick}><div><b>{title}</b><small>{subtitle}</small>{tab === "queue" && <em className={`status ${row.status}`}>{statusLabel(row.status)}</em>}{tab === "foods" && <em className={`status ${row.source_kind}`}>{row.source_kind === "usda" ? "USDA · import to inspect" : row.source || "Leafy catalog"}</em>}</div><span>›</span></button>;
 }
 
 function Detail({ tab, data, reason, setReason, moderate, saveReview, loading }: { tab: Tab; data: Row; reason: string; setReason: (value: string) => void; moderate: (action: any, payload?: Row) => void; saveReview: (fields: Row, nutrients: Row[]) => void; loading: boolean }) {
   if (tab === "queue") return <ReviewDetail key={`${data.id}:${data.revision}:${data.status}`} data={data} reason={reason} setReason={setReason} moderate={moderate} saveReview={saveReview} loading={loading}/>;
   if (tab === "foods") return <FoodDetail data={data}/>;
-  return <AdditiveDetail data={data}/>;
+  return <IngredientDetail data={data}/>;
 }
 
 function ReviewDetail({ data, reason, setReason, moderate, saveReview, loading }: any) {
@@ -203,12 +203,12 @@ function servingLabel(fields: Row) { const household = fields.serving_amount && 
 
 function FoodDetail({ data }: { data: Row }) { return <article><p className="eyebrow">Active catalog record</p><h2>{data.description}</h2><p>{data.brand_name || "No brand"} · {data.gtin || "No barcode"}</p><section><h3>Identity & provenance</h3><dl><Field label="Canonical name" value={data.foods?.canonical_name}/><Field label="Source" value={`${data.source_system} · ${data.source_data_type || "record"}`}/><Field label="Verification" value={data.verification_status}/><Field label="Market" value={data.market_country}/></dl></section><section><h3>Portions</h3>{data.portions?.map((portion: Row) => <div className="event" key={portion.id}><span>{portion.amount} {portion.unit} · {portion.description}</span><b>{portion.gram_weight} g</b></div>)}</section><section><h3>Nutrients per 100 g</h3><div className="nutrients">{data.nutrients?.map((item: Row) => <div key={item.nutrient_code}><span>{item.nutrient_definitions?.name || item.nutrient_code}</span><b>{Number(item.amount_per_100g).toFixed(2)} {item.nutrient_definitions?.unit}</b></div>)}</div></section><section><h3>Ingredients</h3><p className="bodycopy">{data.ingredients_text || "No ingredients recorded."}</p></section>{data.pfqs && <section><h3>PFQS</h3><div className="score"><strong>{data.pfqs.score_100 ?? "—"}</strong><span>{data.pfqs.rating || data.pfqs.score_status}<small>{data.pfqs.model_version}</small></span></div></section>}</article>; }
 
-function AdditiveDetail({ data }: { data: Row }) { return <article><p className="eyebrow">Current PFQS registry</p><h2>{data.canonical_name}</h2><p>{data.family || "No family"} · {data.canonical_id}</p><section><h3>Classification</h3><dl><Field label="Aliases" value={data.aliases?.join(", ")}/><Field label="Evidence confidence" value={data.evidence?.confidence}/><Field label="Last reviewed" value={data.evidence?.last_reviewed}/></dl><p className="bodycopy">{data.evidence?.summary}</p></section><section><h3>Jurisdiction rules</h3>{data.jurisdiction_rules?.length ? data.jurisdiction_rules.map((rule: Row, index: number) => <div className="rule" key={index}><strong>Tier {rule.tier} · −{rule.penalty}</strong><span>{rule.jurisdiction} · {rule.start_date} → {rule.end_date || "current"}</span><p>{rule.reason}</p></div>) : <p className="bodycopy">Recognized with no PFQS penalty classification.</p>}</section><section><h3>Primary sources</h3>{data.sources?.length ? data.sources.map((source: Row) => <a className="source" href={source.url} target="_blank" rel="noreferrer" key={source.document}>{source.organization}: {source.document} ↗</a>) : <p className="bodycopy">No penalty source is required for this recognized Tier 0 entry.</p>}</section></article>; }
+function IngredientDetail({ data }: { data: Row }) { const concern = data.concern; return <article><p className="eyebrow">Unified ingredient catalog</p><h2>{data.canonical_name}</h2><p>{data.category || data.family_id || "Uncategorized"} · {titleCase(data.review_status || "unclassified")}</p><section><h3>Classification</h3><dl><Field label="Aliases" value={data.aliases?.join(", ")}/><Field label="Whole-food class" value={data.quality_class}/><Field label="Quality coefficient" value={data.quality_coefficient}/><Field label="Beneficial food" value={data.beneficial ? "Yes" : "No"}/><Field label="Confidence" value={data.classification_confidence}/><Field label="Source" value={data.classification_source}/></dl></section><section><h3>Found in products</h3>{data.products?.length ? data.products.map((product: Row) => <div className="event" key={product.id}><span>{product.description}</span><small>{product.brand_name || "No brand"} · {product.gtin || "No barcode"}</small></div>) : <p className="bodycopy">No current product occurrences.</p>}</section><section><h3>Reviewed concern</h3>{concern ? <><p className="bodycopy">{concern.evidence?.summary}</p>{concern.jurisdiction_rules?.map((rule: Row, index: number) => <div className="rule" key={index}><strong>Tier {rule.tier} · −{rule.penalty}</strong><span>{rule.jurisdiction} · {rule.start_date} → {rule.end_date || "current"}</span><p>{rule.reason}</p></div>)}</> : <p className="bodycopy">No evidence-based PFQS concern is classified for this ingredient. Being unfamiliar or processed does not create a penalty.</p>}</section></article>; }
 
 function Field({ label, value }: { label: string; value: any }) { return <div><dt>{label}</dt><dd>{value || "—"}</dd></div>; }
 function Empty({ tab }: { tab: Tab }) { return <div className="empty-list"><b>{tab === "queue" ? "No submissions here" : "No results"}</b><p>{tab === "queue" ? "Choose another status to inspect the rest of product activity." : "Try a broader search."}</p></div>; }
 function date(value: string) { return value ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Unknown date"; }
-function maxTier(row: Row) { return Math.max(0, ...(row.jurisdiction_rules || []).map((rule: Row) => rule.tier)); }
+function titleCase(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function activeContributionCount(summary: Row) { const values = summary.contributions ?? {}; return ["pending_review", "needs_review", "processing", "draft"].reduce((total, status) => total + Number(values[status] ?? 0), 0) || "—"; }
 function statusLabel(status: string) { return ({ pending_review: "Ready for review", needs_review: "Needs photos", processing: "Processing", draft: "Draft", accepted: "Approved", rejected: "Rejected" } as Row)[status] ?? status?.replaceAll("_", " ") ?? "Unknown"; }
 function statusDescription(status: string, reason?: string) { if (reason) return reason; return ({ needs_review: "Leafy needs clearer package photos before this submission can be verified.", processing: "Leafy is reading the package and checking its product information.", draft: "The contributor started this submission but has not sent it for processing.", accepted: "This submission has been approved and published to the Leafy catalog.", rejected: "This submission was not published." } as Row)[status] ?? "This record is available for inspection."; }

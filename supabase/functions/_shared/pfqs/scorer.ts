@@ -1,5 +1,5 @@
 import {
-  PFQS_ADDITIVE_DATABASE_VERSION, PFQS_MODEL_VERSION, PFQS_TAXONOMY_VERSION,
+  PFQS_ADDITIVE_DATABASE_VERSION, PFQS_INGREDIENT_DATABASE_VERSION, PFQS_MODEL_VERSION, PFQS_TAXONOMY_VERSION,
   type ClassifiedIngredient, type PFQSComponent, type PFQSInput, type PFQSNutrientCode, type PFQSResult,
 } from './types.ts'
 import {
@@ -9,6 +9,7 @@ import {
 import { parseIngredients } from './ingredient-parser.ts'
 import { classifyTopLevelIngredients } from './ingredient-taxonomy.ts'
 import { detectAdditives } from './additive-registry.ts'
+import { buildIngredientCatalog } from './ingredient-catalog.ts'
 
 export function scoreAddedSugar(value: number) {
   if (value === 0) return 20
@@ -134,6 +135,7 @@ export function calculatePFQS(input: PFQSInput): PFQSResult {
   }
   const baseScore = Object.values(componentValues).reduce((total, item) => total + item.score, 0)
   const additives = detectAdditives(parsed, input.jurisdiction, input.assessment_date)
+  const ingredients = buildIngredientCatalog(parsed, classification.classified, additives)
   const additivePenalty = calculateAdditivePenalty(additives)
   const tier4 = additives.some((item) => item.tier === 4)
   const preliminary = baseScore - additivePenalty
@@ -143,12 +145,13 @@ export function calculatePFQS(input: PFQSInput): PFQSResult {
   return {
     ...emptyResult,
     score, rating: rating(score), score_status: 'complete', base_score: baseScore,
-    additive_penalty: additivePenalty, components: componentValues, additives,
+    additive_penalty: additivePenalty, ingredient_concern_penalty: additivePenalty,
+    components: componentValues, additives, ingredient_concerns: additives, ingredients,
     flags: { tier_4_additive_present: tier4, score_ceiling_applied: tier4 && preliminary > 50, regulatory_flag: tier4 },
     strengths, weaknesses,
     explanation: [
       `Base food-quality score: ${baseScore}.`,
-      additivePenalty ? `Evidence-based additive adjustment: −${additivePenalty}.` : 'No additive-risk deduction was applied.',
+      additivePenalty ? `Evidence-based ingredient concern adjustment: −${additivePenalty}.` : 'No ingredient-concern deduction was applied.',
       `Final PFQS: ${score}/100 — ${rating(score)}.`,
     ],
     missing_fields: [], unavailable_reasons: [], classified_ingredients: classification.classified,
@@ -170,12 +173,15 @@ export function calculateAdditivePenalty(additives: PFQSResult['additives']) {
 }
 
 function baseResult(input: PFQSInput, parsed: ReturnType<typeof parseIngredients>): PFQSResult {
+  const ingredients = buildIngredientCatalog(parsed, [], [])
   return {
     score: null, rating: null, score_status: 'incomplete', base_score: null, additive_penalty: 0,
-    components: {}, additives: [], flags: { tier_4_additive_present: false, score_ceiling_applied: false, regulatory_flag: false },
+    ingredient_concern_penalty: 0, components: {}, additives: [], ingredient_concerns: [], ingredients,
+    flags: { tier_4_additive_present: false, score_ceiling_applied: false, regulatory_flag: false },
     strengths: [], weaknesses: [], explanation: [], missing_fields: [], unavailable_reasons: [],
     parsed_ingredients: parsed, classified_ingredients: [], model_version: PFQS_MODEL_VERSION,
     ingredient_taxonomy_version: PFQS_TAXONOMY_VERSION, additive_database_version: PFQS_ADDITIVE_DATABASE_VERSION,
+    ingredient_database_version: PFQS_INGREDIENT_DATABASE_VERSION,
     jurisdiction: input.jurisdiction, assessment_date: input.assessment_date,
   }
 }

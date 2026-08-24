@@ -333,7 +333,7 @@ struct ProductDetailView: View {
                         Text(score.baseScore.map(String.init) ?? "—")
                     }
                     HStack {
-                        Text("Additive adjustment")
+                        Text("Ingredient concern adjustment")
                         Spacer()
                         Text(score.additivePenalty == 0 ? "0" : "−\(score.additivePenalty)")
                     }
