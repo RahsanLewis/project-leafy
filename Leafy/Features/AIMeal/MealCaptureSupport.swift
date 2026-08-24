@@ -29,7 +29,7 @@ struct MealCameraPicker: UIViewControllerRepresentable {
 }
 
 extension UIImage {
-    func leafyMealJPEG(maxDimension: CGFloat = 2048, maxBytes: Int = 4 * 1024 * 1024) -> Data? {
+    func leafyMealJPEG(maxDimension: CGFloat = 3072, maxBytes: Int = 8 * 1024 * 1024) -> Data? {
         let scale = min(1, maxDimension / max(size.width, size.height))
         let target = CGSize(width: max(1, size.width * scale), height: max(1, size.height * scale))
         let format = UIGraphicsImageRendererFormat()
@@ -40,7 +40,7 @@ extension UIImage {
             UIRectFill(CGRect(origin: .zero, size: target))
             draw(in: CGRect(origin: .zero, size: target))
         }
-        for quality in [0.82, 0.7, 0.58, 0.45] {
+        for quality in [0.92, 0.85, 0.75, 0.65, 0.55] {
             if let data = normalized.jpegData(compressionQuality: quality), data.count <= maxBytes { return data }
         }
         return nil
