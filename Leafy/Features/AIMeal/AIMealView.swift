@@ -290,16 +290,6 @@ struct AIMealView: View {
         }
     }
 
-    private func foodResultSection(_ title: String, products: [ProductSummary]) -> some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.small) {
-            Text(title.uppercased())
-                .font(LeafyTypography.captionSemibold)
-                .foregroundStyle(.secondary)
-                .tracking(0.6)
-            foodResultRows(products)
-        }
-    }
-
     private func foodResultRows(_ products: [ProductSummary]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(products.prefix(8).enumerated()), id: \.element.id) { index, product in
@@ -533,19 +523,6 @@ struct AIMealView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(LeafyTheme.green)
-    }
-
-    private var mealDetails: some View {
-        VStack(spacing: 0) {
-            Picker("Meal", selection: $mealType) {
-                ForEach(MealType.allCases) { type in Text(type.label).tag(type) }
-            }
-            .frame(minHeight: LeafyTheme.rowMinHeight)
-            Divider()
-            DatePicker("Date and time", selection: $mealDate, in: ...Date.now)
-                .frame(minHeight: LeafyTheme.rowMinHeight)
-        }
-        .overlay(alignment: .bottom) { Divider().overlay(LeafyTheme.hairline) }
     }
 
     @ViewBuilder private func review(_ estimate: MealEstimate) -> some View {

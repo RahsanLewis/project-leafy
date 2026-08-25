@@ -3,9 +3,8 @@ import GoogleSignIn
 import Observation
 
 @MainActor @Observable
-final class AppModel {
+final class AppCoordinator {
     enum Route: Equatable { case launching, onboarding, dashboard }
-    enum AuthenticationPurpose: Equatable { case savePlan, accessExistingAccount }
     enum SaveState: Equatable { case idle, creatingAccount, awaitingConfirmation, resendingConfirmation, authenticating, saving, deleting }
     enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
     private enum MorningCheckInLoggingHandoff { case idle, awaitingLogger, logging }
@@ -30,7 +29,6 @@ final class AppModel {
     var isDailyLoading = false
     var isFoodMutationInProgress = false
     var productSearchResults: [ProductSummary] = []
-    var recentLoggingFoods: [ProductSummary] = []
     var productHistory: [ProductSummary] = []
     var isProductLoading = false
     var productErrorMessage: String?
@@ -59,7 +57,6 @@ final class AppModel {
     var weightErrorMessage: String?
     var weightErrorTitle = "We couldn’t update your weight"
     var weightStatusMessage: String?
-    var weightNutritionContext: WeightNutritionContext?
     var lastWeightOutcome: WeightMutationOutcome?
     var dailyErrorMessage: String?
     var errorMessage: String?
@@ -69,7 +66,6 @@ final class AppModel {
     var password = ""
     var passwordConfirmation = ""
     var showAuthentication = false
-    var authenticationPurpose: AuthenticationPurpose = .savePlan
     var isAuthenticated = false
     var account: LeafyAccount?
     var termsAccepted = false
@@ -158,8 +154,7 @@ final class AppModel {
         }
     }
 
-    func presentAuthentication(_ purpose: AuthenticationPurpose) {
-        authenticationPurpose = purpose
+    func presentAuthentication() {
         errorMessage = nil
         statusMessage = nil
         saveState = .idle
@@ -212,14 +207,6 @@ final class AppModel {
         await perform(.authenticating) {
             let accessToken = try await service.signIn(email: normalizedEmail, password: password)
             try await saveAuthenticatedDraft(accessToken: accessToken, recordLegalAcceptance: true)
-        }
-    }
-
-    func signInAndSave() async {
-        guard validateCredentials(confirmPassword: false) else { return }
-        await perform(.authenticating) {
-            let accessToken = try await service.signIn(email: normalizedEmail, password: password)
-            try await saveAuthenticatedDraft(accessToken: accessToken)
         }
     }
 
@@ -392,7 +379,7 @@ final class AppModel {
             dailyErrorMessage = userFacingMessage(for: error)
             if case PlanService.ServiceError.notAuthenticated = error {
                 isAuthenticated = false
-                presentAuthentication(.accessExistingAccount)
+                presentAuthentication()
             }
             isFoodMutationInProgress = false
             return false
@@ -552,12 +539,6 @@ final class AppModel {
     func loadProductHistory() async {
         guard isAuthenticated else { return }
         do { productHistory = try await service.fetchProductHistory() }
-        catch { productErrorMessage = userFacingMessage(for: error) }
-    }
-
-    func loadRecentLoggingFoods() async {
-        guard isAuthenticated else { return }
-        do { recentLoggingFoods = try await service.fetchRecentLoggingFoods() }
         catch { productErrorMessage = userFacingMessage(for: error) }
     }
 
@@ -838,19 +819,6 @@ final class AppModel {
         }
     }
 
-    func updateChatMealItem(messageID: UUID, itemID: UUID, name: String, portion: String, calories: Int) {
-        guard let messageIndex = chatMessages.firstIndex(where: { $0.id == messageID }),
-              let itemIndex = chatMessages[messageIndex].mealSuggestion?.items.firstIndex(where: { $0.id == itemID }) else { return }
-        chatMessages[messageIndex].mealSuggestion?.items[itemIndex].name = name
-        chatMessages[messageIndex].mealSuggestion?.items[itemIndex].portion = portion
-        chatMessages[messageIndex].mealSuggestion?.items[itemIndex].calories = calories
-    }
-
-    func removeChatMealItem(messageID: UUID, itemID: UUID) {
-        guard let index = chatMessages.firstIndex(where: { $0.id == messageID }) else { return }
-        chatMessages[index].mealSuggestion?.items.removeAll { $0.id == itemID }
-    }
-
     func chatMealReviewDraft(messageID: UUID, consumedAt: Date = .now) -> ChatMealReviewDraft? {
         guard let suggestion = chatMessages.first(where: { $0.id == messageID })?.mealSuggestion,
               suggestion.status == .ready else { return nil }
@@ -1060,11 +1028,8 @@ final class AppModel {
         weightErrorTitle = "We couldn’t load your weight history"
         weightErrorMessage = nil
         do {
-            async let loadedEntries = service.fetchWeightEntries()
-            async let loadedContext = service.fetchWeightNutritionContext()
-            let entries = try await loadedEntries
+            let entries = try await service.fetchWeightEntries()
             weightEntries = entries.sorted { $0.recordedOn > $1.recordedOn }
-            weightNutritionContext = try? await loadedContext
         } catch {
             weightErrorMessage = userFacingMessage(for: error)
         }
@@ -1299,7 +1264,7 @@ final class AppModel {
             showPasswordRecovery = false
             statusMessage = "Password updated. Sign in again on this device."
             resetToOnboarding()
-            presentAuthentication(.accessExistingAccount)
+            presentAuthentication()
             return true
         } catch { errorMessage = userFacingMessage(for: error); return false }
     }
@@ -1467,132 +1432,4 @@ final class AppModel {
         return true
     }
 
-    private func configureCICOPreview() {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
-        let userID = UUID()
-        let plan = NutritionPlan(
-            id: UUID(), revision: 2, calculatorVersion: "msj-amdr-v1",
-            bmrKcal: 1_650, tdeeKcal: 2_250, calorieTargetKcal: 1_850,
-            proteinG: 127, carbohydrateG: 208, fatG: 57,
-            projectedWeeklyChangeKG: 0.36, estimatedGoalDate: nil, createdAt: .now
-        )
-        let breakfast = FoodEntry(
-            id: UUID(), userID: userID, name: "Greek yogurt and berries", calories: 310,
-            consumedAt: calendar.date(bySettingHour: 8, minute: 15, second: 0, of: yesterday) ?? yesterday,
-            localDate: PlanService.localDayString(for: yesterday), timeZone: calendar.timeZone.identifier,
-            createdAt: .now, updatedAt: .now
-        )
-        let dinner = FoodEntry(
-            id: UUID(), userID: userID, name: "Chicken rice bowl", calories: 720,
-            consumedAt: calendar.date(bySettingHour: 18, minute: 30, second: 0, of: yesterday) ?? yesterday,
-            localDate: PlanService.localDayString(for: yesterday), timeZone: calendar.timeZone.identifier,
-            createdAt: .now, updatedAt: .now
-        )
-        currentPlan = plan
-        dailyPlan = plan
-        let previewWeightCount = ProcessInfo.processInfo.arguments.contains("-SixWeightReadings") ? 6 : 8
-        weightEntries = (0..<previewWeightCount).map { offset in
-            WeightEntry(
-                id: UUID(),
-                userID: userID,
-                weightKG: 84.0 + Double(offset) * 0.08,
-                recordedOn: calendar.date(byAdding: .day, value: -offset, to: today) ?? today,
-                timeZone: calendar.timeZone.identifier,
-                source: offset == previewWeightCount - 1 ? .baseline : .manual,
-                planID: plan.id,
-                createdAt: .now,
-                updatedAt: .now
-            )
-        }
-        weightNutritionContext = WeightNutritionContext(
-            available: true,
-            confirmedDayCount: 7,
-            elevatedNutrients: []
-        )
-        selectedLogDate = today
-        route = .dashboard
-        isAuthenticated = true
-        foodEntries = []
-        dailyNutrition = Self.previewDailyNutrition(plan: plan)
-        let previewCheckInEntries = ProcessInfo.processInfo.arguments.contains("-EmptyMorningCheckIn")
-            ? []
-            : [breakfast, dinner]
-        morningCheckIn = MorningCheckIn(reviewDate: yesterday, entries: previewCheckInEntries, intakeDay: nil, todayWeight: nil)
-        hasMorningCheckInReminder = true
-        showMorningCheckIn = !ProcessInfo.processInfo.arguments.contains("-SkipMorningCheckIn")
-        if ProcessInfo.processInfo.arguments.contains("-PlanResultsPreview") {
-            preview = plan
-            draft.step = .results
-            route = .onboarding
-            showMorningCheckIn = false
-        }
-    }
-
-    private static func previewMealEstimate(sessionID: UUID, ready: Bool = false) -> MealEstimate {
-        MealEstimate(
-            sessionID: sessionID,
-            status: ready ? .ready : .needsClarification,
-            totalCalories: 610,
-            calorieLow: 500,
-            calorieHigh: 760,
-            confidence: 0.68,
-            assumptions: ["Chicken appears grilled", "Rice portion is about one cup"],
-            items: [
-                MealEstimateItem(
-                    id: UUID(uuidString: "D27DC6DA-CC10-4E55-9CC0-A017C9345521")!,
-                    name: "Grilled chicken", portion: "1 chicken breast", estimatedGrams: 170,
-                    calories: 280, calorieLow: 240, calorieHigh: 340, confidence: 0.82,
-                    assumptions: ["Skinless chicken breast"]
-                ),
-                MealEstimateItem(
-                    id: UUID(uuidString: "CC094E0B-3F24-4AD0-B641-47A244D14B38")!,
-                    name: "Rice and vegetables", portion: "About 1½ cups", estimatedGrams: 260,
-                    calories: 330, calorieLow: 260, calorieHigh: 420, confidence: 0.58,
-                    assumptions: ["One cup cooked rice", "Lightly oiled vegetables"]
-                ),
-            ],
-            followUp: ready ? nil : MealFollowUp(
-                id: UUID(uuidString: "47DC0199-6EBF-4B37-B7D9-AEC297A031DD")!, ordinal: 1,
-                question: "Was any oil, butter, or sauce added?"
-            )
-        )
-    }
-
-    private static func previewDailyNutrition(plan: NutritionPlan?) -> DailyNutritionSummary? {
-        guard let plan else { return nil }
-        let values: [(String, String, String, Double, Double?, NutrientTargetKind)] = [
-            ("protein_g", "Protein", "g", 54, Double(plan.proteinG), .goal),
-            ("carbohydrate_g", "Carbohydrate", "g", 82, Double(plan.carbohydrateG), .goal),
-            ("fat_g", "Fat", "g", 24, Double(plan.fatG), .goal),
-            ("fiber_g", "Dietary fiber", "g", 13, 28, .goal),
-            ("sodium_mg", "Sodium", "mg", 920, 2300, .limit),
-            ("vitamin_d_mcg", "Vitamin D", "mcg", 7, 20, .goal),
-            ("calcium_mg", "Calcium", "mg", 610, 1300, .goal),
-            ("iron_mg", "Iron", "mg", 8.2, 18, .goal),
-        ]
-        let nutrients = values.enumerated().map { index, value in
-            let nutrientClass: String = switch value.0 {
-            case "protein_g", "carbohydrate_g", "fat_g": "macro"
-            case "vitamin_d_mcg": "vitamin"
-            case "sodium_mg", "calcium_mg", "iron_mg": "mineral"
-            default: "other"
-            }
-            return DailyNutrient(
-                code: value.0, name: value.1, unit: value.2, nutrientClass: nutrientClass,
-                displayOrder: index, targetKind: value.5, amount: value.3, targetAmount: value.4,
-                percentOfTarget: value.4.map { value.3 / $0 }, coverage: 0.78,
-                estimatedAmount: value.3 * 0.35, verifiedAmount: value.3 * 0.65, confidence: 0.68
-            )
-        }
-        return DailyNutritionSummary(
-            localDate: PlanService.localDayString(for: .now), totalCalories: 0, macroCoverage: 0.78,
-            reference: NutrientReference(
-                code: "fda_adults_4_plus_2020", name: "FDA Daily Values",
-                population: "Adults and children age 4 and older",
-                sourceURL: URL(string: "https://www.fda.gov/food/nutrition-facts-label/daily-value-nutrition-and-supplement-facts-labels")!
-            ), nutrients: nutrients
-        )
-    }
 }

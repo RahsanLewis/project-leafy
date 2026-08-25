@@ -5,9 +5,8 @@ import {
   normalizeMealOutput, systemPrompt, userPrompt,
 } from '../_shared/meal-estimate.ts'
 import {
-  amountsPer100g, describedGrams, deterministicFoodKey, likelySingleReusableFood,
-  normalizeFoodQuery, nutritionFactsCore, nutrientsForPortion, resolverVersion,
-  gramsForRequestedServing, requestedServing, reusableEstimate,
+  amountsPer100g, deterministicFoodKey,
+  nutritionFactsCore, resolverVersion, reusableEstimate,
 } from '../_shared/food-resolution.ts'
 import { nutrientCodes } from '../_shared/nutrients.ts'
 
@@ -111,7 +110,6 @@ Deno.serve(async (request) => {
     }
 
     let session: Record<string, unknown>
-    let forceReady = false
     if (body.action === 'analyze') {
       session = await startSession(admin, user.id, body)
     } else if (body.action === 'answer') {
@@ -130,12 +128,11 @@ Deno.serve(async (request) => {
       // the meal materially ambiguous. `skip` remains supported for older app
       // versions, but we no longer force a guess after an arbitrary number of
       // follow-ups.
-      forceReady = Boolean(body.skip)
     } else {
       return json({ error: 'Unsupported meal estimate action.' }, 400)
     }
 
-    const result = await runAnalysis(admin, user.id, session, forceReady)
+    const result = await runAnalysis(admin, user.id, session)
     return json(result)
   } catch (error) {
     console.error('estimate-meal failed', error)
@@ -170,7 +167,7 @@ async function startSession(admin: any, userID: string, body: Body) {
 }
 
 // deno-lint-ignore no-explicit-any
-async function runAnalysis(admin: any, userID: string, sessionInput: Record<string, unknown>, forceReady: boolean) {
+async function runAnalysis(admin: any, userID: string, sessionInput: Record<string, unknown>) {
   const session = await ownedSession(admin, userID, String(sessionInput.id))
   const [{ data: answers, error: answerError }, { data: media, error: mediaError }] = await Promise.all([
     admin.from('ai_meal_follow_ups').select('question,answer,skipped').eq('session_id', session.id).not('answered_at', 'is', null).order('ordinal'),
@@ -201,7 +198,7 @@ async function runAnalysis(admin: any, userID: string, sessionInput: Record<stri
       tools: [{ type: 'web_search' }], tool_choice: 'required',
       include: ['web_search_call.action.sources'],
       input: [
-        { role: 'system', content: [{ type: 'input_text', text: systemPrompt(true, marketCountry) }] },
+        { role: 'system', content: [{ type: 'input_text', text: systemPrompt(marketCountry) }] },
         { role: 'user', content },
       ],
       text: { format: { type: 'json_schema', name: 'leafy_meal_estimate', strict: true, schema: mealEstimateSchema } },
@@ -412,141 +409,6 @@ function downgradeUngroundedEstimate(estimate: ReturnType<typeof normalizeMealOu
     calorie_high: items.reduce((sum, item) => sum + item.calorie_high, 0),
     confidence: Math.min(estimate.confidence, 0.55),
     assumptions: [...estimate.assumptions, 'Live sources were unavailable; review this estimate before logging.'].slice(0, 8),
-  }
-}
-
-const fdcNutrients: Record<number, string> = {
-  1008: 'energy_kcal', 1003: 'protein_g', 1005: 'carbohydrate_g', 1004: 'fat_g',
-  1079: 'fiber_g', 2000: 'sugars_g', 1235: 'added_sugars_g', 1258: 'saturated_fat_g',
-  1257: 'trans_fat_g', 1253: 'cholesterol_mg', 1093: 'sodium_mg', 1092: 'potassium_mg',
-  1087: 'calcium_mg', 1089: 'iron_mg', 1114: 'vitamin_d_mcg',
-}
-
-// deno-lint-ignore no-explicit-any
-async function resolveKnownFood(admin: any, description: string) {
-  const query = normalizeFoodQuery(description.split('\n')[0])
-  if (!query) return null
-  const { data: local, error } = await admin.rpc('search_unpacked_food_catalog', { p_query: query, p_limit: 3 })
-  if (error) throw error
-  const localRows = local ?? []
-  if (localRows.length && (Number(localRows[0].rank) === 1 || (
-    Number(localRows[0].rank) >= 0.90 && Number(localRows[0].rank) - Number(localRows[1]?.rank ?? 0) >= 0.05
-  ))) return estimateFromVersion(admin, String(localRows[0].food_version_id), description,
-    localRows[0].source_system === 'usda_fdc' ? 'usda' : 'leafy_catalog')
-
-  const match = await searchGenericUSDA(query)
-  if (!match) return null
-  const versionID = await importGenericUSDA(admin, Number(match.fdcId))
-  return estimateFromVersion(admin, versionID, description, 'usda')
-}
-
-async function searchGenericUSDA(query: string) {
-  const key = Deno.env.get('FDC_API_KEY') ?? 'DEMO_KEY'
-  const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(key)}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, dataType: ['Foundation', 'Survey (FNDDS)', 'SR Legacy'], pageSize: 5 }),
-  })
-  if (!response.ok) return null
-  const payload = await response.json()
-  const foods = Array.isArray(payload.foods) ? payload.foods : []
-  if (!foods.length) return null
-  const top = foods[0]
-  const topName = normalizeFoodQuery(String(top.description ?? ''))
-  const tokens = query.split(' ').filter((token) => token.length > 1)
-  return tokens.every((token) => topName.includes(token)) ? top : null
-}
-
-// deno-lint-ignore no-explicit-any
-async function importGenericUSDA(admin: any, fdcID: number) {
-  const existing = await admin.from('food_versions').select('id').eq('source_system', 'usda_fdc')
-    .eq('source_record_id', String(fdcID)).is('superseded_at', null).maybeSingle()
-  if (existing.error) throw existing.error
-  if (existing.data) return String(existing.data.id)
-  const key = Deno.env.get('FDC_API_KEY') ?? 'DEMO_KEY'
-  const response = await fetch(`https://api.nal.usda.gov/fdc/v1/food/${fdcID}?api_key=${encodeURIComponent(key)}`)
-  if (!response.ok) throw new Error('USDA could not return food details.')
-  const food = await response.json()
-  const name = String(food.description ?? '').trim()
-  const canonical = await admin.from('foods').insert({ canonical_name: name }).select('id').single()
-  if (canonical.error) throw canonical.error
-  const rawNutrients = (Array.isArray(food.foodNutrients) ? food.foodNutrients : []).flatMap((item: Record<string, unknown>) => {
-    const nutrient = item.nutrient as Record<string, unknown> | undefined
-    const code = fdcNutrients[Number(nutrient?.id ?? item.nutrientId)]
-    const amount = Number(item.amount ?? item.value)
-    return code && Number.isFinite(amount) && amount >= 0 ? [{ nutrient_code: code, amount_per_100g: amount }] : []
-  })
-  const coreComplete = nutritionFactsCore.every((code) => rawNutrients.some((item: { nutrient_code: string }) => item.nutrient_code === code))
-  const version = await admin.from('food_versions').insert({
-    food_id: canonical.data.id, source_system: 'usda_fdc', source_record_id: String(fdcID),
-    source_data_type: food.dataType, description: name, market_country: 'US',
-    verification_status: 'verified', source_updated_at: food.modifiedDate ?? null,
-    food_kind: /restaurant|sandwich|pizza|soup|salad|cooked|prepared/i.test(name) ? 'prepared' : 'generic',
-    resolution_confidence: 1, nutrition_core_complete: coreComplete, resolver_version: resolverVersion,
-    raw_source: food,
-  }).select('id').single()
-  if (version.error) {
-    const raced = await admin.from('food_versions').select('id').eq('source_system', 'usda_fdc')
-      .eq('source_record_id', String(fdcID)).is('superseded_at', null).single()
-    if (raced.error) throw version.error
-    return String(raced.data.id)
-  }
-  if (rawNutrients.length) {
-    const saved = await admin.from('food_version_nutrients').insert(rawNutrients.map((item: Record<string, unknown>) => ({
-      food_version_id: version.data.id, ...item,
-      derivation_method: food.dataType === 'Foundation' || food.dataType === 'SR Legacy' ? 'laboratory' : 'calculated',
-    })))
-    if (saved.error) throw saved.error
-  }
-  const portions = Array.isArray(food.foodPortions) ? food.foodPortions : []
-  for (const portion of portions.slice(0, 12)) {
-    const grams = Number(portion.gramWeight)
-    if (!Number.isFinite(grams) || grams <= 0) continue
-    await admin.from('food_portions').insert({
-      food_version_id: version.data.id, amount: Number(portion.amount ?? 1) || 1,
-      unit: String(portion.measureUnit?.name ?? portion.modifier ?? 'serving').slice(0, 80),
-      description: String(portion.portionDescription ?? portion.modifier ?? 'Serving').slice(0, 240),
-      gram_weight: grams, source: 'usda_fdc',
-    })
-  }
-  await admin.from('food_aliases').insert({ food_id: canonical.data.id, alias: name, source: 'usda' })
-  return String(version.data.id)
-}
-
-// deno-lint-ignore no-explicit-any
-async function estimateFromVersion(admin: any, versionID: string, description: string, source: 'leafy_catalog' | 'usda') {
-  const [{ data: version, error }, { data: nutrients, error: nutrientError }, { data: portions, error: portionError }] = await Promise.all([
-    admin.from('food_versions').select('id,description,resolution_confidence,verification_status').eq('id', versionID).single(),
-    admin.from('food_version_nutrients').select('nutrient_code,amount_per_100g').eq('food_version_id', versionID),
-    admin.from('food_portions').select('amount,unit,description,gram_weight').eq('food_version_id', versionID).order('created_at').limit(20),
-  ])
-  if (error) throw error
-  if (nutrientError) throw nutrientError
-  if (portionError) throw portionError
-  const requested = requestedServing(description)
-  const explicitGrams = describedGrams(description)
-  const portion = portions?.[0]
-  const grams = explicitGrams
-    ?? gramsForRequestedServing(requested, portions ?? [])
-  const values = nutrientsForPortion(nutrients ?? [], grams, source === 'usda' ? 1 : Number(version.resolution_confidence ?? 0.8))
-  const energy = (nutrients ?? []).find((item: Record<string, unknown>) => item.nutrient_code === 'energy_kcal')
-  if (!energy) return null
-  const calories = Math.max(1, Math.round(Number(energy.amount_per_100g) * grams / 100))
-  const confidence = source === 'usda' ? 1 : Number(version.resolution_confidence ?? 0.8)
-  const portionText = requested
-    ? `${requested.amount} ${requested.unit}`
-    : explicitGrams ? `${explicitGrams} g` : String(portion?.description ?? `${grams} g`)
-  return {
-    status: 'ready', follow_up_question: null,
-    items: [{
-      name: version.description, portion: portionText, estimated_grams: grams, calories,
-      calorie_low: Math.max(0, Math.round(calories * (source === 'usda' ? 0.95 : 0.85))),
-      calorie_high: Math.round(calories * (source === 'usda' ? 1.05 : 1.15)), confidence,
-      assumptions: requested || explicitGrams ? [] : [`Using a typical serving of ${portionText}.`], nutrients: values,
-      resolution_source: source, food_version_id: versionID, catalog_eligible: true,
-    }],
-    total_calories: calories, calorie_low: Math.max(0, Math.round(calories * (source === 'usda' ? 0.95 : 0.85))),
-    calorie_high: Math.round(calories * (source === 'usda' ? 1.05 : 1.15)), confidence,
-    assumptions: requested || explicitGrams ? [] : [`Review the suggested ${portionText} serving before logging.`],
   }
 }
 

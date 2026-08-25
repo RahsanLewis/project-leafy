@@ -1,23 +1,14 @@
 "use client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient, type Session } from "@supabase/supabase-js";
-
-type Tab = "queue" | "foods" | "ingredients";
-type Row = Record<string, any>;
-type RuntimeConfig = { supabaseUrl: string; supabaseAnonKey: string; adminApiUrl: string };
-type QueueFilter = "active" | "pending_review" | "needs_review" | "processing" | "draft" | "accepted" | "rejected";
-
-const queueFilters: { value: QueueFilter; label: string }[] = [
-  { value: "active", label: "All active" }, { value: "pending_review", label: "Ready for review" },
-  { value: "needs_review", label: "Needs photos" }, { value: "processing", label: "Processing" },
-  { value: "draft", label: "Drafts" }, { value: "accepted", label: "Approved" }, { value: "rejected", label: "Rejected" },
-];
+import { useCallback, useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { activeContributionCount, date, statusDescription, statusLabel, titleCase } from "./admin-formatters";
+import { queueFilters, type QueueFilter, type Row, type Tab } from "./admin-types";
+import { useAdminSession } from "./use-admin-session";
 
 export default function Home() {
-  const [config, setConfig] = useState<RuntimeConfig | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const { api, config, configurationError, session, supabase } = useAdminSession();
   const [tab, setTab] = useState<Tab>("queue");
   const [summary, setSummary] = useState<Row>({});
   const [rows, setRows] = useState<Row[]>([]);
@@ -27,32 +18,6 @@ export default function Home() {
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("active");
-  const supabase = useMemo(() => config ? createClient(config.supabaseUrl, config.supabaseAnonKey, { auth: { detectSessionInUrl: true, persistSession: true } }) : null, [config]);
-
-  useEffect(() => {
-    fetch("/api/config")
-      .then(async (response) => {
-        const value = await response.json();
-        if (!response.ok) throw new Error(value.error ?? "Dashboard configuration is unavailable.");
-        setConfig(value);
-      })
-      .catch(() => setError("The dashboard is not configured yet."));
-  }, []);
-
-  useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
-    return () => data.subscription.unsubscribe();
-  }, [supabase]);
-
-  const api = useCallback(async (body: Row) => {
-    if (!session || !config) throw new Error("Sign in required.");
-    const response = await fetch(config.adminApiUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: config.supabaseAnonKey }, body: JSON.stringify(body) });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error ?? "The request could not be completed.");
-    return result;
-  }, [config, session]);
 
   const refresh = useCallback(async (search = "") => {
     setLoading(true); setError(""); setSelected(null);
@@ -116,7 +81,7 @@ export default function Home() {
     setLoading(false);
   }
 
-  if (!config) return <main className="login"><div className="login-mark">●</div><p className="eyebrow">Leafy internal</p><h1>Catalog operations</h1>{error ? <div className="error">{error}</div> : <p>Preparing the secure workspace…</p>}</main>;
+  if (!config) return <main className="login"><div className="login-mark">●</div><p className="eyebrow">Leafy internal</p><h1>Catalog operations</h1>{configurationError ? <div className="error">{configurationError}</div> : <p>Preparing the secure workspace…</p>}</main>;
   if (!session || !supabase) return <SignIn supabase={supabase} />;
 
   return (
@@ -207,8 +172,3 @@ function IngredientDetail({ data }: { data: Row }) { const concern = data.concer
 
 function Field({ label, value }: { label: string; value: any }) { return <div><dt>{label}</dt><dd>{value || "—"}</dd></div>; }
 function Empty({ tab }: { tab: Tab }) { return <div className="empty-list"><b>{tab === "queue" ? "No submissions here" : "No results"}</b><p>{tab === "queue" ? "Choose another status to inspect the rest of product activity." : "Try a broader search."}</p></div>; }
-function date(value: string) { return value ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Unknown date"; }
-function titleCase(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-function activeContributionCount(summary: Row) { const values = summary.contributions ?? {}; return ["pending_review", "needs_review", "processing", "draft"].reduce((total, status) => total + Number(values[status] ?? 0), 0) || "—"; }
-function statusLabel(status: string) { return ({ pending_review: "Ready for review", needs_review: "Needs photos", processing: "Processing", draft: "Draft", accepted: "Approved", rejected: "Rejected" } as Row)[status] ?? status?.replaceAll("_", " ") ?? "Unknown"; }
-function statusDescription(status: string, reason?: string) { if (reason) return reason; return ({ needs_review: "Leafy needs clearer package photos before this submission can be verified.", processing: "Leafy is reading the package and checking its product information.", draft: "The contributor started this submission but has not sent it for processing.", accepted: "This submission has been approved and published to the Leafy catalog.", rejected: "This submission was not published." } as Row)[status] ?? "This record is available for inspection."; }

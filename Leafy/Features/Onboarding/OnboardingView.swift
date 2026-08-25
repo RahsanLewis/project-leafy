@@ -327,7 +327,7 @@ struct OnboardingView: View {
                 Button("Continue") { move(to: .adultEligibility) }
                     .buttonStyle(PrimaryButtonStyle())
                 if !app.isAuthenticated {
-                    Button("Sign in") { app.presentAuthentication(.accessExistingAccount) }
+                    Button("Sign in") { app.presentAuthentication() }
                         .font(LeafyTypography.button)
                         .accessibilityIdentifier("welcomeSignInButton")
                 }

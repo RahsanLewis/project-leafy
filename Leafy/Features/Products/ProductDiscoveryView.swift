@@ -312,19 +312,3 @@ private struct UnknownProductSheet: View {
         .accessibilityIdentifier("unknownProductSheet")
     }
 }
-
-struct ScoreBadge: View {
-    let score: Int?
-    let label: String?
-    var body: some View {
-        ZStack {
-            Circle().fill(color.opacity(0.14)).frame(width: 52, height: 52)
-            Text(score.map(String.init) ?? "—").font(LeafyTypography.headline).foregroundStyle(color)
-        }
-        .accessibilityLabel(score.map { "Nutrition score \($0) out of 100" } ?? "Nutrition score unavailable")
-    }
-    private var color: Color {
-        guard let score else { return .secondary }
-        return score >= 60 ? LeafyTheme.green : score >= 40 ? .orange : .red
-    }
-}

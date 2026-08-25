@@ -277,13 +277,6 @@ actor PlanService {
         return try decoder.decode([WeightEntry].self, from: data)
     }
 
-    func fetchWeightNutritionContext(anchor: Date = .now, calendar: Calendar = .current) async throws -> WeightNutritionContext {
-        let body = try JSONSerialization.data(withJSONObject: [
-            "anchor_date": Self.localDayString(for: anchor, calendar: calendar)
-        ])
-        return try await request(function: "weight-fluctuation-context", body: body, response: WeightNutritionContext.self)
-    }
-
     func fetchIntakeDay(on date: Date, calendar: Calendar = .current) async throws -> DailyIntakeDay? {
         let token = try await resolvedAccessToken()
         let localDate = Self.localDayString(for: date, calendar: calendar)
@@ -420,12 +413,6 @@ actor PlanService {
         return result.products
     }
 
-    func fetchRecentLoggingFoods() async throws -> [ProductSummary] {
-        let body = try JSONSerialization.data(withJSONObject: ["action": "logging_recents"])
-        let result: ProductListResponse = try await request(function: "discover-food-product", body: body, response: ProductListResponse.self)
-        return result.products
-    }
-
     func startCatalogContribution(barcode: String, marketCountry: String = "US", refreshExisting: Bool = false) async throws -> CatalogContributionStartResponse {
         let body = try JSONSerialization.data(withJSONObject: [
             "action": "start", "barcode": barcode, "market_country": marketCountry,
@@ -438,12 +425,6 @@ actor PlanService {
         let body = try JSONSerialization.data(withJSONObject: ["action": "list"])
         let result: CatalogContributionListResponse = try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionListResponse.self)
         return result.contributions
-    }
-
-    func fetchCatalogContribution(id: UUID) async throws -> CatalogContribution {
-        let body = try JSONSerialization.data(withJSONObject: ["action": "detail", "contribution_id": id.uuidString.lowercased()])
-        let result: CatalogContributionEnvelope = try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionEnvelope.self)
-        return result.contribution
     }
 
     func uploadCatalogLabelPhoto(_ data: Data, contributionID: UUID, assetKind: String) async throws -> CatalogContribution {

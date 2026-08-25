@@ -531,24 +531,6 @@ struct WeightView: View {
         }
     }
 
-    private var forecastLabel: String {
-        switch insights.goalForecast {
-        case .learning: "Learning"
-        case .ongoing: "Ongoing"
-        case .notTrendingTowardGoal: "Not available"
-        case let .date(date): date.formatted(date: .abbreviated, time: .omitted)
-        }
-    }
-
-    private var forecastDetail: String? {
-        switch insights.goalForecast {
-        case .learning: weeklyLearningDetail
-        case .ongoing: "Maintenance is ongoing, so there is no finish date to project."
-        case .notTrendingTowardGoal: "Leafy needs weekly averages that consistently move toward your target before projecting a date."
-        case .date: "This projection uses your current target and the difference between consecutive weekly averages."
-        }
-    }
-
     private var selectedActualEntry: WeightEntry? {
         guard let selectedChartDate else { return nil }
         return filteredEntries.min {
@@ -629,11 +611,6 @@ struct WeightView: View {
         app.weightEntries.max { $0.recordedOn < $1.recordedOn }
     }
 
-    private var filteredTrendPoints: [WeightTrendPoint] {
-        guard let cutoff = chartRange.startDate(relativeTo: .now, calendar: .current) else { return insights.trendPoints }
-        return insights.trendPoints.filter { $0.date >= cutoff }
-    }
-
     private var filteredFluctuationCenterPoints: [WeightTrendPoint] {
         guard let cutoff = chartRange.startDate(relativeTo: .now, calendar: .current) else {
             return insights.fluctuationCenterPoints
@@ -701,24 +678,6 @@ struct WeightView: View {
             trendKG: insights.trendWeightKG,
             currentSampleCount: insights.distinctReadingCount
         )
-    }
-
-    private var typicalFluctuationLabel: String {
-        WeightInsightMetrics.fluctuationRangeLabel(
-            offsetsKG: insights.fluctuationOffsetsKG,
-            unitSystem: app.draft.unitSystem
-        )
-    }
-
-    private var weeklyLearningDetail: String? {
-        guard insights.weeklyPaceKG == nil else { return nil }
-        let currentNeeded = max(0, WeightTrendInsights.minimumWeeklySamples - insights.currentWindowCount)
-        let previousNeeded = max(0, WeightTrendInsights.minimumWeeklySamples - insights.previousWindowCount)
-        if currentNeeded > 0 && previousNeeded > 0 {
-            return "Leafy needs \(currentNeeded) more current-week and \(previousNeeded) more prior-week check-ins."
-        }
-        if currentNeeded > 0 { return "Leafy needs \(currentNeeded) more check-in\(currentNeeded == 1 ? "" : "s") in the current seven-day window." }
-        return "Leafy needs \(previousNeeded) more check-in\(previousNeeded == 1 ? "" : "s") in the preceding seven-day window."
     }
 
     private var chartScale: WeightChartScale {

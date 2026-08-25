@@ -52,7 +52,7 @@ production_key="$(awk -F ' = ' '/^SUPABASE_PUBLISHABLE_KEY =/ { print $2 }' Conf
 
 required_functions=(
   save-nutrition-plan manage-legal-acceptance daily-nutrition
-  weight-fluctuation-context manage-daily-checkin manage-weight-entry
+  manage-daily-checkin manage-weight-entry
   manage-food-entry discover-food-product manage-catalog-contribution
   estimate-meal nutrition-chat delete-account
 )
@@ -64,6 +64,21 @@ for function_name in "${required_functions[@]}"; do
     --data '{}')"
   if [[ "$http_status" == "000" || "$http_status" == "404" ]]; then
     echo "Release validation failed: production function $function_name is unavailable (HTTP $http_status)."
+    exit 1
+  fi
+done
+
+retired_functions=(
+  manage-data-contribution transcribe-meal-audio weight-fluctuation-context
+)
+for function_name in "${retired_functions[@]}"; do
+  http_status="$(curl --max-time 15 --silent --output /dev/null --write-out '%{http_code}' \
+    --request POST "$production_url/functions/v1/$function_name" \
+    --header 'Content-Type: application/json' \
+    --header "apikey: $production_key" \
+    --data '{}')"
+  if [[ "$http_status" != "410" ]]; then
+    echo "Release validation failed: retired function $function_name must return HTTP 410 (received $http_status)."
     exit 1
   fi
 done

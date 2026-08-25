@@ -55,7 +55,7 @@ struct AccountCreationView: View {
 
                 Button("Already have an account? Sign in") {
                     focusedField = nil
-                    app.presentAuthentication(.accessExistingAccount)
+                    app.presentAuthentication()
                 }
                 .font(LeafyTypography.button)
                 .frame(maxWidth: .infinity)

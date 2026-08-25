@@ -59,6 +59,7 @@
 		7F750AE2AA847E9B32CA6559 /* PlusJakartaSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B2460A19B1EBD1AD607F49BE /* PlusJakartaSans-Medium.ttf */; };
 		808DF33F1231CFC28B60A7B8 /* NutritionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2E894FD8C58239BD5382AB /* NutritionModels.swift */; };
 		84D8A8A2E5524A1B194E5A24 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5186914E026A47CD8FAFB0DE /* HomeView.swift */; };
+		8A308F70EF620B77A77F9D36 /* PreviewScenario.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3308843CBA61542644A7D4 /* PreviewScenario.swift */; };
 		90394D6457B7ED351D76EB83 /* DailyNutritionModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4065D9E02A3ECDDE66B33D44 /* DailyNutritionModelsTests.swift */; };
 		95A80EA122227291A2C9C976 /* NutritionCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A15461D53272B43E860F39C /* NutritionCalculator.swift */; };
 		977706CF7CEF5FF921D9563C /* PlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D085A58149BEB16F433AC118 /* PlanView.swift */; };
@@ -79,6 +80,7 @@
 		C11A4949ECDB7395D9A8F340 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 8B801958BAC1CCD601FCB02C /* GoogleSignIn */; };
 		C8B1EFECD1B1444800ADC477 /* MicronutrientEducation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53432EB8B77A8A4FC0953BD0 /* MicronutrientEducation.swift */; };
 		C8FDFCC6E633B8372C6BBCDC /* PlusJakartaSans-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 47B8E14A0ED8F8E5A14A1CB8 /* PlusJakartaSans-SemiBold.ttf */; };
+		D88E5BB43E43C008A600F972 /* AppModelCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1570498F93F7FF488B473A6C /* AppModelCompatibility.swift */; };
 		DF445BC7D9AC164027356000 /* ProductDiscoveryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90625FD770FAC63677B05E97 /* ProductDiscoveryModels.swift */; };
 		E02EC0534E99D67A3A7CC139 /* PlusJakartaSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 017869E9F6FA70BFB0743B60 /* PlusJakartaSans-Regular.ttf */; };
 		E569C834AFF9E575F63F3BF2 /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A26139D4BD8D681F002007 /* BarcodeScannerView.swift */; };
@@ -111,9 +113,11 @@
 		0F1F55F2F18F7A6501751F42 /* WeightProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightProgressTests.swift; sourceTree = "<group>"; };
 		1175385813C06443DB532F41 /* CatalogContributionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogContributionModels.swift; sourceTree = "<group>"; };
 		13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationView.swift; sourceTree = "<group>"; };
+		1570498F93F7FF488B473A6C /* AppModelCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelCompatibility.swift; sourceTree = "<group>"; };
 		23368F78224063825A014B05 /* AskLeafyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskLeafyView.swift; sourceTree = "<group>"; };
 		24CC5EF83CE875F8EB26284D /* ProductDetailLabelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailLabelTests.swift; sourceTree = "<group>"; };
 		25F4D821BF264B6BF74DCAE8 /* CoreDataUseAcknowledgmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataUseAcknowledgmentView.swift; sourceTree = "<group>"; };
+		2F3308843CBA61542644A7D4 /* PreviewScenario.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewScenario.swift; sourceTree = "<group>"; };
 		3009730DBC51ADADDFB5F94C /* CatalogContributionModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogContributionModelsTests.swift; sourceTree = "<group>"; };
 		3625248BE1EAD25739E6E4ED /* AIMealModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealModels.swift; sourceTree = "<group>"; };
 		37A674F736E49A180B162977 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
@@ -411,7 +415,9 @@
 			isa = PBXGroup;
 			children = (
 				3E20C0C3895F2E56263C5991 /* AppModel.swift */,
+				1570498F93F7FF488B473A6C /* AppModelCompatibility.swift */,
 				B871DE220ABCC1D4A191CB96 /* LeafyApp.swift */,
+				2F3308843CBA61542644A7D4 /* PreviewScenario.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -608,6 +614,7 @@
 				6C51A892B4A790670217CA9F /* AppConfiguration.swift in Sources */,
 				74BA9BC84826938AAF744693 /* AppLockCoordinator.swift in Sources */,
 				E8EF228A2FAAF723CAA09510 /* AppModel.swift in Sources */,
+				D88E5BB43E43C008A600F972 /* AppModelCompatibility.swift in Sources */,
 				6C40D5C3D9E790ABA20646F4 /* AskLeafyView.swift in Sources */,
 				50A54765648AC14DE6C8272A /* AuthenticationModels.swift in Sources */,
 				A5DEEAB785BA06A4E4FB39C3 /* AuthenticationView.swift in Sources */,
@@ -645,6 +652,7 @@
 				3E19A9AA6295D4F84CEBCC6B /* PlanResultsView.swift in Sources */,
 				70E0EA2A2B01E0DD1A8E10E1 /* PlanService.swift in Sources */,
 				977706CF7CEF5FF921D9563C /* PlanView.swift in Sources */,
+				8A308F70EF620B77A77F9D36 /* PreviewScenario.swift in Sources */,
 				4637838EFBEDA70AB7D163DF /* ProductDetailView.swift in Sources */,
 				DF445BC7D9AC164027356000 /* ProductDiscoveryModels.swift in Sources */,
 				5568F963D637E40A3A91A155 /* ProductDiscoveryView.swift in Sources */,

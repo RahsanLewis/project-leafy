@@ -20,7 +20,7 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settingsSignOutButton")
                 } else {
-                    Button { app.presentAuthentication(.accessExistingAccount) } label: { identityHeader }
+                    Button { app.presentAuthentication() } label: { identityHeader }
                 }
             }
             .leafyBorderlessRows()

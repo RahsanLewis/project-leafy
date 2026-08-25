@@ -118,14 +118,6 @@ actor PendingOnboardingCache {
     func clear() { try? FileManager.default.removeItem(at: url) }
 }
 
-enum AuthScope: String, CaseIterable, Identifiable {
-    case currentDevice
-    case everyDevice
-
-    var id: String { rawValue }
-    var title: String { self == .currentDevice ? "This device" : "All devices" }
-}
-
 enum AuthLinkRoute: Equatable {
     case callback
     case passwordRecovery

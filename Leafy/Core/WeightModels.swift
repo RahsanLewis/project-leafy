@@ -48,18 +48,6 @@ struct WeightMutationResponse: Codable, Sendable {
     }
 }
 
-struct WeightNutritionContext: Codable, Equatable, Sendable {
-    let available: Bool
-    let confirmedDayCount: Int
-    let elevatedNutrients: [String]
-
-    enum CodingKeys: String, CodingKey {
-        case available
-        case confirmedDayCount = "confirmed_day_count"
-        case elevatedNutrients = "elevated_nutrients"
-    }
-}
-
 struct WeightProgress: Equatable, Sendable {
     let latestKG: Double?
     let previousKG: Double?

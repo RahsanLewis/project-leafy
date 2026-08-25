@@ -8,8 +8,6 @@ export const nutritionFactsCore = [
   'potassium_mg', 'calcium_mg', 'iron_mg', 'vitamin_d_mcg',
 ] as const
 
-export type ResolutionSource = 'leafy_catalog' | 'usda' | 'ai'
-
 export function normalizeFoodQuery(value: string) {
   return value.toLowerCase().normalize('NFKD')
     .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()

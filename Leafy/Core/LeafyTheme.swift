@@ -147,22 +147,6 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
-struct ChoiceCard<Content: View>: View {
-    let selected: Bool
-    @ViewBuilder let content: Content
-    var body: some View {
-        HStack(spacing: 14) {
-            content
-            Spacer()
-            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(selected ? LeafyTheme.green : .secondary)
-        }
-        .padding(16)
-        .background(selected ? LeafyTheme.mint : LeafyTheme.surface, in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? LeafyTheme.green : .clear, lineWidth: 1.5))
-    }
-}
-
 private struct LeafyBorderlessListModifier: ViewModifier {
     func body(content: Content) -> some View {
         content

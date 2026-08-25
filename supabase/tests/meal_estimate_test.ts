@@ -34,7 +34,7 @@ Deno.test('prompts combine typed, spoken, and clarification context', () => {
   assert(prompt.includes('Typed description: two tacos'))
   assert(prompt.includes('Voice transcript: with chicken'))
   assert(prompt.includes('Answer: No'))
-  assert(systemPrompt(true).includes('Always return status ready'))
+  assert(systemPrompt().includes('Always return status ready'))
 })
 
 Deno.test('grounded exact restaurant meal keeps every item and deterministic total', () => {
@@ -61,7 +61,7 @@ Deno.test('grounded exact restaurant meal keeps every item and deterministic tot
 })
 
 Deno.test('grounded prompt is answer first and includes zero calorie drinks', () => {
-  const prompt = systemPrompt(false, 'US')
+  const prompt = systemPrompt('US')
   assert(prompt.includes('never block the first result'))
   assert(prompt.includes('including zero-calorie drinks'))
   assert(prompt.includes('restaurant or manufacturer'))

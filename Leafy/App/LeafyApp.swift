@@ -3,7 +3,7 @@ import SwiftUI
 
 @main struct LeafyApp: App {
     @UIApplicationDelegateAdaptor(LeafyAppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model = AppCoordinator()
     @State private var reminders = DailyReminderCoordinator()
     @State private var appLock = AppLockCoordinator()
     @Environment(\.scenePhase) private var scenePhase
