@@ -122,26 +122,27 @@ enum LeafyScoreBand: Equatable {
 
 struct ProvisionalScoreBadge: View {
     let score: ProductNutritionScore
+    var improvementReasons: [String] = []
+    var onImprove: (() -> Void)?
     @State private var showingDetails = false
+    @State private var improveAfterDismiss = false
 
     var body: some View {
-        HStack(spacing: LeafySpacing.xSmall) {
+        Button { showingDetails = true } label: {
+            HStack(spacing: 5) {
             Text("Provisional")
                 .font(LeafyTypography.captionSemibold)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(LeafyTheme.track, in: Capsule())
-            Button { showingDetails = true } label: {
-                Image(systemName: "info.circle")
-                    .font(LeafyTypography.icon(16))
-                    .frame(width: 28, height: 28)
+                Image(systemName: "info.circle").font(LeafyTypography.icon(14))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("About provisional score")
-            .accessibilityIdentifier("provisionalScoreInfoButton")
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(LeafyTheme.track, in: Capsule())
         }
-        .sheet(isPresented: $showingDetails) {
+        .buttonStyle(.plain).foregroundStyle(.primary)
+        .accessibilityLabel("About provisional score")
+        .accessibilityIdentifier("provisionalScoreInfoButton")
+        .sheet(isPresented: $showingDetails, onDismiss: {
+            if improveAfterDismiss { improveAfterDismiss = false; onImprove?() }
+        }) {
             LeafyInfoSheet(title: "Provisional Leafy Score", dismissIdentifier: "dismissProvisionalScoreInfo") {
                 Text("This score uses the best information currently available and may change when Leafy receives more complete or verified nutrition data.")
                     .font(LeafyTypography.body)
@@ -152,8 +153,131 @@ struct ProvisionalScoreBadge: View {
                     "Data coverage",
                     value: score.evidenceCoverage.formatted(.percent.precision(.fractionLength(0)))
                 )
+                if !improvementReasons.isEmpty {
+                    VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                        Text("Information still improving").font(LeafyTypography.headline)
+                        ForEach(improvementReasons, id: \.self) { reason in
+                            Label(reason, systemImage: "circle.fill")
+                                .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+                                .labelStyle(CompactScoreLabelStyle())
+                        }
+                    }
+                }
+                if onImprove != nil {
+                    Button("Add package label to improve this score") {
+                        improveAfterDismiss = true
+                        showingDetails = false
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("addPackageLabelForScoreButton")
+                }
             }
         }
+    }
+}
+
+private struct CompactScoreLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .top, spacing: LeafySpacing.small) {
+            configuration.icon.font(.system(size: 6)).padding(.top, 7)
+            configuration.title.fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct LeafyScoreSummary: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let score: ProductNutritionScore
+    let subtitle: String
+    var improvementReasons: [String] = []
+    var onImprove: (() -> Void)?
+
+    private var scoreColor: Color { score.score.map { LeafyScoreBand(score: $0).color } ?? .secondary }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.compact) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                    identity
+                    scoreValue
+                    status
+                }
+            } else {
+                HStack(alignment: .top, spacing: LeafySpacing.medium) {
+                    VStack(alignment: .leading, spacing: LeafySpacing.small) { identity; status }
+                    Spacer(minLength: LeafySpacing.small)
+                    scoreValue
+                }
+            }
+            if score.flags.regulatoryFlag {
+                Label("Regulatory concern identified", systemImage: "exclamationmark.triangle.fill")
+                    .font(LeafyTypography.subheadlineSemibold).foregroundStyle(.orange)
+            }
+            if !score.strengths.isEmpty || !score.weaknesses.isEmpty {
+                Divider().overlay(LeafyTheme.hairline)
+                VStack(alignment: .leading, spacing: LeafySpacing.compact) {
+                    factors("Strengths", score.strengths, color: LeafyTheme.green)
+                    factors("What lowered it", score.weaknesses, color: .orange)
+                }
+            }
+            Divider().overlay(LeafyTheme.hairline)
+            Text("General wellness guidance—not medical advice.")
+                .font(LeafyTypography.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Leafy Score").font(LeafyTypography.title3)
+            Text(subtitle).font(LeafyTypography.caption).foregroundStyle(.secondary)
+        }
+    }
+    private var scoreValue: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 4) {
+            Text(score.score.map(String.init) ?? "—").font(LeafyTypography.metric(40)).foregroundStyle(scoreColor).monospacedDigit()
+            if score.score != nil { Text("/100").font(LeafyTypography.subheadline).foregroundStyle(.secondary) }
+        }
+    }
+    @ViewBuilder private var status: some View {
+        if score.rating != nil || score.isProvisional {
+            HStack(spacing: LeafySpacing.small) {
+                if let rating = score.rating { Text(rating).font(LeafyTypography.headline).foregroundStyle(scoreColor) }
+                if score.isProvisional { ProvisionalScoreBadge(score: score, improvementReasons: improvementReasons, onImprove: onImprove) }
+            }
+        }
+    }
+    @ViewBuilder private func factors(_ title: String, _ values: [String], color: Color) -> some View {
+        if !values.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(LeafyTypography.subheadlineSemibold)
+                ForEach(values, id: \.self) { value in
+                    Label(value, systemImage: "circle.fill")
+                        .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+                        .labelStyle(CompactScoreLabelStyle()).tint(color)
+                }
+            }
+        }
+    }
+}
+
+enum LeafyScorePresentation {
+    static func improvementReasons(for score: ProductNutritionScore) -> [String] {
+        let values = score.missingFields + score.unavailableReasons
+        let messages = values.map { value in
+            if value.hasPrefix("ingredient_classification:") { return "Leafy is reviewing this product’s ingredients." }
+            if value.hasPrefix("label_declaration:") { return "A package label can verify a derived nutrition value." }
+            return [
+                "serving_size": "The package serving size is missing.", "ingredients": "The complete ingredient list is missing.",
+                "energy_kcal": "Calories are missing from the package record.", "added_sugars_g": "Added sugars are missing from the package record.",
+                "fiber_g": "Dietary fiber is missing from the package record.", "sodium_mg": "Sodium is missing from the package record.",
+                "saturated_fat_g": "Saturated fat is missing from the package record.", "trans_fat_g": "Trans fat is missing from the package record.",
+                "protein_g": "Protein is missing from the package record.", "nutrient_enrichment_required": "Leafy is filling in nutrition information now.",
+                "jurisdiction_evidence_limited": "Ingredient evidence is limited for this market.", "unverified_source": "This score uses an unverified food record.",
+                "unsupported_jurisdiction": "Leafy Score is not available for this market.", "unsupported_product_type": "This food uses a specialized nutrition standard.",
+            ][value] ?? "More verified package information is needed."
+        }
+        return messages.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
     }
 }
 
@@ -291,42 +415,12 @@ private struct LimitedFoodNutritionView: View {
 
     private var sourceLabel: String { entry.isAIEstimate ? "AI-assisted estimate" : "Manual entry" }
     private func entryScore(_ score: ProductNutritionScore) -> some View {
-        let scoreColor = score.score.map { LeafyScoreBand(score: $0).color } ?? Color.secondary
-        return VStack(alignment: .leading, spacing: LeafySpacing.small) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Leafy Score").font(LeafyTypography.title3)
-                    Text(score.scoreStatus == "pending" ? "Calculating from nutrition data" : "Best available food quality")
-                        .font(LeafyTypography.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(score.score.map(String.init) ?? "—").font(LeafyTypography.metric(40)).foregroundStyle(scoreColor)
-                if score.score != nil { Text("/100").font(LeafyTypography.subheadline).foregroundStyle(.secondary) }
-            }
-            HStack(spacing: LeafySpacing.small) {
-                if let rating = score.rating {
-                    Text(rating).font(LeafyTypography.headline).foregroundStyle(scoreColor)
-                }
-                if score.isProvisional { ProvisionalScoreBadge(score: score) }
-            }
-            scoreFactors("Strengths", score.strengths, color: LeafyTheme.green)
-            scoreFactors("What lowered it", score.weaknesses, color: .orange)
-        }
-        .accessibilityElement(children: .contain)
+        LeafyScoreSummary(
+            score: score,
+            subtitle: score.scoreStatus == "pending" ? "Calculating from nutrition data" : "Best available food quality",
+            improvementReasons: LeafyScorePresentation.improvementReasons(for: score)
+        )
         .accessibilityIdentifier("foodEntryLeafyScore")
-    }
-    @ViewBuilder private func scoreFactors(_ title: String, _ factors: [String], color: Color) -> some View {
-        if !factors.isEmpty {
-            VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
-                Text(title).font(LeafyTypography.subheadlineSemibold)
-                ForEach(factors, id: \.self) { factor in
-                    HStack(alignment: .top, spacing: LeafySpacing.xSmall) {
-                        Circle().fill(color).frame(width: 5, height: 5).padding(.top, 7)
-                        Text(factor).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
     }
     private var impactInput: FoodImpactInput {
         let confidences = nutrients.compactMap(\.confidence)

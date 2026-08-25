@@ -36,7 +36,7 @@ struct ProductDetailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+            LazyVStack(alignment: .leading, spacing: LeafySpacing.large) {
                 ServingNutritionHero(
                     name: product.name,
                     subtitle: heroSubtitle,
@@ -364,53 +364,12 @@ struct ProductDetailView: View {
                 reasons: friendlyScoreReasons(score)
             ))
         }
-        let scoreColor = score.score.map { LeafyScoreBand(score: $0).color } ?? Color.secondary
-        return AnyView(
-        VStack(alignment: .leading, spacing: LeafySpacing.medium) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Leafy Score").font(LeafyTypography.title3)
-                    Text("Packaged food quality").font(LeafyTypography.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(score.score.map(String.init) ?? "—")
-                    .font(LeafyTypography.metric(40))
-                    .foregroundStyle(scoreColor)
-                Text("/100").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
-            }
-            if score.rating != nil || score.isProvisional {
-                HStack(spacing: LeafySpacing.small) {
-                    if let rating = score.rating {
-                        Text(rating).font(LeafyTypography.headline).foregroundStyle(scoreColor)
-                    }
-                    if score.isProvisional { ProvisionalScoreBadge(score: score) }
-                }
-            }
-            if score.flags.regulatoryFlag {
-                Label("Regulatory concern identified", systemImage: "exclamationmark.triangle.fill")
-                    .font(LeafyTypography.subheadlineSemibold)
-                    .foregroundStyle(.orange)
-            }
-            VStack(alignment: .leading, spacing: LeafySpacing.medium) {
-                scoreFactors("Strengths", score.strengths, color: LeafyTheme.green)
-                scoreFactors("What lowered it", score.weaknesses, color: .orange)
-                if score.isProvisional {
-                    scoreFactors("Information still improving", friendlyScoreReasons(score), color: .secondary)
-                }
-                Text("PFQS is comparative wellness guidance, not a medical diagnosis or government-approved health claim.")
-                    .font(LeafyTypography.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if score.isProvisional && product.barcode != nil && scoreNeedsLabelUpdate {
-                Button("Add package label to improve this score") { showingLabelUpdate = true }
-                    .font(LeafyTypography.button)
-                    .foregroundStyle(LeafyTheme.green)
-                    .frame(minHeight: LeafyTheme.minimumTouchTarget)
-                    .accessibilityIdentifier("addPackageLabelForScoreButton")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        )
+        return AnyView(LeafyScoreSummary(
+            score: score,
+            subtitle: "Packaged food quality",
+            improvementReasons: LeafyScorePresentation.improvementReasons(for: score),
+            onImprove: score.isProvisional && product.barcode != nil && scoreNeedsLabelUpdate ? { showingLabelUpdate = true } : nil
+        ))
     }
 
     private func unavailableScore(title: String, reasons: [String]) -> some View {
@@ -446,41 +405,8 @@ struct ProductDetailView: View {
     }
 
     private func friendlyScoreReasons(_ score: ProductNutritionScore) -> [String] {
-        let values = score.missingFields + score.unavailableReasons
-        if values.isEmpty { return ["More verified package information is needed."] }
-        let messages = values.map { value in
-            if value.hasPrefix("ingredient_classification:") { return "Leafy is reviewing this product’s ingredients." }
-            if value.hasPrefix("label_declaration:") { return "A package label can verify this derived nutrition value." }
-            let labels = [
-                "serving_size": "The package serving size is missing.", "ingredients": "The complete ingredient list is missing.",
-                "energy_kcal": "Calories are missing from the package record.", "added_sugars_g": "Added sugars are missing from the package record.",
-                "fiber_g": "Dietary fiber is missing from the package record.", "sodium_mg": "Sodium is missing from the package record.",
-                "saturated_fat_g": "Saturated fat is missing from the package record.", "trans_fat_g": "Trans fat is missing from the package record.",
-                "protein_g": "Protein is missing from the package record.", "verified_product_required": "A verified package record is required.",
-                "unsupported_jurisdiction": "Leafy Score is not available for this market.", "unsupported_product_type": "This type of food uses a specialized nutrition standard.",
-                "nutrient_enrichment_required": "Leafy is filling in nutrition information now.",
-                "jurisdiction_evidence_limited": "Ingredient evidence is limited for this market.",
-                "unverified_source": "This score uses an unverified food record.",
-            ]
-            return labels[value] ?? "More verified package information is needed."
-        }
-        return messages.reduce(into: []) { result, message in
-            if !result.contains(message) { result.append(message) }
-        }
-    }
-
-    @ViewBuilder private func scoreFactors(_ title: String, _ factors: [String], color: Color) -> some View {
-        if !factors.isEmpty {
-            VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
-                Text(title).font(LeafyTypography.subheadlineSemibold)
-                ForEach(factors, id: \.self) { factor in
-                    HStack(alignment: .top, spacing: LeafySpacing.xSmall) {
-                        Circle().fill(color).frame(width: 5, height: 5).padding(.top, 7)
-                        Text(factor).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
+        let reasons = LeafyScorePresentation.improvementReasons(for: score)
+        return reasons.isEmpty ? ["More verified package information is needed."] : reasons
     }
 }
 

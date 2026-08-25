@@ -58,6 +58,9 @@ struct ProductDetailLabelTests {
         #expect(response.product.score?.isAvailable == true)
         #expect(response.product.score?.evidenceCoverage == 0.85)
         #expect(response.product.score?.missingFields == ["added_sugars_g"])
+        #expect(LeafyScorePresentation.improvementReasons(for: response.product.score!) == [
+            "Added sugars are missing from the package record."
+        ])
     }
 
     @Test func ingredientPresentationCleansPrefixWithoutRewritingTheList() {
