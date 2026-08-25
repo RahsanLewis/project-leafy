@@ -53,6 +53,7 @@ struct ServingNutritionHero: View {
     let subtitle: String?
     let calories: Int
     let nutrients: [NutrientAmountInput]
+    var showsCalories = true
     var showsMacros = true
 
     var body: some View {
@@ -63,9 +64,11 @@ struct ServingNutritionHero: View {
                     Text(subtitle).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
                 }
             }
-            HStack(alignment: .firstTextBaseline, spacing: LeafySpacing.small) {
-                Text(calories.formatted()).font(LeafyTypography.metric(52, extraBold: true)).monospacedDigit()
-                Text("Cal").font(LeafyTypography.title3).foregroundStyle(.secondary)
+            if showsCalories {
+                HStack(alignment: .firstTextBaseline, spacing: LeafySpacing.small) {
+                    Text(calories.formatted()).font(LeafyTypography.metric(52, extraBold: true)).monospacedDigit()
+                    Text("Cal").font(LeafyTypography.title3).foregroundStyle(.secondary)
+                }
             }
             if showsMacros {
                 HStack(alignment: .top, spacing: LeafySpacing.large) {
@@ -90,6 +93,67 @@ struct ServingNutritionHero: View {
 
     private func format(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0...1)))
+    }
+}
+
+enum LeafyScoreBand: Equatable {
+    case red, orange, yellow, green, blue
+
+    init(score: Int) {
+        switch score {
+        case ..<25: self = .red
+        case 25..<50: self = .orange
+        case 50..<70: self = .yellow
+        case 70..<90: self = .green
+        default: self = .blue
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .red: .red
+        case .orange: .orange
+        case .yellow: Color(red: 0.72, green: 0.56, blue: 0.02)
+        case .green: LeafyTheme.green
+        case .blue: .blue
+        }
+    }
+}
+
+struct ProvisionalScoreBadge: View {
+    let score: ProductNutritionScore
+    @State private var showingDetails = false
+
+    var body: some View {
+        HStack(spacing: LeafySpacing.xSmall) {
+            Text("Provisional")
+                .font(LeafyTypography.captionSemibold)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(LeafyTheme.track, in: Capsule())
+            Button { showingDetails = true } label: {
+                Image(systemName: "info.circle")
+                    .font(LeafyTypography.icon(16))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("About provisional score")
+            .accessibilityIdentifier("provisionalScoreInfoButton")
+        }
+        .sheet(isPresented: $showingDetails) {
+            LeafyInfoSheet(title: "Provisional Leafy Score", dismissIdentifier: "dismissProvisionalScoreInfo") {
+                Text("This score uses the best information currently available and may change when Leafy receives more complete or verified nutrition data.")
+                    .font(LeafyTypography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                LabeledContent("Confidence", value: score.confidenceLevel.capitalized)
+                LabeledContent(
+                    "Data coverage",
+                    value: score.evidenceCoverage.formatted(.percent.precision(.fractionLength(0)))
+                )
+            }
+        }
     }
 }
 
@@ -227,7 +291,8 @@ private struct LimitedFoodNutritionView: View {
 
     private var sourceLabel: String { entry.isAIEstimate ? "AI-assisted estimate" : "Manual entry" }
     private func entryScore(_ score: ProductNutritionScore) -> some View {
-        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+        let scoreColor = score.score.map { LeafyScoreBand(score: $0).color } ?? Color.secondary
+        return VStack(alignment: .leading, spacing: LeafySpacing.small) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Leafy Score").font(LeafyTypography.title3)
@@ -235,17 +300,33 @@ private struct LimitedFoodNutritionView: View {
                         .font(LeafyTypography.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(score.score.map(String.init) ?? "—").font(LeafyTypography.metric(40))
+                Text(score.score.map(String.init) ?? "—").font(LeafyTypography.metric(40)).foregroundStyle(scoreColor)
                 if score.score != nil { Text("/100").font(LeafyTypography.subheadline).foregroundStyle(.secondary) }
             }
-            if let rating = score.rating { Text(rating).font(LeafyTypography.headline).foregroundStyle(LeafyTheme.green) }
-            if score.isProvisional {
-                Text("Provisional · \(score.confidenceLevel.capitalized) confidence · \(score.evidenceCoverage.formatted(.percent.precision(.fractionLength(0)))) coverage")
-                    .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+            HStack(spacing: LeafySpacing.small) {
+                if let rating = score.rating {
+                    Text(rating).font(LeafyTypography.headline).foregroundStyle(scoreColor)
+                }
+                if score.isProvisional { ProvisionalScoreBadge(score: score) }
             }
+            scoreFactors("Strengths", score.strengths, color: LeafyTheme.green)
+            scoreFactors("What lowered it", score.weaknesses, color: .orange)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("foodEntryLeafyScore")
+    }
+    @ViewBuilder private func scoreFactors(_ title: String, _ factors: [String], color: Color) -> some View {
+        if !factors.isEmpty {
+            VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
+                Text(title).font(LeafyTypography.subheadlineSemibold)
+                ForEach(factors, id: \.self) { factor in
+                    HStack(alignment: .top, spacing: LeafySpacing.xSmall) {
+                        Circle().fill(color).frame(width: 5, height: 5).padding(.top, 7)
+                        Text(factor).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
     }
     private var impactInput: FoodImpactInput {
         let confidences = nutrients.compactMap(\.confidence)

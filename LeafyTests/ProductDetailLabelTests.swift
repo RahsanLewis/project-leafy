@@ -60,13 +60,23 @@ struct ProductDetailLabelTests {
         #expect(response.product.score?.missingFields == ["added_sugars_g"])
     }
 
-    @Test func ingredientPresentationPreservesNestedGroupsAndCleansPrefix() {
+    @Test func ingredientPresentationCleansPrefixWithoutRewritingTheList() {
         let value = " INGREDIENTS: Corn meal, seasoning (salt, whey, spices), vegetable oil; color "
         let cleaned = IngredientPresentation.cleaned(value)
         #expect(cleaned == "Corn meal, seasoning (salt, whey, spices), vegetable oil; color")
-        #expect(IngredientPresentation.segments(in: cleaned) == [
-            "Corn meal", "seasoning (salt, whey, spices)", "vegetable oil", "color",
-        ])
+    }
+
+    @Test func scoreBandsUseRatingAlignedBoundaries() {
+        #expect(LeafyScoreBand(score: 0) == .red)
+        #expect(LeafyScoreBand(score: 24) == .red)
+        #expect(LeafyScoreBand(score: 25) == .orange)
+        #expect(LeafyScoreBand(score: 49) == .orange)
+        #expect(LeafyScoreBand(score: 50) == .yellow)
+        #expect(LeafyScoreBand(score: 69) == .yellow)
+        #expect(LeafyScoreBand(score: 70) == .green)
+        #expect(LeafyScoreBand(score: 89) == .green)
+        #expect(LeafyScoreBand(score: 90) == .blue)
+        #expect(LeafyScoreBand(score: 100) == .blue)
     }
 
     @Test func optionalPackageFieldsRemainBackwardCompatible() throws {

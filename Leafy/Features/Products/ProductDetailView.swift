@@ -15,7 +15,6 @@ struct ProductDetailView: View {
     @State private var showingImpact = false
     @State private var showingIngredients = true
     @State private var showingProductDetails = false
-    @State private var showingScoreDetails = false
     @State private var showingLabelUpdate = false
 
     init(
@@ -43,6 +42,7 @@ struct ProductDetailView: View {
                     subtitle: heroSubtitle,
                     calories: estimatedCalories,
                     nutrients: servingNutrients,
+                    showsCalories: false,
                     showsMacros: false
                 )
 
@@ -80,8 +80,7 @@ struct ProductDetailView: View {
                     DisclosureGroup("Ingredients & allergens", isExpanded: $showingIngredients) {
                         IngredientParagraphView(
                             ingredients: product.ingredients ?? "",
-                            allergens: product.allergens,
-                            concerns: product.score?.additives.flatMap { [$0.name, $0.matchedAlias] } ?? []
+                            allergens: product.allergens
                         )
                         .padding(.top, LeafySpacing.small)
                     }
@@ -93,7 +92,6 @@ struct ProductDetailView: View {
                     VStack(spacing: 0) {
                         detailRow("Brand", product.brand ?? "Not listed")
                         detailRow("Source", product.source)
-                        if let verificationLabel { detailRow("Verification", verificationLabel) }
                         if let barcode = product.barcode { detailRow("Barcode", barcode) }
                     }
                     .padding(.top, LeafySpacing.small)
@@ -312,14 +310,6 @@ struct ProductDetailView: View {
         }
         return "Nutrition information is general wellness guidance. Always check the package if you have an allergy."
     }
-    private var verificationLabel: String? {
-        switch product.verificationStatus {
-        case "verified": "Verified"
-        case "community_confirmed": "Leafy reviewed"
-        case "unverified": "Community submitted"
-        default: nil
-        }
-    }
     private var impactScale: Binding<Double> {
         Binding(
             get: { min(max(effectiveGrams / referenceServingGrams, 0.25), 3) },
@@ -374,6 +364,7 @@ struct ProductDetailView: View {
                 reasons: friendlyScoreReasons(score)
             ))
         }
+        let scoreColor = score.score.map { LeafyScoreBand(score: $0).color } ?? Color.secondary
         return AnyView(
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             HStack(alignment: .firstTextBaseline) {
@@ -384,56 +375,32 @@ struct ProductDetailView: View {
                 Spacer()
                 Text(score.score.map(String.init) ?? "—")
                     .font(LeafyTypography.metric(40))
+                    .foregroundStyle(scoreColor)
                 Text("/100").font(LeafyTypography.subheadline).foregroundStyle(.secondary)
             }
-            if let rating = score.rating {
+            if score.rating != nil || score.isProvisional {
                 HStack(spacing: LeafySpacing.small) {
-                    Text(rating).font(LeafyTypography.headline).foregroundStyle(LeafyTheme.green)
-                    if score.isProvisional {
-                        Text("Provisional")
-                            .font(LeafyTypography.captionSemibold)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(LeafyTheme.track, in: Capsule())
+                    if let rating = score.rating {
+                        Text(rating).font(LeafyTypography.headline).foregroundStyle(scoreColor)
                     }
+                    if score.isProvisional { ProvisionalScoreBadge(score: score) }
                 }
-            }
-            if score.isProvisional {
-                Text("\(score.confidenceLevel.capitalized) confidence · \(score.evidenceCoverage.formatted(.percent.precision(.fractionLength(0)))) data coverage")
-                    .font(LeafyTypography.subheadline)
-                    .foregroundStyle(.secondary)
             }
             if score.flags.regulatoryFlag {
                 Label("Regulatory concern identified", systemImage: "exclamationmark.triangle.fill")
                     .font(LeafyTypography.subheadlineSemibold)
                     .foregroundStyle(.orange)
             }
-            DisclosureGroup("Why this score", isExpanded: $showingScoreDetails) {
-                VStack(alignment: .leading, spacing: LeafySpacing.medium) {
-                    scoreFactors("Strengths", score.strengths, color: LeafyTheme.green)
-                    scoreFactors("What lowered it", score.weaknesses, color: .orange)
-                    if score.isProvisional {
-                        scoreFactors("Information still improving", friendlyScoreReasons(score), color: .secondary)
-                    }
-                    HStack {
-                        Text("Base score")
-                        Spacer()
-                        Text(score.baseScore.map(String.init) ?? "—")
-                    }
-                    HStack {
-                        Text("Ingredient concern adjustment")
-                        Spacer()
-                        Text(score.additivePenalty == 0 ? "0" : "−\(score.additivePenalty)")
-                    }
-                    .foregroundStyle(score.additivePenalty == 0 ? Color.secondary : Color.orange)
-                    Text("PFQS is comparative wellness guidance, not a medical diagnosis or government-approved health claim.")
-                        .font(LeafyTypography.footnote)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: LeafySpacing.medium) {
+                scoreFactors("Strengths", score.strengths, color: LeafyTheme.green)
+                scoreFactors("What lowered it", score.weaknesses, color: .orange)
+                if score.isProvisional {
+                    scoreFactors("Information still improving", friendlyScoreReasons(score), color: .secondary)
                 }
-                .font(LeafyTypography.subheadline)
-                .padding(.top, LeafySpacing.small)
+                Text("PFQS is comparative wellness guidance, not a medical diagnosis or government-approved health claim.")
+                    .font(LeafyTypography.footnote)
+                    .foregroundStyle(.secondary)
             }
-            .font(LeafyTypography.headline)
-            .tint(LeafyTheme.green)
             if score.isProvisional && product.barcode != nil && scoreNeedsLabelUpdate {
                 Button("Add package label to improve this score") { showingLabelUpdate = true }
                     .font(LeafyTypography.button)
@@ -654,7 +621,6 @@ private struct PackageNutritionFactsView: View {
 private struct IngredientParagraphView: View {
     let ingredients: String
     let allergens: [String]
-    let concerns: [String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
@@ -668,64 +634,18 @@ private struct IngredientParagraphView: View {
                 .foregroundStyle(.orange)
                 .accessibilityLabel("Contains allergens: \(allergens.joined(separator: ", "))")
             }
-            if !segments.isEmpty {
-                ingredientText
+            if !cleanedIngredients.isEmpty {
+                Text(cleanedIngredients)
                     .font(LeafyTypography.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityLabel(cleanedIngredients)
             }
-            if !concernPhrases.isEmpty {
-                Label("Highlighted ingredients affected the Leafy Score.", systemImage: "info.circle")
-                    .font(LeafyTypography.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readableIngredients")
     }
-
-    private var ingredientText: Text {
-        segments.enumerated().reduce(Text("")) { result, pair in
-            let separator = pair.offset == 0 ? Text("") : Text("  •  ").foregroundColor(LeafyTheme.green)
-            return result + separator + styledSegment(pair.element)
-        }
-    }
-
-    private func styledSegment(_ segment: String) -> Text {
-        guard let bracket = segment.firstIndex(where: { "([{".contains($0) }) else {
-            return highlightedText(segment).fontWeight(.semibold)
-        }
-        let name = String(segment[..<bracket]).trimmingCharacters(in: .whitespaces)
-        let detail = String(segment[bracket...])
-        return highlightedText(name).fontWeight(.semibold) + Text(" ") + highlightedText(detail)
-    }
-
-    private func highlightedText(_ value: String) -> Text {
-        guard let match = earliestHighlight(in: value) else { return Text(value) }
-        let before = String(value[..<match.range.lowerBound])
-        let token = String(value[match.range])
-        let after = String(value[match.range.upperBound...])
-        let highlighted = Text(token).bold().foregroundColor(match.isAllergen ? .orange : LeafyTheme.green)
-        return Text(before) + highlighted + highlightedText(after)
-    }
-
-    private func earliestHighlight(in value: String) -> (range: Range<String.Index>, isAllergen: Bool)? {
-        let phrases = allergens.map { ($0, true) } + concernPhrases.map { ($0, false) }
-        return phrases.compactMap { phrase, allergen -> (Range<String.Index>, Bool)? in
-            guard !phrase.isEmpty, let range = value.range(of: phrase, options: [.caseInsensitive, .diacriticInsensitive]) else { return nil }
-            return (range, allergen)
-        }.min { $0.0.lowerBound < $1.0.lowerBound }.map { ($0.0, $0.1) }
-    }
-
-    private var concernPhrases: [String] {
-        Array(Set(concerns.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter {
-            !$0.isEmpty && cleanedIngredients.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        }))
-    }
-
-    private var segments: [String] { IngredientPresentation.segments(in: cleanedIngredients) }
 
     private var cleanedIngredients: String {
         IngredientPresentation.cleaned(ingredients)
@@ -738,26 +658,5 @@ enum IngredientPresentation {
             .replacingOccurrences(of: #"^\s*ingredients?\s*:\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    static func segments(in value: String) -> [String] {
-        var result: [String] = []
-        var depth = 0
-        var start = value.startIndex
-        var index = value.startIndex
-        while index < value.endIndex {
-            let character = value[index]
-            if "([{".contains(character) { depth += 1 }
-            if ")]}".contains(character) { depth = max(0, depth - 1) }
-            if depth == 0 && (character == "," || character == ";") {
-                let part = value[start..<index].trimmingCharacters(in: .whitespacesAndNewlines)
-                if !part.isEmpty { result.append(part) }
-                start = value.index(after: index)
-            }
-            index = value.index(after: index)
-        }
-        let final = value[start...].trimmingCharacters(in: .whitespacesAndNewlines)
-        if !final.isEmpty { result.append(final) }
-        return result
     }
 }
