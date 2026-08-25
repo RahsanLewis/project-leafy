@@ -26,7 +26,7 @@ export const PFQS_REQUIRED_NUTRIENTS = [
 ] as const
 
 export const PFQS_INELIGIBLE_PRODUCT_TYPES = [
-  'supplement', 'infant_formula', 'medical_food', 'alcohol', 'restaurant', 'manual', 'ai_estimate',
+  'supplement', 'infant_formula', 'medical_food', 'alcohol',
 ] as const
 
 export type PFQSFamilyCap = { family_id: string; cap: number }

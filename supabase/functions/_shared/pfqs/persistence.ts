@@ -23,6 +23,10 @@ export async function calculateAndPersistPFQS(admin: any, foodVersionID: string,
     explanation: result.explanation,
     missing_fields: result.missing_fields,
     unavailable_reasons: result.unavailable_reasons,
+    evidence_coverage: result.evidence_coverage,
+    evidence_confidence: result.evidence_confidence,
+    confidence_level: result.confidence_level,
+    included_components: result.included_components,
     input_snapshot: input,
   }, { onConflict: 'food_version_id,model_version,ingredient_taxonomy_version,additive_database_version,jurisdiction,assessment_date' })
   if (scoreWrite.error) throw scoreWrite.error
@@ -109,6 +113,23 @@ export async function calculateAndPersistPFQS(admin: any, foodVersionID: string,
   return result
 }
 
+export async function calculateAndPersistEntryPFQS(admin: any, foodEntryID: string, userID: string, input: PFQSInput) {
+  const result = calculatePFQS(input)
+  const write = await admin.from('pfqs_food_entry_scores').upsert({
+    food_entry_id: foodEntryID,
+    user_id: userID,
+    model_version: result.model_version,
+    score_status: result.score_status,
+    score_100: result.score,
+    evidence_coverage: result.evidence_coverage,
+    evidence_confidence: result.evidence_confidence,
+    result,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'food_entry_id' })
+  if (write.error) throw write.error
+  return result
+}
+
 export function pfqsAPIResult(score: Record<string, any> | null): PFQSResult | null {
   if (!score) return null
   return {
@@ -120,6 +141,10 @@ export function pfqsAPIResult(score: Record<string, any> | null): PFQSResult | n
     ingredients: score.ingredients ?? [], flags: score.flags ?? {},
     strengths: score.strengths ?? [], weaknesses: score.weaknesses ?? [], explanation: score.explanation ?? [],
     missing_fields: score.missing_fields ?? [], unavailable_reasons: score.unavailable_reasons ?? [],
+    evidence_coverage: Number(score.evidence_coverage ?? (score.score_status === 'complete' ? 1 : 0)),
+    evidence_confidence: Number(score.evidence_confidence ?? (score.score_status === 'complete' ? 1 : 0)),
+    confidence_level: score.confidence_level ?? (score.score_status === 'complete' ? 'high' : 'none'),
+    included_components: score.included_components ?? Object.keys(score.components ?? {}),
     parsed_ingredients: [], classified_ingredients: [], model_version: score.model_version,
     ingredient_taxonomy_version: score.ingredient_taxonomy_version,
     additive_database_version: score.additive_database_version,

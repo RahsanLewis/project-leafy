@@ -1,4 +1,5 @@
 import { nutrientCodes, nutrientUnits, normalizeNutrients } from './nutrients.ts'
+import { scoreFoodEntry } from './pfqs/entry.ts'
 
 type Admin = any // Supabase client type is supplied by the edge runtime.
 type Row = Record<string, unknown>
@@ -76,6 +77,9 @@ async function processJob(admin: Admin, userID: string, job: Row) {
       status: 'complete', source_hash: await sha256(source), model_version: 'leafy-nutrient-enrichment-1',
       last_error: null, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq('id', jobID)
+    const legacy = await admin.from('consumption_items').select('legacy_food_entry_id').eq('id', item.id).maybeSingle()
+    if (legacy.error) throw legacy.error
+    if (legacy.data?.legacy_food_entry_id) await scoreFoodEntry(admin, String(legacy.data.legacy_food_entry_id), userID)
   } catch (error) {
     const attempts = Number(job.attempts ?? 0) + 1
     const terminal = attempts >= 3
@@ -123,4 +127,3 @@ async function sha256(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
-

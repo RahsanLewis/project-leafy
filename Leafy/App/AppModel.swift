@@ -544,6 +544,11 @@ final class AppModel {
         return (try? await service.fetchFoodEntryNutrients(entryID: entry.id)) ?? []
     }
 
+    func loadScore(for entry: FoodEntry) async -> ProductNutritionScore? {
+        guard !isCICOPreview else { return entry.score }
+        return (try? await service.fetchFoodEntryScore(entryID: entry.id)) ?? entry.score
+    }
+
     func loadProductHistory() async {
         guard isAuthenticated else { return }
         do { productHistory = try await service.fetchProductHistory() }

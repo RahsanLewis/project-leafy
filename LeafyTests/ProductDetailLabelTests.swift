@@ -3,7 +3,7 @@ import Testing
 @testable import Leafy
 
 struct ProductDetailLabelTests {
-    @Test func decodesPackageServingFactsAndIncompleteScore() throws {
+    @Test func decodesPackageServingFactsAndProvisionalScore() throws {
         let json = #"""
         {
           "product": {
@@ -34,8 +34,14 @@ struct ProductDetailLabelTests {
               {"code":"sodium_mg","amount_per_serving":250,"unit":"mg","percent_daily_value":11,"declaration_type":"derived","printed_text":null,"evidence_section":"usda_fdc","value_source":"source_derived"}
             ],
             "score": {
-              "model_version":"PFQS-1.0",
-              "score_status":"incomplete",
+              "model_version":"PFQS-1.1",
+              "score":72,
+              "rating":"Good",
+              "score_status":"provisional",
+              "evidence_coverage":0.85,
+              "evidence_confidence":0.72,
+              "confidence_level":"moderate",
+              "included_components":["sodium","protein"],
               "missing_fields":["added_sugars_g"],
               "unavailable_reasons":[]
             }
@@ -48,8 +54,19 @@ struct ProductDetailLabelTests {
         #expect(response.product.labelNutrients?.first?.amountPerServing == 150)
         #expect(response.product.labelNutrients?.last?.percentDailyValue == 11)
         #expect(response.product.labelNutrients?.first?.isDerived == true)
-        #expect(response.product.score?.scoreStatus == "incomplete")
+        #expect(response.product.score?.scoreStatus == "provisional")
+        #expect(response.product.score?.isAvailable == true)
+        #expect(response.product.score?.evidenceCoverage == 0.85)
         #expect(response.product.score?.missingFields == ["added_sugars_g"])
+    }
+
+    @Test func ingredientPresentationPreservesNestedGroupsAndCleansPrefix() {
+        let value = " INGREDIENTS: Corn meal, seasoning (salt, whey, spices), vegetable oil; color "
+        let cleaned = IngredientPresentation.cleaned(value)
+        #expect(cleaned == "Corn meal, seasoning (salt, whey, spices), vegetable oil; color")
+        #expect(IngredientPresentation.segments(in: cleaned) == [
+            "Corn meal", "seasoning (salt, whey, spices)", "vegetable oil", "color",
+        ])
     }
 
     @Test func optionalPackageFieldsRemainBackwardCompatible() throws {

@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
 import { normalizeNutrients, nutrientArraySchema, nutrientPrompt } from '../_shared/nutrients.ts'
 import { processNutrientJobs } from '../_shared/nutrient-enrichment.ts'
+import { scoreFoodEntry } from '../_shared/pfqs/entry.ts'
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
@@ -56,10 +57,11 @@ Deno.serve(async (request) => {
       })
       if (result.error) throw result.error
     }
+    const score = await scoreFoodEntry(admin, String(entry.id), user.id)
     EdgeRuntime.waitUntil(processNutrientJobs(admin, user.id, 2).catch((error) => {
       console.error('background nutrient enrichment failed', error)
     }))
-    return json({ entry })
+    return json({ entry: { ...entry, score } })
   } catch (error) {
     console.error('manage-food-entry failed', error)
     return json({ error: error instanceof Error ? error.message : 'Unable to save that food.' }, 400)

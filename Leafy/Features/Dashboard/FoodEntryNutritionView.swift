@@ -53,6 +53,7 @@ struct ServingNutritionHero: View {
     let subtitle: String?
     let calories: Int
     let nutrients: [NutrientAmountInput]
+    var showsMacros = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: LeafySpacing.large) {
@@ -66,10 +67,12 @@ struct ServingNutritionHero: View {
                 Text(calories.formatted()).font(LeafyTypography.metric(52, extraBold: true)).monospacedDigit()
                 Text("Cal").font(LeafyTypography.title3).foregroundStyle(.secondary)
             }
-            HStack(alignment: .top, spacing: LeafySpacing.large) {
-                macro("Protein", code: "protein_g")
-                macro("Carbs", code: "carbohydrate_g")
-                macro("Fat", code: "fat_g")
+            if showsMacros {
+                HStack(alignment: .top, spacing: LeafySpacing.large) {
+                    macro("Protein", code: "protein_g")
+                    macro("Carbs", code: "carbohydrate_g")
+                    macro("Fat", code: "fat_g")
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -151,6 +154,7 @@ private struct LimitedFoodNutritionView: View {
     @Environment(AppModel.self) private var app
     let entry: FoodEntry
     @State private var nutrients: [NutrientAmountInput] = []
+    @State private var refreshedScore: ProductNutritionScore?
     @State private var servingScale = 1.0
     @State private var showingImpact = false
     @State private var showingDetails = false
@@ -164,6 +168,10 @@ private struct LimitedFoodNutritionView: View {
                     calories: entry.calories,
                     nutrients: nutrients
                 )
+
+                if let score = refreshedScore ?? entry.score {
+                    entryScore(score)
+                }
 
                 if app.configuration.isFoodImpactEnabled {
                     DisclosureGroup("Food impact", isExpanded: $showingImpact) {
@@ -197,7 +205,7 @@ private struct LimitedFoodNutritionView: View {
                 .font(LeafyTypography.headline)
                 .tint(LeafyTheme.green)
 
-                Text("Only information saved with this log is shown. Leafy does not guess missing nutrients or attach an unverified product.")
+                Text("Leafy keeps saved values separate from estimates. Provisional scores clearly reflect estimated or incomplete nutrition data.")
                     .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -209,10 +217,36 @@ private struct LimitedFoodNutritionView: View {
         .navigationTitle("Food details")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("limitedFoodNutritionView")
-        .task(id: entry.id) { nutrients = await app.loadNutrients(for: entry) }
+        .task(id: entry.id) {
+            async let loadedNutrients = app.loadNutrients(for: entry)
+            async let loadedScore = app.loadScore(for: entry)
+            nutrients = await loadedNutrients
+            refreshedScore = await loadedScore
+        }
     }
 
     private var sourceLabel: String { entry.isAIEstimate ? "AI-assisted estimate" : "Manual entry" }
+    private func entryScore(_ score: ProductNutritionScore) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Leafy Score").font(LeafyTypography.title3)
+                    Text(score.scoreStatus == "pending" ? "Calculating from nutrition data" : "Best available food quality")
+                        .font(LeafyTypography.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(score.score.map(String.init) ?? "—").font(LeafyTypography.metric(40))
+                if score.score != nil { Text("/100").font(LeafyTypography.subheadline).foregroundStyle(.secondary) }
+            }
+            if let rating = score.rating { Text(rating).font(LeafyTypography.headline).foregroundStyle(LeafyTheme.green) }
+            if score.isProvisional {
+                Text("Provisional · \(score.confidenceLevel.capitalized) confidence · \(score.evidenceCoverage.formatted(.percent.precision(.fractionLength(0)))) coverage")
+                    .font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("foodEntryLeafyScore")
+    }
     private var impactInput: FoodImpactInput {
         let confidences = nutrients.compactMap(\.confidence)
         let confidence = entry.confidence ?? (confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count))

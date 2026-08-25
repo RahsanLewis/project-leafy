@@ -1,4 +1,4 @@
-export const PFQS_MODEL_VERSION = 'PFQS-1.0'
+export const PFQS_MODEL_VERSION = 'PFQS-1.1'
 export const PFQS_TAXONOMY_VERSION = 'PFQS-TAXONOMY-1.0'
 export const PFQS_ADDITIVE_DATABASE_VERSION = 'PFQS-ADDITIVES-2026-08-13'
 export const PFQS_INGREDIENT_DATABASE_VERSION = 'PFQS-INGREDIENTS-2026-08-24'
@@ -13,6 +13,11 @@ export type PFQSNutrientCode =
   | 'protein_g'
 
 export type PFQSNutrients = Partial<Record<PFQSNutrientCode, number>>
+
+export type PFQSNutrientEvidence = Partial<Record<PFQSNutrientCode, {
+  source: 'label' | 'derived' | 'estimated' | 'user_entered'
+  confidence: number
+}>>
 
 export type PFQSProductType =
   | 'food'
@@ -41,6 +46,7 @@ export type PFQSInput = {
   serving_size: { amount: number; unit: string; description?: string | null }
   nutrition: PFQSNutrients
   explicitly_reported_nutrients?: PFQSNutrientCode[]
+  nutrient_evidence?: PFQSNutrientEvidence
   ingredients_raw: string
   ingredient_percentages?: Record<string, number>
   frozen_ingredient_classifications?: FrozenIngredientClassification[]
@@ -109,7 +115,7 @@ export type PFQSIngredientResult = {
 export type PFQSResult = {
   score: number | null
   rating: string | null
-  score_status: 'complete' | 'incomplete' | 'ineligible'
+  score_status: 'complete' | 'provisional' | 'pending' | 'ineligible'
   base_score: number | null
   additive_penalty: number
   ingredient_concern_penalty: number
@@ -127,6 +133,10 @@ export type PFQSResult = {
   explanation: string[]
   missing_fields: string[]
   unavailable_reasons: string[]
+  evidence_coverage: number
+  evidence_confidence: number
+  confidence_level: 'high' | 'moderate' | 'low' | 'none'
+  included_components: string[]
   parsed_ingredients: ParsedIngredient[]
   classified_ingredients: ClassifiedIngredient[]
   model_version: string

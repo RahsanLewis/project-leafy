@@ -152,6 +152,10 @@ struct ProductNutritionScore: Codable, Hashable, Sendable {
     let explanation: [String]
     let missingFields: [String]
     let unavailableReasons: [String]
+    let evidenceCoverage: Double
+    let evidenceConfidence: Double
+    let confidenceLevel: String
+    let includedComponents: [String]
     let jurisdiction: String
     let assessmentDate: String
     enum CodingKeys: String, CodingKey {
@@ -160,6 +164,8 @@ struct ProductNutritionScore: Codable, Hashable, Sendable {
         case additiveDatabaseVersion = "additive_database_version", scoreStatus = "score_status"
         case baseScore = "base_score", additivePenalty = "additive_penalty"
         case missingFields = "missing_fields", unavailableReasons = "unavailable_reasons"
+        case evidenceCoverage = "evidence_coverage", evidenceConfidence = "evidence_confidence"
+        case confidenceLevel = "confidence_level", includedComponents = "included_components"
         case assessmentDate = "assessment_date"
         case legacyAlgorithmVersion = "algorithm_version"
     }
@@ -184,6 +190,10 @@ struct ProductNutritionScore: Codable, Hashable, Sendable {
         explanation = try values.decodeIfPresent([String].self, forKey: .explanation) ?? []
         missingFields = try values.decodeIfPresent([String].self, forKey: .missingFields) ?? []
         unavailableReasons = try values.decodeIfPresent([String].self, forKey: .unavailableReasons) ?? []
+        evidenceCoverage = try values.decodeIfPresent(Double.self, forKey: .evidenceCoverage) ?? (scoreStatus == "complete" ? 1 : 0)
+        evidenceConfidence = try values.decodeIfPresent(Double.self, forKey: .evidenceConfidence) ?? (scoreStatus == "complete" ? 1 : 0)
+        confidenceLevel = try values.decodeIfPresent(String.self, forKey: .confidenceLevel) ?? (scoreStatus == "complete" ? "high" : "none")
+        includedComponents = try values.decodeIfPresent([String].self, forKey: .includedComponents) ?? Array(components.keys)
         jurisdiction = try values.decodeIfPresent(String.self, forKey: .jurisdiction) ?? ""
         assessmentDate = try values.decodeIfPresent(String.self, forKey: .assessmentDate) ?? ""
     }
@@ -206,11 +216,16 @@ struct ProductNutritionScore: Codable, Hashable, Sendable {
         try values.encode(explanation, forKey: .explanation)
         try values.encode(missingFields, forKey: .missingFields)
         try values.encode(unavailableReasons, forKey: .unavailableReasons)
+        try values.encode(evidenceCoverage, forKey: .evidenceCoverage)
+        try values.encode(evidenceConfidence, forKey: .evidenceConfidence)
+        try values.encode(confidenceLevel, forKey: .confidenceLevel)
+        try values.encode(includedComponents, forKey: .includedComponents)
         try values.encode(jurisdiction, forKey: .jurisdiction)
         try values.encode(assessmentDate, forKey: .assessmentDate)
     }
 
-    var isAvailable: Bool { modelVersion == "PFQS-1.0" && scoreStatus == "complete" && score != nil }
+    var isAvailable: Bool { modelVersion.hasPrefix("PFQS-1.") && ["complete", "provisional"].contains(scoreStatus) && score != nil }
+    var isProvisional: Bool { scoreStatus == "provisional" }
 }
 
 struct ProductScoreComponent: Codable, Hashable, Sendable {

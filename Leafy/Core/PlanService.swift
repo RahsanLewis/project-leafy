@@ -226,7 +226,7 @@ actor PlanService {
         let token = try await resolvedAccessToken()
         let localDate = Self.localDayString(for: date, calendar: calendar)
         let data = try await rest(
-            path: "food_entries?select=*&local_date=eq.\(localDate)&order=consumed_at.asc",
+            path: "food_entries_with_score?select=*&local_date=eq.\(localDate)&order=consumed_at.asc",
             accessToken: token
         )
         return try decoder.decode([FoodEntry].self, from: data)
@@ -247,6 +247,15 @@ actor PlanService {
         )
         let envelope = try decoder.decode([ConsumptionNutrientEnvelope].self, from: data).first
         return envelope?.consumptionItemNutrients.filter { $0.code != "energy_kcal" } ?? []
+    }
+
+    func fetchFoodEntryScore(entryID: UUID) async throws -> ProductNutritionScore? {
+        let token = try await resolvedAccessToken()
+        let data = try await rest(
+            path: "pfqs_food_entry_scores?select=result&food_entry_id=eq.\(entryID.uuidString)&limit=1",
+            accessToken: token
+        )
+        return try decoder.decode([FoodEntryScoreRow].self, from: data).first?.result
     }
 
     func fetchPlan(activeAt endOfDay: Date) async throws -> NutritionPlan? {
@@ -788,6 +797,7 @@ actor PlanService {
 private struct APIErrorPayload: Decodable { let error: String }
 private struct EmptyResponse: Decodable { let ok: Bool }
 private struct FoodEntryResponse: Decodable { let entry: FoodEntry }
+private struct FoodEntryScoreRow: Decodable { let result: ProductNutritionScore }
 private struct ConsumptionNutrientEnvelope: Decodable {
     let consumptionItemNutrients: [NutrientAmountInput]
     enum CodingKeys: String, CodingKey { case consumptionItemNutrients = "consumption_item_nutrients" }

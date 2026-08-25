@@ -21,6 +21,7 @@ struct FoodEntry: Codable, Equatable, Hashable, Identifiable, Sendable {
     var entrySource: String? = nil
     var calorieMethod: String? = nil
     var canonicalFoodVersionID: UUID? = nil
+    var score: ProductNutritionScore? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, calories
@@ -41,6 +42,7 @@ struct FoodEntry: Codable, Equatable, Hashable, Identifiable, Sendable {
         case entrySource = "entry_source"
         case calorieMethod = "calorie_method"
         case canonicalFoodVersionID = "canonical_food_version_id"
+        case score
     }
 
     var isAIEstimate: Bool { entrySource == "photo_ai" || entrySource == "text_ai" }

@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
 import { calculateAndPersistPFQS, pfqsAPIResult } from '../_shared/pfqs/persistence.ts'
+import { normalizePFQSJurisdiction } from '../_shared/pfqs/scorer.ts'
 import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
 
 type Body = {
@@ -228,11 +229,12 @@ async function importUSDA(admin: any, fdcID: number) {
     if (labelWrite.error) throw labelWrite.error
   }
   await calculateAndPersistPFQS(admin, version.id, {
-    product_name: String(food.description ?? ''), jurisdiction: String(food.marketCountry ?? 'US'),
+    product_name: String(food.description ?? ''), jurisdiction: normalizePFQSJurisdiction(String(food.marketCountry ?? 'US')),
     assessment_date: new Date().toISOString().slice(0, 10),
     serving_size: { amount: servingAmount, unit: normalizedServingUnit(servingUnit), description: food.householdServingFullText ?? null },
     nutrition: Object.fromEntries(labelNutrients.map((item) => [item.nutrient_code, item.amount_per_serving])) as PFQSNutrients,
     explicitly_reported_nutrients: labelNutrients.filter((item) => item.explicitly_reported).map((item) => item.nutrient_code as PFQSNutrientCode),
+    nutrient_evidence: Object.fromEntries(labelNutrients.map((item) => [item.nutrient_code, { source: 'derived', confidence: 0.9 }])),
     ingredients_raw: String(food.ingredients ?? ''), verification_status: 'verified', product_type: 'food',
   })
   return productForVersion(admin, version.id)
@@ -255,8 +257,35 @@ async function productForVersion(admin: any, id: string) {
       .eq('additive_database_version', release.additive_database_version)
       .order('assessment_date', { ascending: false }).limit(1).maybeSingle()
     : { data: null }
-  const score = scoreResult.data
   const values = (nutrients ?? []).map((n: Record<string, unknown>) => ({ code: String(n.nutrient_code), amount_per_100g: Number(n.amount_per_100g) }))
+  let scoreAPI = scoreResult.data ? pfqsAPIResult(scoreResult.data) : null
+  if (!scoreAPI && release?.model_version) {
+    const required = new Set<PFQSNutrientCode>(['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'trans_fat_g', 'protein_g'])
+    const labelValues = (servingNutrients ?? []).filter((item: Record<string, unknown>) => required.has(String(item.nutrient_code) as PFQSNutrientCode))
+    const canScale = Number(version.serving_size) > 0 && /^(g|gram|grams|grm)$/i.test(String(version.serving_unit ?? ''))
+    const derivedValues = values.filter((item: { code: string }) => required.has(item.code as PFQSNutrientCode)).map((item: { code: string; amount_per_100g: number }) => ({
+      nutrient_code: item.code,
+      amount_per_serving: item.amount_per_100g * (canScale ? Number(version.serving_size) / 100 : 1),
+      declaration_type: 'derived',
+    }))
+    const usable = [...new Map([...derivedValues, ...labelValues].map((item: Record<string, unknown>) => [String(item.nutrient_code), item])).values()]
+    scoreAPI = await calculateAndPersistPFQS(admin, id, {
+      product_name: String(version.description), jurisdiction: normalizePFQSJurisdiction(String(version.market_country ?? 'US')),
+      assessment_date: new Date().toISOString().slice(0, 10),
+      serving_size: {
+        amount: canScale || labelValues.length ? Number(version.serving_size ?? 0) : 100,
+        unit: canScale || labelValues.length ? String(version.serving_unit ?? '') : 'g',
+      },
+      nutrition: Object.fromEntries(usable.map((item: Record<string, unknown>) => [String(item.nutrient_code), Number(item.amount_per_serving)])) as PFQSNutrients,
+      explicitly_reported_nutrients: usable.filter((item: Record<string, unknown>) => item.declaration_type !== 'derived')
+        .map((item: Record<string, unknown>) => String(item.nutrient_code) as PFQSNutrientCode),
+      nutrient_evidence: Object.fromEntries(usable.map((item: Record<string, unknown>) => [String(item.nutrient_code), {
+        source: item.declaration_type === 'derived' ? 'derived' : 'label', confidence: item.declaration_type === 'derived' ? 0.9 : 1,
+      }])),
+      ingredients_raw: String(version.ingredients_text ?? ''), verification_status: String(version.verification_status ?? ''),
+      product_type: version.source_data_type === 'ai_estimate' ? 'ai_estimate' : 'food',
+    })
+  }
   return {
     id, food_version_id: id, fdc_id: version.source_system === 'usda_fdc' ? Number(version.source_record_id) : null,
     name: version.description, brand: version.brand_name, barcode: version.gtin, source: version.source_system === 'usda_fdc' ? 'USDA FoodData Central' : 'Leafy catalog',
@@ -276,7 +305,7 @@ async function productForVersion(admin: any, id: string) {
       evidence_section: item.evidence_section,
       value_source: item.declaration_type === 'derived' ? 'source_derived' : 'package_label',
     })),
-    score: pfqsAPIResult(score),
+    score: scoreAPI,
   }
 }
 
@@ -298,7 +327,7 @@ function pfqsLabelNutrients(nutrients: { nutrient_code: string; amount_per_100g:
     nutrient_code: item.nutrient_code as PFQSNutrientCode,
     amount_per_serving: canConvert ? Number((item.amount_per_100g * servingAmount / 100).toFixed(6)) : Number.NaN,
     unit: item.nutrient_code === 'energy_kcal' ? 'kcal' : item.nutrient_code === 'sodium_mg' ? 'mg' : 'g',
-    explicitly_reported: canConvert,
+    explicitly_reported: false,
   })).filter((item) => Number.isFinite(item.amount_per_serving))
 }
 

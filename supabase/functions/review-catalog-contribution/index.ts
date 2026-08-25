@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { calculateAndPersistPFQS } from "../_shared/pfqs/persistence.ts";
+import { normalizePFQSJurisdiction } from "../_shared/pfqs/scorer.ts";
 import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
 import { PFQS_INGREDIENT_DATABASE_VERSION } from "../_shared/pfqs/types.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
@@ -980,7 +981,7 @@ async function publish(admin: any, contribution: Row) {
   if (labelWrite.error) throw labelWrite.error;
   await calculateAndPersistPFQS(admin, version.data.id, {
     product_name: String(fields.product_name),
-    jurisdiction: String(contribution.market_country ?? "US"),
+    jurisdiction: normalizePFQSJurisdiction(String(contribution.market_country ?? "US")),
     assessment_date: new Date().toISOString().slice(0, 10),
     serving_size: {
       amount: Number(fields.serving_amount),
@@ -995,6 +996,10 @@ async function publish(admin: any, contribution: Row) {
     explicitly_reported_nutrients: pfqsNutrients.filter((item: Row) =>
       item.printed_on_label === true
     ).map((item: Row) => String(item.nutrient_code) as PFQSNutrientCode),
+    nutrient_evidence: Object.fromEntries(pfqsNutrients.map((item: Row) => [String(item.nutrient_code), {
+      source: item.printed_on_label === true ? "label" : "derived",
+      confidence: Number(item.confidence ?? 1),
+    }])),
     ingredients_raw: String(fields.ingredients ?? ""),
     verification_status: "community_confirmed",
     product_type: "food",

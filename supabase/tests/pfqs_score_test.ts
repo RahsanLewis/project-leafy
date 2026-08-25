@@ -1,6 +1,6 @@
 import {
   calculateAdditivePenalty, calculatePFQS, scoreAddedSugar, scoreBeneficialFoods,
-  scoreFiber, scoreIngredientQuality, scoreProtein, scoreSaturatedTransFat, scoreSodium,
+  normalizePFQSJurisdiction, scoreFiber, scoreIngredientQuality, scoreProtein, scoreSaturatedTransFat, scoreSodium,
 } from '../functions/_shared/pfqs/scorer.ts'
 import { parseIngredients } from '../functions/_shared/pfqs/ingredient-parser.ts'
 import { classifyTopLevelIngredients } from '../functions/_shared/pfqs/ingredient-taxonomy.ts'
@@ -48,7 +48,7 @@ Deno.test('complete PFQS example produces its deterministic component sum', () =
   assertEquals(result.score, 74)
 })
 
-Deno.test('required explicit trans fat prevents a misleading partial score', () => {
+Deno.test('missing trans fat produces a numeric provisional score without assuming zero', () => {
   const result = calculatePFQS({
     product_name: 'Test food', jurisdiction: 'US', assessment_date: '2026-08-13',
     serving_size: { amount: 30, unit: 'g' }, verification_status: 'verified',
@@ -56,9 +56,46 @@ Deno.test('required explicit trans fat prevents a misleading partial score', () 
     explicitly_reported_nutrients: ['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'protein_g'],
     ingredients_raw: 'Whole grain oats',
   })
-  assertEquals(result.score_status, 'incomplete')
-  assertEquals(result.score, null)
+  assertEquals(result.score_status, 'provisional')
+  assertEquals(result.score, 92)
+  assertEquals(result.evidence_coverage, 0.9)
   assertEquals(result.missing_fields.includes('trans_fat_g'), true)
+})
+
+Deno.test('unknown ingredients reduce coverage instead of blocking known nutrition', () => {
+  const result = calculatePFQS({
+    product_name: 'Unfamiliar food', jurisdiction: 'US', assessment_date: '2026-08-25',
+    serving_size: { amount: 30, unit: 'g' }, verification_status: 'verified',
+    nutrition: { energy_kcal: 100, added_sugars_g: 0, fiber_g: 2, sodium_mg: 100, saturated_fat_g: 1, trans_fat_g: 0, protein_g: 4 },
+    explicitly_reported_nutrients: ['energy_kcal', 'added_sugars_g', 'fiber_g', 'sodium_mg', 'saturated_fat_g', 'trans_fat_g', 'protein_g'],
+    ingredients_raw: 'Uncatalogued botanical blend',
+  })
+  assertEquals(result.score_status, 'provisional')
+  assertEquals(result.evidence_coverage, 0.7)
+  assertEquals(result.missing_fields, ['ingredient_classification:uncatalogued botanical blend'])
+})
+
+Deno.test('unverified ordinary foods remain eligible while specialized products do not', () => {
+  const ordinary = calculatePFQS({
+    product_name: 'Estimated soup', jurisdiction: 'US', assessment_date: '2026-08-25',
+    serving_size: { amount: 1, unit: 'bowl' }, verification_status: 'unverified', product_type: 'restaurant',
+    nutrition: { energy_kcal: 200, sodium_mg: 500 }, ingredients_raw: '',
+  })
+  assertEquals(ordinary.score_status, 'provisional')
+  assertEquals(ordinary.score !== null, true)
+  const supplement = calculatePFQS({ ...ordinaryInput(), product_type: 'supplement' })
+  assertEquals(supplement.score_status, 'ineligible')
+})
+
+Deno.test('zero scorable evidence is pending and common US names normalize', () => {
+  const result = calculatePFQS({
+    product_name: 'Unknown food', jurisdiction: 'US', assessment_date: '2026-08-25',
+    serving_size: { amount: 1, unit: 'serving' }, verification_status: 'unverified',
+    nutrition: { energy_kcal: 100 }, ingredients_raw: '', product_type: 'manual',
+  })
+  assertEquals(result.score_status, 'pending')
+  assertEquals(result.score, null)
+  assertEquals(['US', 'USA', 'United States', 'United States of America'].map(normalizePFQSJurisdiction), ['US', 'US', 'US', 'US'])
 })
 
 Deno.test('50 calorie floor is used for very low calorie products', () => {
@@ -98,4 +135,12 @@ Deno.test('total additive penalty is capped at 25', () => {
 
 function additiveResult(id: string, penalty: number): any {
   return { name: id, canonical_id: id, family: null, tier: 4, penalty, status: 'classified', reason: '', matched_alias: id }
+}
+
+function ordinaryInput(): any {
+  return {
+    product_name: 'Food', jurisdiction: 'US', assessment_date: '2026-08-25',
+    serving_size: { amount: 1, unit: 'serving' }, verification_status: 'verified',
+    nutrition: { energy_kcal: 100, sodium_mg: 100 }, ingredients_raw: '',
+  }
 }
