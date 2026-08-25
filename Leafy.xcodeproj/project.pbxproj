@@ -16,6 +16,7 @@
 		0E18ABE611DA2A5C2F651CEA /* FoodEntryEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810EB6FDEA336879CD980FC6 /* FoodEntryEditorView.swift */; };
 		0EE5B8138708142130B5E35B /* AuthenticationModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3BABD0EBDE0FD8FE5A7BA8 /* AuthenticationModelsTests.swift */; };
 		11E6CADD8B9CB4FA1AE022D4 /* AppearanceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F394BECC196737EB532600 /* AppearanceModeTests.swift */; };
+		170A6E734AE8A8E6BDCB72FC /* ProductDetailLabelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CC5EF83CE875F8EB26284D /* ProductDetailLabelTests.swift */; };
 		18527F8ED817D629706D725D /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8AA7BEC7FCBD7867401369B /* DashboardView.swift */; };
 		1A5A21998472C91DB4AC021C /* LogFoodView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65980EFB36D9689CB4FC808C /* LogFoodView.swift */; };
 		1ACA522820128B4555F93B47 /* PlusJakartaSans-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FB69BC15CBC7B24DE86B0943 /* PlusJakartaSans-ExtraBold.ttf */; };
@@ -111,6 +112,7 @@
 		1175385813C06443DB532F41 /* CatalogContributionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogContributionModels.swift; sourceTree = "<group>"; };
 		13072B3E06CBF6914FB0DA9E /* AuthenticationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationView.swift; sourceTree = "<group>"; };
 		23368F78224063825A014B05 /* AskLeafyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskLeafyView.swift; sourceTree = "<group>"; };
+		24CC5EF83CE875F8EB26284D /* ProductDetailLabelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailLabelTests.swift; sourceTree = "<group>"; };
 		25F4D821BF264B6BF74DCAE8 /* CoreDataUseAcknowledgmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataUseAcknowledgmentView.swift; sourceTree = "<group>"; };
 		3009730DBC51ADADDFB5F94C /* CatalogContributionModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogContributionModelsTests.swift; sourceTree = "<group>"; };
 		3625248BE1EAD25739E6E4ED /* AIMealModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMealModels.swift; sourceTree = "<group>"; };
@@ -215,6 +217,7 @@
 				EF5E85E0A25E0E0E0BCBC184 /* DailyReminderTests.swift */,
 				708989BFC067E7819FC793A1 /* FoodImpactCalculatorTests.swift */,
 				8DB8BD9BD45EA97F1195E76F /* NutritionCalculatorTests.swift */,
+				24CC5EF83CE875F8EB26284D /* ProductDetailLabelTests.swift */,
 				4441A52DB5477117E5B2DCC6 /* ProductServingQuantityTests.swift */,
 				71A23ECA3F4CB5DF82321F9D /* TypographyTests.swift */,
 				0F1F55F2F18F7A6501751F42 /* WeightProgressTests.swift */,
@@ -586,6 +589,7 @@
 				A37281C7C918EB4578E472CA /* DailyReminderTests.swift in Sources */,
 				7C2DEE104DD0433B1E353BCB /* FoodImpactCalculatorTests.swift in Sources */,
 				B23DC6512D9DF70AA07E402F /* NutritionCalculatorTests.swift in Sources */,
+				170A6E734AE8A8E6BDCB72FC /* ProductDetailLabelTests.swift in Sources */,
 				B118CE96F359B7339DC1AD1D /* ProductServingQuantityTests.swift in Sources */,
 				6501953D6DDB911BFBCDDB1A /* TypographyTests.swift in Sources */,
 				9AB64946EA57AFD3AF3ED9F2 /* WeightProgressTests.swift in Sources */,

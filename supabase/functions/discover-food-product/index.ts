@@ -191,9 +191,34 @@ async function importUSDA(admin: any, fdcID: number) {
     return code && Number.isFinite(amount) && amount >= 0 ? [{ food_version_id: version.id, nutrient_code: code, amount_per_100g: amount, derivation_method: 'label' }] : []
   })
   if (nutrients.length) { const result = await admin.from('food_version_nutrients').insert(nutrients); if (result.error) throw result.error }
-  if (Number(food.servingSize) > 0 && food.servingSizeUnit) await admin.from('food_portions').insert({ food_version_id: version.id, amount: 1, unit: 'serving', description: food.householdServingFullText ?? 'Serving', gram_weight: food.servingSize, source: 'usda_fdc' })
   const servingAmount = Number(food.servingSize)
   const servingUnit = String(food.servingSizeUnit ?? '')
+  if (Number.isFinite(servingAmount) && servingAmount > 0 && /^(g|gram|grams|grm)$/i.test(servingUnit)) {
+    const portionResult = await admin.from('food_portions').insert({ food_version_id: version.id, amount: 1, unit: 'serving', description: food.householdServingFullText ?? 'Serving', gram_weight: servingAmount, source: 'usda_fdc' })
+    if (portionResult.error) throw portionResult.error
+    const sourceByCode = new Map(((food.foodNutrients ?? []) as Record<string, unknown>[]).flatMap((item) => {
+      const nutrient = item.nutrient as Record<string, unknown> | undefined
+      const code = nutrientCodes[Number(nutrient?.id ?? item.nutrientId)]
+      return code ? [[code, item] as const] : []
+    }))
+    const servingRows = nutrients.map((item) => {
+      const source = sourceByCode.get(item.nutrient_code)
+      const percent = Number(source?.percentDailyValue)
+      return {
+        food_version_id: version.id,
+        nutrient_code: item.nutrient_code,
+        amount_per_serving: Number((item.amount_per_100g * servingAmount / 100).toFixed(6)),
+        unit: nutrientUnit(item.nutrient_code),
+        percent_daily_value: Number.isFinite(percent) && percent >= 0 ? percent : null,
+        declaration_type: 'derived',
+        evidence_section: 'usda_fdc',
+      }
+    })
+    if (servingRows.length) {
+      const servingWrite = await admin.from('food_version_serving_nutrients').upsert(servingRows, { onConflict: 'food_version_id,nutrient_code' })
+      if (servingWrite.error) throw servingWrite.error
+    }
+  }
   const labelNutrients = pfqsLabelNutrients(nutrients, servingAmount, servingUnit)
   if (labelNutrients.length) {
     const labelWrite = await admin.from('pfqs_label_nutrients').upsert(labelNutrients.map((item) => ({
@@ -215,10 +240,11 @@ async function importUSDA(admin: any, fdcID: number) {
 
 // deno-lint-ignore no-explicit-any
 async function productForVersion(admin: any, id: string) {
-  const [{ data: version, error }, { data: nutrients }, { data: portions }, { data: release }] = await Promise.all([
+  const [{ data: version, error }, { data: nutrients }, { data: portions }, { data: servingNutrients }, { data: release }] = await Promise.all([
     admin.from('food_versions').select('*').eq('id', id).single(),
     admin.from('food_version_nutrients').select('nutrient_code, amount_per_100g').eq('food_version_id', id),
     admin.from('food_portions').select('id, amount, unit, description, gram_weight').eq('food_version_id', id),
+    admin.from('food_version_serving_nutrients').select('nutrient_code,amount_per_serving,unit,percent_daily_value,declaration_type,printed_text,evidence_section').eq('food_version_id', id),
     admin.from('pfqs_releases').select('model_version,ingredient_taxonomy_version,additive_database_version').eq('status', 'active').maybeSingle(),
   ])
   if (error) throw error
@@ -227,7 +253,7 @@ async function productForVersion(admin: any, id: string) {
       .eq('model_version', release.model_version)
       .eq('ingredient_taxonomy_version', release.ingredient_taxonomy_version)
       .eq('additive_database_version', release.additive_database_version)
-      .eq('score_status', 'complete').order('assessment_date', { ascending: false }).limit(1).maybeSingle()
+      .order('assessment_date', { ascending: false }).limit(1).maybeSingle()
     : { data: null }
   const score = scoreResult.data
   const values = (nutrients ?? []).map((n: Record<string, unknown>) => ({ code: String(n.nutrient_code), amount_per_100g: Number(n.amount_per_100g) }))
@@ -237,11 +263,28 @@ async function productForVersion(admin: any, id: string) {
     food_kind: version.food_kind ?? (version.gtin ? 'packaged' : 'generic'),
     resolution_source: version.source_system === 'usda_fdc' ? 'usda' : 'leafy_catalog',
     source_record_id: version.source_record_id, serving_size: version.serving_size, serving_unit: version.serving_unit,
+    servings_per_container: version.servings_per_container,
+    metric_serving_size: version.metric_serving_size, metric_serving_unit: version.metric_serving_unit,
+    nutrition_footnote: version.label_sections?.nutrition_footnote ?? null,
     calories_per_100g: values.find((n: { code: string; amount_per_100g: number }) => n.code === 'energy_kcal')?.amount_per_100g ?? null,
     ingredients: version.ingredients_text, allergens: version.allergens ?? [], image_url: version.image_url,
     verification_status: version.verification_status, nutrients: values, portions: portions ?? [],
+    label_nutrients: (servingNutrients ?? []).map((item: Record<string, unknown>) => ({
+      code: item.nutrient_code, amount_per_serving: Number(item.amount_per_serving), unit: item.unit,
+      percent_daily_value: item.percent_daily_value == null ? null : Number(item.percent_daily_value),
+      declaration_type: item.declaration_type, printed_text: item.printed_text,
+      evidence_section: item.evidence_section,
+      value_source: item.declaration_type === 'derived' ? 'source_derived' : 'package_label',
+    })),
     score: pfqsAPIResult(score),
   }
+}
+
+function nutrientUnit(code: string) {
+  if (code === 'energy_kcal') return 'kcal'
+  if (code.endsWith('_mcg') || code === 'vitamin_a_mcg_rae' || code === 'folate_mcg_dfe') return 'mcg'
+  if (code.endsWith('_mg') || code === 'niacin_mg_ne') return 'mg'
+  return 'g'
 }
 
 function normalizedServingUnit(value: string) {

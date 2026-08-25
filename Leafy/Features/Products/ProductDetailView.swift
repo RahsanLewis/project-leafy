@@ -16,6 +16,7 @@ struct ProductDetailView: View {
     @State private var showingIngredients = false
     @State private var showingProductDetails = false
     @State private var showingScoreDetails = false
+    @State private var showingLabelUpdate = false
 
     init(
         product: ProductDetail,
@@ -48,9 +49,8 @@ struct ProductDetailView: View {
                     loggingControls
                 }
 
-                if let score = product.score, score.isAvailable {
-                    leafyScore(score)
-                }
+                if let score = product.score { leafyScore(score) }
+                else { unavailableScore(title: "Score not calculated", reasons: ["Leafy has not calculated this product yet."]) }
 
                 if app.configuration.isFoodImpactEnabled {
                     DisclosureGroup("How it fits today", isExpanded: $showingImpact) {
@@ -68,7 +68,12 @@ struct ProductDetailView: View {
                     .tint(LeafyTheme.green)
                 }
 
-                NutritionValueDisclosure(title: "Nutrition", nutrients: servingNutrients)
+                PackageNutritionFactsView(
+                    servingDescription: packageServingLabel,
+                    servingsPerContainer: product.servingsPerContainer,
+                    nutrients: nutritionFactsNutrients,
+                    packageFootnote: product.nutritionFootnote
+                )
 
                 if let ingredients = product.ingredients, !ingredients.isEmpty || !product.allergens.isEmpty {
                     DisclosureGroup("Ingredients & allergens", isExpanded: $showingIngredients) {
@@ -142,6 +147,16 @@ struct ProductDetailView: View {
         )) {
             Button("OK") { app.productErrorMessage = nil }
         } message: { Text(app.productErrorMessage ?? "") }
+        .navigationDestination(isPresented: $showingLabelUpdate) {
+            if let barcode = product.barcode {
+                CatalogContributionView(
+                    barcode: barcode,
+                    intent: intent,
+                    onCompleted: {},
+                    refreshExisting: true
+                )
+            }
+        }
     }
 
     private var heroSubtitle: String? {
@@ -162,6 +177,59 @@ struct ProductDetailView: View {
             return "\(description) (\(portion.gramWeight.formatted(.number.precision(.fractionLength(0...1)))) g)"
         }
         return "100 g"
+    }
+    private var packageServingLabel: String {
+        let household: String? = {
+            if let portion = product.portions.first, let description = portion.description, !description.isEmpty { return description }
+            if let size = product.servingSize, let unit = product.servingUnit { return "\(size.formatted(.number.precision(.fractionLength(0...2)))) \(unit)" }
+            return nil
+        }()
+        let metric: String? = {
+            if let size = product.metricServingSize, let unit = product.metricServingUnit { return "\(size.formatted(.number.precision(.fractionLength(0...2)))) \(unit)" }
+            if let portion = product.portions.first { return "\(portion.gramWeight.formatted(.number.precision(.fractionLength(0...1)))) g" }
+            if let size = product.servingSize, ["g", "gram", "grams"].contains(product.servingUnit?.lowercased() ?? "") { return "\(size.formatted(.number.precision(.fractionLength(0...1)))) g" }
+            return nil
+        }()
+        if let household, let metric, !household.localizedCaseInsensitiveContains(metric) { return "\(household) (\(metric))" }
+        return household ?? metric ?? "Serving information unavailable"
+    }
+    private var nutritionFactsNutrients: [ProductLabelNutrient] {
+        if let values = product.labelNutrients, !values.isEmpty { return values }
+        guard ["g", "gram", "grams", "grm"].contains(product.servingUnit?.lowercased() ?? "") else { return [] }
+        return product.nutrients.map { nutrient in
+            let amount = nutrient.amountPer100G * product.defaultGrams / 100
+            return ProductLabelNutrient(
+                code: nutrient.code,
+                amountPerServing: amount,
+                unit: Self.unit(for: nutrient.code),
+                percentDailyValue: Self.dailyValue(for: nutrient.code).map { amount / $0 * 100 },
+                declarationType: "derived",
+                printedText: nil,
+                evidenceSection: "normalized_database",
+                valueSource: "source_derived"
+            )
+        }
+    }
+    private static func unit(for code: String) -> String {
+        if code == "energy_kcal" { return "kcal" }
+        if code.contains("_mcg") { return "mcg" }
+        if code.contains("_mg") { return "mg" }
+        return "g"
+    }
+    private static func dailyValue(for code: String) -> Double? {
+        [
+            "fat_g": 78, "saturated_fat_g": 20, "cholesterol_mg": 300, "sodium_mg": 2300,
+            "carbohydrate_g": 275, "fiber_g": 28, "added_sugars_g": 50,
+            "vitamin_d_mcg": 20, "calcium_mg": 1300, "iron_mg": 18, "potassium_mg": 4700,
+            "vitamin_a_mcg_rae": 900, "vitamin_c_mg": 90, "vitamin_e_mg": 15,
+            "vitamin_k_mcg": 120, "thiamin_mg": 1.2, "riboflavin_mg": 1.3,
+            "niacin_mg_ne": 16, "vitamin_b6_mg": 1.7, "folate_mcg_dfe": 400,
+            "vitamin_b12_mcg": 2.4, "biotin_mcg": 30, "pantothenic_acid_mg": 5,
+            "phosphorus_mg": 1250, "iodine_mcg": 150, "zinc_mg": 11,
+            "selenium_mcg": 55, "copper_mg": 0.9, "manganese_mg": 2.3,
+            "chromium_mcg": 35, "molybdenum_mcg": 45, "chloride_mg": 2300,
+            "choline_mg": 550,
+        ][code]
     }
     private func matchingPortion(for grams: Double) -> ProductPortion? {
         product.portions.first { abs($0.gramWeight - grams) < 0.01 }
@@ -304,6 +372,13 @@ struct ProductDetailView: View {
     }
 
     private func leafyScore(_ score: ProductNutritionScore) -> some View {
+        if !score.isAvailable {
+            return AnyView(unavailableScore(
+                title: score.scoreStatus == "ineligible" ? "Not eligible for a Leafy Score" : "Leafy Score unavailable",
+                reasons: friendlyScoreReasons(score)
+            ))
+        }
+        return AnyView(
         VStack(alignment: .leading, spacing: LeafySpacing.medium) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -349,6 +424,56 @@ struct ProductDetailView: View {
             .tint(LeafyTheme.green)
         }
         .accessibilityElement(children: .contain)
+        )
+    }
+
+    private func unavailableScore(title: String, reasons: [String]) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Leafy Score").font(LeafyTypography.title3)
+                    Text(title).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("—").font(LeafyTypography.metric(40)).foregroundStyle(.secondary)
+            }
+            ForEach(reasons.prefix(3), id: \.self) { reason in
+                Label(reason, systemImage: "info.circle")
+                    .font(LeafyTypography.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if product.barcode != nil && scoreNeedsLabelUpdate {
+                Button("Add package label") { showingLabelUpdate = true }
+                    .font(LeafyTypography.button)
+                    .foregroundStyle(LeafyTheme.green)
+                    .frame(minHeight: LeafyTheme.minimumTouchTarget)
+                    .accessibilityIdentifier("addPackageLabelForScoreButton")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("leafyScoreUnavailable")
+    }
+
+    private var scoreNeedsLabelUpdate: Bool {
+        guard let score = product.score else { return product.barcode != nil }
+        return score.missingFields.contains { !$0.hasPrefix("ingredient_classification:") }
+    }
+
+    private func friendlyScoreReasons(_ score: ProductNutritionScore) -> [String] {
+        let values = score.missingFields + score.unavailableReasons
+        if values.isEmpty { return ["More verified package information is needed."] }
+        return values.map { value in
+            if value.hasPrefix("ingredient_classification:") { return "Leafy is reviewing this product’s ingredients." }
+            let labels = [
+                "serving_size": "The package serving size is missing.", "ingredients": "The complete ingredient list is missing.",
+                "energy_kcal": "Calories are missing from the package record.", "added_sugars_g": "Added sugars are missing from the package record.",
+                "fiber_g": "Dietary fiber is missing from the package record.", "sodium_mg": "Sodium is missing from the package record.",
+                "saturated_fat_g": "Saturated fat is missing from the package record.", "trans_fat_g": "Trans fat is missing from the package record.",
+                "protein_g": "Protein is missing from the package record.", "verified_product_required": "A verified package record is required.",
+                "unsupported_jurisdiction": "Leafy Score is not available for this market.", "unsupported_product_type": "This type of food is not scored.",
+            ]
+            return labels[value] ?? "More verified package information is needed."
+        }
     }
 
     @ViewBuilder private func scoreFactors(_ title: String, _ factors: [String], color: Color) -> some View {
@@ -363,5 +488,139 @@ struct ProductDetailView: View {
                 }
             }
         }
+    }
+}
+
+private struct PackageNutritionFactsView: View {
+    let servingDescription: String
+    let servingsPerContainer: String?
+    let nutrients: [ProductLabelNutrient]
+    let packageFootnote: String?
+
+    private static let order = [
+        "fat_g", "saturated_fat_g", "trans_fat_g", "cholesterol_mg", "sodium_mg",
+        "carbohydrate_g", "fiber_g", "sugars_g", "added_sugars_g", "protein_g",
+        "vitamin_d_mcg", "calcium_mg", "iron_mg", "potassium_mg",
+        "vitamin_a_mcg_rae", "vitamin_c_mg", "vitamin_e_mg", "vitamin_k_mcg",
+        "thiamin_mg", "riboflavin_mg", "niacin_mg_ne", "vitamin_b6_mg",
+        "folate_mcg_dfe", "vitamin_b12_mcg", "biotin_mcg", "pantothenic_acid_mg",
+        "phosphorus_mg", "iodine_mcg", "magnesium_mg", "zinc_mg", "selenium_mcg",
+        "copper_mg", "manganese_mg", "chromium_mcg", "molybdenum_mcg", "chloride_mg",
+        "choline_mg", "caffeine_mg",
+    ]
+    private static let names: [String: String] = [
+        "fat_g": "Total Fat", "saturated_fat_g": "Saturated Fat", "trans_fat_g": "Trans Fat",
+        "cholesterol_mg": "Cholesterol", "sodium_mg": "Sodium", "carbohydrate_g": "Total Carbohydrate",
+        "fiber_g": "Dietary Fiber", "sugars_g": "Total Sugars", "added_sugars_g": "Includes Added Sugars",
+        "protein_g": "Protein", "vitamin_d_mcg": "Vitamin D", "calcium_mg": "Calcium", "iron_mg": "Iron",
+        "potassium_mg": "Potassium", "vitamin_a_mcg_rae": "Vitamin A", "vitamin_c_mg": "Vitamin C",
+        "vitamin_e_mg": "Vitamin E", "vitamin_k_mcg": "Vitamin K", "thiamin_mg": "Thiamin",
+        "riboflavin_mg": "Riboflavin", "niacin_mg_ne": "Niacin", "vitamin_b6_mg": "Vitamin B6",
+        "folate_mcg_dfe": "Folate", "vitamin_b12_mcg": "Vitamin B12", "biotin_mcg": "Biotin",
+        "pantothenic_acid_mg": "Pantothenic Acid", "phosphorus_mg": "Phosphorus", "iodine_mcg": "Iodine",
+        "magnesium_mg": "Magnesium", "zinc_mg": "Zinc", "selenium_mcg": "Selenium", "copper_mg": "Copper",
+        "manganese_mg": "Manganese", "chromium_mcg": "Chromium", "molybdenum_mcg": "Molybdenum",
+        "chloride_mg": "Chloride", "choline_mg": "Choline", "caffeine_mg": "Caffeine",
+    ]
+    private static let indented = Set(["saturated_fat_g", "trans_fat_g", "fiber_g", "sugars_g"])
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Nutrition Facts")
+                .font(LeafyTypography.metric(30, extraBold: true))
+                .padding(.bottom, 2)
+            if let servingsPerContainer, !servingsPerContainer.isEmpty {
+                Text("\(servingsPerContainer) servings per container")
+                    .font(LeafyTypography.subheadline)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text("Serving size").font(LeafyTypography.headline)
+                Spacer(minLength: LeafySpacing.small)
+                Text(servingDescription).font(LeafyTypography.headline).multilineTextAlignment(.trailing)
+            }
+            .padding(.vertical, 4)
+            thickRule(8)
+            Text("Amount per serving")
+                .font(LeafyTypography.captionSemibold)
+                .padding(.top, 3)
+            HStack(alignment: .lastTextBaseline) {
+                Text("Calories").font(LeafyTypography.title2)
+                Spacer()
+                Text(calories).font(LeafyTypography.metric(40, extraBold: true)).monospacedDigit()
+            }
+            thickRule(5)
+            Text("% Daily Value*")
+                .font(LeafyTypography.captionSemibold)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.vertical, 3)
+
+            if orderedNutrients.isEmpty {
+                Text("Package nutrition values are unavailable.")
+                    .font(LeafyTypography.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, LeafySpacing.medium)
+            } else {
+                ForEach(Array(orderedNutrients.enumerated()), id: \.element.code) { index, nutrient in
+                    nutrientRow(nutrient)
+                    if index < orderedNutrients.count - 1 { Divider().overlay(Color.primary.opacity(0.45)) }
+                    if nutrient.code == "protein_g" { thickRule(5) }
+                }
+            }
+
+            let footnote = packageFootnote?.trimmingCharacters(in: .whitespacesAndNewlines)
+            Text(footnote?.isEmpty == false ? footnote! : "* The % Daily Value tells you how much a nutrient in a serving contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.")
+                .font(LeafyTypography.caption)
+                .padding(.top, LeafySpacing.small)
+            if nutrients.contains(where: \.isDerived) {
+                Text("† Some serving amounts or % Daily Values are derived from source data rather than transcribed from the package.")
+                    .font(LeafyTypography.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(LeafySpacing.medium)
+        .background(LeafyTheme.surface, in: .rect(cornerRadius: LeafyRadius.prominent))
+        .overlay(RoundedRectangle(cornerRadius: LeafyRadius.prominent).stroke(Color.primary.opacity(0.8), lineWidth: 1.5))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("packageNutritionFacts")
+    }
+
+    private var calories: String {
+        guard let value = nutrients.first(where: { $0.code == "energy_kcal" }) else { return "—" }
+        return value.amountPerServing.formatted(.number.precision(.fractionLength(0)))
+    }
+    private var orderedNutrients: [ProductLabelNutrient] {
+        nutrients.filter { $0.code != "energy_kcal" }.sorted {
+            (Self.order.firstIndex(of: $0.code) ?? Int.max) < (Self.order.firstIndex(of: $1.code) ?? Int.max)
+        }
+    }
+    private func nutrientRow(_ nutrient: ProductLabelNutrient) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: LeafySpacing.small) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(Self.names[nutrient.code] ?? nutrient.code.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(isPrimary(nutrient.code) ? LeafyTypography.subheadlineSemibold : LeafyTypography.subheadline)
+                Text(amount(nutrient)).font(LeafyTypography.subheadline).monospacedDigit()
+            }
+            .padding(.leading, indent(for: nutrient.code))
+            Spacer(minLength: LeafySpacing.xSmall)
+            if let percent = nutrient.percentDailyValue {
+                Text("\(percent.formatted(.number.precision(.fractionLength(0))))%")
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    private func amount(_ nutrient: ProductLabelNutrient) -> String {
+        "\(nutrient.amountPerServing.formatted(.number.precision(.fractionLength(0...2))))\(nutrient.unit)"
+    }
+    private func indent(for code: String) -> CGFloat {
+        code == "added_sugars_g" ? 28 : Self.indented.contains(code) ? 14 : 0
+    }
+    private func isPrimary(_ code: String) -> Bool {
+        ["fat_g", "cholesterol_mg", "sodium_mg", "carbohydrate_g", "protein_g"].contains(code)
+    }
+    private func thickRule(_ height: CGFloat) -> some View {
+        Rectangle().fill(Color.primary).frame(height: height)
     }
 }

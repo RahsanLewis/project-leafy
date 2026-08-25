@@ -39,6 +39,7 @@ struct CatalogContributionView: View {
     let barcode: String
     let intent: ProductDiscoveryIntent
     let onCompleted: (() -> Void)?
+    let refreshExisting: Bool
     @Binding private var hasUnsavedDraft: Bool
 
     @AppStorage("leafy.catalogContributionDisclosure.v1") private var acceptedDisclosure = false
@@ -61,11 +62,13 @@ struct CatalogContributionView: View {
         barcode: String,
         intent: ProductDiscoveryIntent,
         onCompleted: (() -> Void)?,
+        refreshExisting: Bool = false,
         hasUnsavedDraft: Binding<Bool> = .constant(false)
     ) {
         self.barcode = barcode
         self.intent = intent
         self.onCompleted = onCompleted
+        self.refreshExisting = refreshExisting
         _hasUnsavedDraft = hasUnsavedDraft
     }
 
@@ -265,7 +268,7 @@ struct CatalogContributionView: View {
 
     private func start() async {
         guard contribution == nil, acceptedDetail == nil else { return }
-        guard let response = await app.startCatalogContribution(barcode: barcode) else { return }
+        guard let response = await app.startCatalogContribution(barcode: barcode, refreshExisting: refreshExisting) else { return }
         if let id = response.foodVersionID {
             acceptedDetail = await app.loadProductDetail(foodVersionID: id)
             return

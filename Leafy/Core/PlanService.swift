@@ -417,9 +417,10 @@ actor PlanService {
         return result.products
     }
 
-    func startCatalogContribution(barcode: String, marketCountry: String = "US") async throws -> CatalogContributionStartResponse {
+    func startCatalogContribution(barcode: String, marketCountry: String = "US", refreshExisting: Bool = false) async throws -> CatalogContributionStartResponse {
         let body = try JSONSerialization.data(withJSONObject: [
             "action": "start", "barcode": barcode, "market_country": marketCountry,
+            "refresh_existing": refreshExisting,
         ])
         return try await request(function: "manage-catalog-contribution", body: body, response: CatalogContributionStartResponse.self)
     }

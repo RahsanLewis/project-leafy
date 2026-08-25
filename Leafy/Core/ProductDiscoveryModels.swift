@@ -41,6 +41,10 @@ struct ProductDetail: Codable, Identifiable, Hashable, Sendable {
     let resolutionSource: String?
     let servingSize: Double?
     let servingUnit: String?
+    let servingsPerContainer: String?
+    let metricServingSize: Double?
+    let metricServingUnit: String?
+    let nutritionFootnote: String?
     let caloriesPer100G: Double?
     let ingredients: String?
     let allergens: [String]
@@ -48,12 +52,17 @@ struct ProductDetail: Codable, Identifiable, Hashable, Sendable {
     let verificationStatus: String?
     let nutrients: [ProductNutrient]
     let portions: [ProductPortion]
+    let labelNutrients: [ProductLabelNutrient]?
     let score: ProductNutritionScore?
     enum CodingKeys: String, CodingKey {
         case id, name, brand, barcode, source, ingredients, allergens, nutrients, portions, score
+        case labelNutrients = "label_nutrients"
         case foodKind = "food_kind", resolutionSource = "resolution_source"
         case fdcID = "fdc_id", foodVersionID = "food_version_id"
         case servingSize = "serving_size", servingUnit = "serving_unit"
+        case servingsPerContainer = "servings_per_container"
+        case metricServingSize = "metric_serving_size", metricServingUnit = "metric_serving_unit"
+        case nutritionFootnote = "nutrition_footnote"
         case caloriesPer100G = "calories_per_100g", imageURL = "image_url"
         case verificationStatus = "verification_status"
     }
@@ -65,6 +74,29 @@ struct ProductDetail: Codable, Identifiable, Hashable, Sendable {
         }
         return 100
     }
+}
+
+struct ProductLabelNutrient: Codable, Hashable, Sendable {
+    let code: String
+    let amountPerServing: Double
+    let unit: String
+    let percentDailyValue: Double?
+    let declarationType: String
+    let printedText: String?
+    let evidenceSection: String?
+    let valueSource: String
+
+    enum CodingKeys: String, CodingKey {
+        case code, unit
+        case amountPerServing = "amount_per_serving"
+        case percentDailyValue = "percent_daily_value"
+        case declarationType = "declaration_type"
+        case printedText = "printed_text"
+        case evidenceSection = "evidence_section"
+        case valueSource = "value_source"
+    }
+
+    var isDerived: Bool { valueSource == "source_derived" || declarationType == "derived" }
 }
 
 enum ProductServingQuantity {

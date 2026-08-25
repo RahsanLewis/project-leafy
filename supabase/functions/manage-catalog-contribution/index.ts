@@ -34,6 +34,7 @@ type Body = {
   time_zone?: string;
   meal_type?: string;
   serving_count?: number;
+  refresh_existing?: boolean;
 };
 type NutrientInput = {
   code: string;
@@ -345,19 +346,22 @@ async function start(admin: any, userID: string, body: Body) {
     throw new Error("Choose a valid product market.");
   }
   const existing = await activeProduct(admin, gtin, market);
-  if (existing) {
+  if (existing && body.refresh_existing !== true) {
     return {
       outcome: "existing",
       food_version_id: existing.id,
       contribution: null,
     };
   }
-  const resumed = await admin.from("catalog_contributions").select("*").eq(
+  let resumedQuery = admin.from("catalog_contributions").select("*").eq(
     "user_id",
     userID,
   ).eq("gtin", gtin)
     .in("status", ["draft", "processing", "pending_review", "needs_review"])
-    .order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    .order("updated_at", { ascending: false }).limit(1);
+  if (body.refresh_existing === true && existing) resumedQuery = resumedQuery.eq("target_food_version_id", existing.id);
+  else resumedQuery = resumedQuery.is("target_food_version_id", null);
+  const resumed = await resumedQuery.maybeSingle();
   if (resumed.error) throw resumed.error;
   if (resumed.data) {
     return {
@@ -370,6 +374,7 @@ async function start(admin: any, userID: string, body: Body) {
     gtin,
     market_country: market,
     status: "draft",
+    target_food_version_id: body.refresh_existing === true ? existing?.id ?? null : null,
   }).select("*").single();
   if (created.error) throw created.error;
   await event(
@@ -1248,12 +1253,23 @@ async function publish(
   nutrients: NutrientInput[],
   verification: string,
 ) {
-  const canonical = await admin.from("foods").insert({
-    canonical_name: fields.product_name,
-  }).select("id").single();
-  if (canonical.error) throw canonical.error;
+  const targetID = contribution.target_food_version_id
+    ? String(contribution.target_food_version_id)
+    : null;
+  let foodID: string;
+  if (targetID) {
+    const target = await admin.from("food_versions").select("food_id").eq("id", targetID).is("superseded_at", null).single();
+    if (target.error) throw target.error;
+    foodID = String(target.data.food_id);
+  } else {
+    const canonical = await admin.from("foods").insert({
+      canonical_name: fields.product_name,
+    }).select("id").single();
+    if (canonical.error) throw canonical.error;
+    foodID = String(canonical.data.id);
+  }
   const version = await admin.from("food_versions").insert({
-    food_id: canonical.data.id,
+    food_id: foodID,
     source_system: "leafy",
     source_record_id: String(contribution.id),
     source_data_type: "community_label",
@@ -1270,7 +1286,7 @@ async function publish(
     metric_serving_unit: fields.metric_serving_unit || null,
     package_claims: fields.claims ?? [],
     label_sections: fields.label_sections ?? {},
-    verification_status: verification,
+    verification_status: targetID ? "rejected" : verification,
     raw_source: {
       contribution_id: contribution.id,
       revision: contribution.revision,
@@ -1348,6 +1364,14 @@ async function publish(
     verification_status: verification,
     product_type: "food",
   });
+  if (targetID) {
+    const activated = await admin.rpc("activate_food_version_replacement", {
+      p_previous_id: targetID,
+      p_replacement_id: version.data.id,
+      p_verification_status: verification,
+    });
+    if (activated.error) throw activated.error;
+  }
   return String(version.data.id);
 }
 

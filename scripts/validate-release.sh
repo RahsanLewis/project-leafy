@@ -83,8 +83,8 @@ if rg -n "Nutrition data program|commercial analysis|early beta" Leafy auth-site
   exit 1
 fi
 
-if ! rg -q "'PFQS-1.0'.*'draft'" supabase/migrations/202608130002_pfqs_1_0_foundation.sql; then
-  echo "Release validation failed: PFQS 1.0 must remain gated until validation and evidence review are recorded."
+if ! rg -q "set status = 'active'" supabase/migrations/202608250001_release_pfqs_and_product_refresh.sql; then
+  echo "Release validation failed: PFQS 1.0 activation migration is missing."
   exit 1
 fi
 echo "Leafy release configuration is ready."

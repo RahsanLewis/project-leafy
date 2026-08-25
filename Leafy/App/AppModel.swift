@@ -441,11 +441,11 @@ final class AppModel {
         catch { productErrorMessage = userFacingMessage(for: error); return nil }
     }
 
-    func startCatalogContribution(barcode: String) async -> CatalogContributionStartResponse? {
+    func startCatalogContribution(barcode: String, refreshExisting: Bool = false) async -> CatalogContributionStartResponse? {
         guard !isCICOPreview else { return nil }
         isCatalogContributionLoading = true; catalogContributionErrorMessage = nil
         defer { isCatalogContributionLoading = false }
-        do { return try await service.startCatalogContribution(barcode: barcode) }
+        do { return try await service.startCatalogContribution(barcode: barcode, refreshExisting: refreshExisting) }
         catch { catalogContributionErrorMessage = userFacingMessage(for: error); return nil }
     }
 

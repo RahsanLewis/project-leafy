@@ -878,12 +878,23 @@ async function publish(admin: any, contribution: Row) {
       contribution.revision,
     );
   if (nutrientsResult.error) throw nutrientsResult.error;
-  const foods = await admin.from("foods").insert({
-    canonical_name: fields.product_name,
-  }).select("id").single();
-  if (foods.error) throw foods.error;
+  const targetID = contribution.target_food_version_id
+    ? String(contribution.target_food_version_id)
+    : null;
+  let foodID: string;
+  if (targetID) {
+    const target = await admin.from("food_versions").select("food_id").eq("id", targetID).is("superseded_at", null).single();
+    if (target.error) throw target.error;
+    foodID = String(target.data.food_id);
+  } else {
+    const foods = await admin.from("foods").insert({
+      canonical_name: fields.product_name,
+    }).select("id").single();
+    if (foods.error) throw foods.error;
+    foodID = String(foods.data.id);
+  }
   const version = await admin.from("food_versions").insert({
-    food_id: foods.data.id,
+    food_id: foodID,
     source_system: "leafy",
     source_record_id: String(contribution.id),
     source_data_type: "community_label",
@@ -900,7 +911,7 @@ async function publish(admin: any, contribution: Row) {
     metric_serving_unit: fields.metric_serving_unit || null,
     package_claims: fields.claims ?? [],
     label_sections: fields.label_sections ?? {},
-    verification_status: "community_confirmed",
+    verification_status: targetID ? "rejected" : "community_confirmed",
     raw_source: {
       contribution_id: contribution.id,
       revision: contribution.revision,
@@ -988,6 +999,14 @@ async function publish(admin: any, contribution: Row) {
     verification_status: "community_confirmed",
     product_type: "food",
   });
+  if (targetID) {
+    const activated = await admin.rpc("activate_food_version_replacement", {
+      p_previous_id: targetID,
+      p_replacement_id: version.data.id,
+      p_verification_status: "community_confirmed",
+    });
+    if (activated.error) throw activated.error;
+  }
   return String(version.data.id);
 }
 
