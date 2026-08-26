@@ -1,351 +1,411 @@
 import SwiftUI
+import UIKit
 
 struct OnboardingView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showWhySex = false
-    @State private var showBirthdayPicker = false
-    @State private var pendingBirthday = Date.now
 
     var body: some View {
         @Bindable var draft = app.draft
         NavigationStack {
-            VStack(spacing: 0) {
-                if draft.step != .welcome {
-                    ProgressView(value: Double(draft.step.rawValue), total: Double(OnboardingDraft.Step.results.rawValue))
-                        .tint(LeafyTheme.green).padding(.horizontal).padding(.top, 8)
-                }
+            Group {
                 if draft.step == .welcome {
                     welcomeContent
+                } else if draft.step == .results {
+                    PlanResultsView(plan: app.preview!, input: app.draft.input, isPreview: true)
+                } else if draft.step == .account {
+                    ScrollView { AccountCreationView().padding(LeafyTheme.pageInset) }
+                        .scrollDismissesKeyboard(.interactively)
                 } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) { stepContent }.padding(24)
-                    }
+                    questionFlow
                 }
-                if draft.step != .welcome && draft.step != .results { navigationBar }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(LeafyTheme.canvas)
             .toolbar {
-                if draft.isEditing {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { app.route = .dashboard }
-                    }
-                }
             }
-            .alert("Unable to calculate", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) {
+            .alert("Unable to calculate", isPresented: Binding(
+                get: { app.errorMessage != nil && !app.showAuthentication },
+                set: { if !$0 && !app.showAuthentication { app.errorMessage = nil } }
+            )) {
                 Button("OK", role: .cancel) { app.errorMessage = nil }
             } message: { Text(app.errorMessage ?? "") }
             .sheet(isPresented: Bindable(app).showAuthentication) { AuthenticationView() }
-            .sheet(isPresented: $showBirthdayPicker) { birthdayPickerSheet }
         }
+    }
+
+    private var questionFlow: some View {
+        VStack(spacing: 0) {
+            progressBar
+            ScrollView {
+                VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+                    stepContent
+                }
+                .padding(.horizontal, LeafyTheme.pageInset)
+                .padding(.top, LeafySpacing.xLarge)
+                .padding(.bottom, LeafySpacing.large)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .id(app.draft.step)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+            navigationBar
+        }
+        .animation(reduceMotion ? .none : LeafyMotion.content, value: app.draft.step)
+    }
+
+    private var visibleQuestionSteps: [OnboardingDraft.Step] {
+        var steps: [OnboardingDraft.Step] = [
+            .adultEligibility, .healthConsiderations, .goal, .birthDate,
+            .calculationSex, .height, .currentWeight
+        ]
+        if app.draft.goal != .maintain { steps.append(.targetWeight) }
+        steps.append(.activity)
+        if app.draft.goal != .maintain { steps.append(.pace) }
+        return steps
+    }
+
+    private var progressBar: some View {
+        let steps = visibleQuestionSteps
+        let index = steps.firstIndex(of: app.draft.step) ?? 0
+        return ProgressView(value: Double(index + 1), total: Double(steps.count))
+            .tint(LeafyTheme.green)
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.top, LeafySpacing.small)
+            .accessibilityLabel("Onboarding progress")
+            .accessibilityValue("Step \(index + 1) of \(steps.count)")
     }
 
     @ViewBuilder private var stepContent: some View {
         @Bindable var draft = app.draft
         switch draft.step {
-        case .welcome:
-            EmptyView()
-        case .eligibility:
-            eligibilityHeader
-            EligibilityQuestionCard(
-                title: "Are you 18 or older?",
-                detail: "Leafy’s calorie estimates are designed for adults.",
-                considerations: [],
-                selection: $draft.confirmsAdult
-            )
-            EligibilityQuestionCard(
-                title: "Do any of these apply to you?",
-                detail: "Select Yes if you are:",
-                considerations: [
-                    "Pregnant or breastfeeding",
-                    "In eating-disorder recovery",
-                    "Following a clinician-directed diet"
-                ],
-                selection: $draft.hasContraindication
-            )
-            if draft.isIneligible {
-                eligibilityGuidance
+        case .adultEligibility:
+            question("Are you 18 or older?", "Leafy’s calorie estimates are designed for adults.")
+            binaryChoices(selection: $draft.confirmsAdult, title: "Are you 18 or older?")
+            if draft.confirmsAdult == false { eligibilityGuidance(adult: false) }
+        case .healthConsiderations:
+            question("A few health questions", "Answer each question so Leafy can determine whether its general wellness estimates are appropriate for you.")
+            VStack(alignment: .leading, spacing: LeafySpacing.large) {
+                healthQuestion(
+                    "Are you pregnant or breastfeeding?",
+                    selection: $draft.isPregnantOrBreastfeeding,
+                    identifier: "pregnancyAnswer"
+                )
+                healthQuestion(
+                    "Are you in eating-disorder recovery?",
+                    selection: $draft.isInEatingDisorderRecovery,
+                    identifier: "recoveryAnswer"
+                )
+                healthQuestion(
+                    "Are you following a diet directed by a clinician?",
+                    selection: $draft.followsClinicianDirectedDiet,
+                    identifier: "clinicianDietAnswer"
+                )
             }
+            if draft.hasContraindication == true { eligibilityGuidance(adult: true) }
         case .goal:
-            title("What’s your goal?", "You can change this later and Leafy will recalculate your plan.")
-            ForEach(WeightGoal.allCases) { goal in
-                Button { draft.goal = goal } label: {
-                    ChoiceCard(selected: draft.goal == goal) {
-                        VStack(alignment: .leading, spacing: 4) { Text(goal.title).font(.headline); Text(goal.subtitle).font(.subheadline).foregroundStyle(.secondary) }
-                    }
-                }.buttonStyle(.plain)
-            }
-        case .body:
-            title("Tell us about you", "A few details help us estimate your resting energy and daily needs.")
-
-            ProfileSectionCard(title: "Measurement system", icon: "ruler") {
-                Picker("Units", selection: $draft.unitSystem) {
-                    ForEach(UnitSystem.allCases) { Text($0.title).tag($0) }
+            question("What’s your goal?", "You can change this later and Leafy will recalculate your plan.")
+            choiceRows(WeightGoal.allCases, selection: $draft.goal, title: \.title, detail: \.subtitle)
+        case .birthDate:
+            question("When were you born?", "Your age helps estimate your resting energy needs.")
+            birthdayPicker
+        case .calculationSex:
+            question("Which calculation should Leafy use?", "Energy equations use different physiological constants. This is not used as your gender identity.")
+            choiceRows(CalculationSex.allCases, selection: $draft.calculationSex, title: \.title)
+            Button("Why this is used", systemImage: "info.circle") { showWhySex = true }
+                .font(LeafyTypography.footnote)
+                .alert("Why Leafy asks", isPresented: $showWhySex) { Button("OK") {} } message: {
+                    Text("The Mifflin–St Jeor energy equation uses different physiological constants for female and male bodies. Leafy does not use this as your gender identity.")
                 }
-                .pickerStyle(.segmented)
-            }
-
-            ProfileSectionCard(title: "Your profile", icon: "person.crop.circle") {
-                Button {
-                    pendingBirthday = draft.birthDate
-                    showBirthdayPicker = true
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Date of birth")
-                                .foregroundStyle(.primary)
-                            Text("Age \(age(for: draft.birthDate))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(draft.birthDate.formatted(date: .abbreviated, time: .omitted))
-                            .foregroundStyle(.primary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                Divider()
-                LabeledContent("Calculation sex") {
-                    Picker("Calculation sex", selection: $draft.calculationSex) {
-                        ForEach(CalculationSex.allCases) { Text($0.title).tag($0) }
-                    }
-                    .labelsHidden()
-                }
-                Button("Why this is used", systemImage: "info.circle") { showWhySex = true }
-                    .font(.footnote.weight(.medium))
-                    .alert("Why Leafy asks", isPresented: $showWhySex) { Button("OK") {} } message: { Text("The Mifflin–St Jeor energy equation uses different physiological constants for female and male bodies. Leafy does not use this as your gender identity.") }
-            }
-
-            ProfileSectionCard(title: "Your measurements", icon: "figure.arms.open") {
-                MeasurementFields(draft: draft)
-                Text("These measurements help estimate your resting energy before your activity level is added.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+        case .height:
+            question("How tall are you?", "This helps estimate your resting energy before activity is added.")
+            unitPicker
+            HeightPicker(draft: draft)
+        case .currentWeight:
+            question("What do you weigh today?", "A recent scale reading gives Leafy the best starting point.")
+            WeightPicker(valueKG: $draft.currentWeightKG, unitSystem: draft.unitSystem)
+        case .targetWeight:
+            question("What weight are you working toward?", "Your target must be below your current weight to lose or above it to gain.")
+            WeightPicker(valueKG: $draft.targetWeightKG, unitSystem: draft.unitSystem)
+            goalSummary
         case .activity:
-            title("How active are you?", "Choose the level that best reflects a typical week.")
-            ForEach(ActivityLevel.allCases) { level in
-                Button { draft.activityLevel = level } label: {
-                    ChoiceCard(selected: draft.activityLevel == level) {
-                        VStack(alignment: .leading, spacing: 4) { Text(level.title).font(.headline); Text(level.detail).font(.caption).foregroundStyle(.secondary) }
-                    }
-                }.buttonStyle(.plain)
-            }
+            question("How active are you?", "Choose the level that best reflects a typical week.")
+            choiceRows(ActivityLevel.allCases, selection: $draft.activityLevel, title: \.title, detail: \.detail)
         case .pace:
-            title("Choose your pace", "Steady is a balanced starting point. Leafy applies safety limits automatically.")
-            ForEach(GoalPace.allCases) { pace in
-                Button { draft.pace = pace } label: {
-                    ChoiceCard(selected: draft.pace == pace) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(pace.title).font(.headline)
-                            Text(paceText(pace)).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                    }
-                }.buttonStyle(.plain)
-            }
-        case .results:
-            if let plan = app.preview { PlanResultsView(plan: plan, isPreview: true) }
+            question("Choose your pace", "Steady is a balanced starting point. Leafy applies safety limits automatically.")
+            choiceRows(GoalPace.allCases, selection: $draft.pace, title: \.title, detail: { paceText($0) })
+        case .welcome, .results, .account:
+            EmptyView()
         }
     }
 
-    private var birthdayPickerSheet: some View {
+    private func question(_ title: String, _ subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Text(title).font(LeafyTypography.largeTitle)
+            Text(subtitle).font(LeafyTypography.body).foregroundStyle(.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func binaryChoices(selection: Binding<Bool?>, title: String) -> some View {
+        VStack(spacing: 0) {
+            SelectableRow(title: "Yes", selected: selection.wrappedValue == true) {
+                selection.wrappedValue = true
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+            Divider().overlay(LeafyTheme.hairline)
+            SelectableRow(title: "No", selected: selection.wrappedValue == false) {
+                selection.wrappedValue = false
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+
+    private func healthQuestion(
+        _ title: String,
+        selection: Binding<Bool?>,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Text(title)
+                .font(LeafyTypography.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: LeafySpacing.xLarge) {
+                healthAnswer("Yes", value: true, selection: selection, identifier: identifier + "Yes")
+                healthAnswer("No", value: false, selection: selection, identifier: identifier + "No")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+
+    private func healthAnswer(
+        _ label: String,
+        value: Bool,
+        selection: Binding<Bool?>,
+        identifier: String
+    ) -> some View {
+        let selected = selection.wrappedValue == value
+        return Button {
+            selection.wrappedValue = value
+            UISelectionFeedbackGenerator().selectionChanged()
+        } label: {
+            Label(label, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                .font(LeafyTypography.body)
+                .frame(minWidth: 88, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selected ? LeafyTheme.green : Color.primary)
+        .accessibilityIdentifier(identifier)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func choiceRows<Value: Identifiable & Equatable>(
+        _ values: [Value],
+        selection: Binding<Value>,
+        title: KeyPath<Value, String>,
+        detail: ((Value) -> String)? = nil
+    ) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(values.enumerated()), id: \.element.id) { index, value in
+                SelectableRow(
+                    title: value[keyPath: title],
+                    detail: detail?(value),
+                    selected: selection.wrappedValue == value
+                ) {
+                    selection.wrappedValue = value
+                    UISelectionFeedbackGenerator().selectionChanged()
+                }
+                if index < values.count - 1 { Divider().overlay(LeafyTheme.hairline) }
+            }
+        }
+    }
+
+    private func choiceRows<Value: Identifiable & Equatable>(
+        _ values: [Value],
+        selection: Binding<Value>,
+        title: KeyPath<Value, String>,
+        detail: KeyPath<Value, String>
+    ) -> some View {
+        choiceRows(values, selection: selection, title: title, detail: { $0[keyPath: detail] })
+    }
+
+    private var birthdayPicker: some View {
         @Bindable var draft = app.draft
         let calendar = Calendar.current
-        let latestBirthday = calendar.date(byAdding: .year, value: -18, to: .now) ?? .now
-        let earliestBirthday = calendar.date(byAdding: .year, value: -120, to: .now) ?? .distantPast
-
-        return NavigationStack {
-            VStack(spacing: 12) {
-                DatePicker(
-                    "Date of birth",
-                    selection: $pendingBirthday,
-                    in: earliestBirthday...latestBirthday,
-                    displayedComponents: .date
-                )
+        let latest = calendar.date(byAdding: .year, value: -18, to: .now) ?? .now
+        let earliest = calendar.date(byAdding: .year, value: -120, to: .now) ?? .distantPast
+        return VStack(spacing: LeafySpacing.medium) {
+            DatePicker("Date of birth", selection: $draft.birthDate, in: earliest...latest, displayedComponents: .date)
                 .datePickerStyle(.wheel)
                 .labelsHidden()
-
-                Text("Age \(age(for: pendingBirthday))")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 24)
-            .navigationTitle("Date of birth")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showBirthdayPicker = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        draft.birthDate = pendingBirthday
-                        showBirthdayPicker = false
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
+            Text("Age \(age(for: draft.birthDate))")
+                .font(LeafyTypography.subheadlineSemibold)
+                .foregroundStyle(.secondary)
         }
-        .presentationDetents([.height(360)])
-        .presentationDragIndicator(.visible)
+        .frame(maxWidth: .infinity)
     }
 
-    private func age(for birthday: Date) -> Int {
-        Calendar.current.dateComponents([.year], from: birthday, to: .now).year ?? 0
+    private var unitPicker: some View {
+        @Bindable var draft = app.draft
+        return Picker("Measurement system", selection: $draft.unitSystem) {
+            ForEach(UnitSystem.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var goalSummary: some View {
+        let valid = app.draft.hasValidMeasurements
+        return Label(
+            valid ? "Your target matches your goal." : "Choose a target on the other side of your current weight.",
+            systemImage: valid ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        )
+        .font(LeafyTypography.footnote)
+        .foregroundStyle(valid ? LeafyTheme.green : .orange)
+    }
+
+    private func eligibilityGuidance(adult: Bool) -> some View {
+        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+            Label("Personal guidance is best", systemImage: "person.crop.circle.badge.exclamationmark")
+                .font(LeafyTypography.headline)
+            Text(adult
+                 ? "Generic calorie targets may not be appropriate right now. Please work with a qualified clinician or registered dietitian."
+                 : "Leafy’s generic calorie targets are intended for adults. Please seek guidance from a parent or guardian and a qualified health professional.")
+                .font(LeafyTypography.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, LeafySpacing.medium)
+        .overlay(alignment: .leading) { Rectangle().fill(LeafyTheme.green).frame(width: 3) }
     }
 
     private var welcomeContent: some View {
         @Bindable var draft = app.draft
-        return VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .center, spacing: 12) {
-                Image(systemName: "leaf.fill")
-                    .font(.system(size: 72))
-                    .foregroundStyle(LeafyTheme.green)
-                Text("Your nutrition, made clear")
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .multilineTextAlignment(.center)
-                Text("Personalized nutrition targets built around your body and your goal.")
-                    .font(.title3)
+        return VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: LeafySpacing.xLarge) {
+                    VStack(spacing: LeafySpacing.medium) {
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 72))
+                            .foregroundStyle(LeafyTheme.green)
+                        Text("Your nutrition, made clear")
+                            .font(LeafyTypography.largeTitle)
+                            .multilineTextAlignment(.center)
+                        Text("Personalized nutrition targets built around your body and your goal.")
+                            .font(LeafyTypography.title3)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: LeafySpacing.medium) {
+                        Text("What you’ll get").font(LeafyTypography.headline)
+                        WelcomeOutcomeRow("A personalized daily calorie target")
+                        WelcomeOutcomeRow("Protein, carb, and fat goals")
+                        WelcomeOutcomeRow("A pace matched to your weight goal")
+                    }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: LeafySpacing.small) {
+                            Label("About 2 minutes", systemImage: "clock")
+                            Text("·")
+                            Text("Preview before creating an account")
+                        }
+                        VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                            Label("About 2 minutes", systemImage: "clock")
+                            Label("Preview before creating an account", systemImage: "person.crop.circle.badge.checkmark")
+                        }
+                    }
+                    .font(LeafyTypography.footnote)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-
-            VStack(alignment: .leading, spacing: 15) {
-                Text("What you’ll get")
-                    .font(.headline)
-                WelcomeOutcomeRow("A personalized daily calorie target")
-                WelcomeOutcomeRow("Protein, carb, and fat goals")
-                WelcomeOutcomeRow("A pace matched to your weight goal")
-            }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(LeafyTheme.green.opacity(0.08), in: .rect(cornerRadius: 18))
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    Label("Takes about 2 minutes", systemImage: "clock")
-                    Text("·")
-                    Text("No account required to preview")
                 }
-                VStack(spacing: 6) {
-                    Label("Takes about 2 minutes", systemImage: "clock")
-                    Label("No account required to preview", systemImage: "person.crop.circle.badge.checkmark")
-                }
+                .padding(.horizontal, LeafyTheme.pageInset)
+                .padding(.top, LeafySpacing.large)
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
 
-            Spacer(minLength: 8)
-
-            VStack(spacing: 16) {
-                Button(draft.isEditing ? "Review my plan" : "Continue") { draft.step = .eligibility }
+            VStack(spacing: LeafySpacing.compact) {
+                Button("Continue") { move(to: .adultEligibility) }
                     .buttonStyle(PrimaryButtonStyle())
+                if !app.isAuthenticated {
+                    Button("Sign in") { app.presentAuthentication() }
+                        .font(LeafyTypography.button)
+                        .accessibilityIdentifier("welcomeSignInButton")
+                }
                 Text("For general wellness only—not medical advice.")
-                    .font(.caption)
+                    .font(LeafyTypography.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 22) {
+                HStack(spacing: LeafySpacing.large) {
                     Link("Privacy", destination: app.configuration.privacyURL)
                     Link("Terms", destination: app.configuration.termsURL)
                     Link("Support", destination: app.configuration.supportURL)
                 }
-                .font(.footnote)
-                .frame(maxWidth: .infinity)
+                .font(LeafyTypography.footnote)
             }
+            .leafyDetachedBottomControl()
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
-        .padding(.bottom, 14)
     }
 
     private var navigationBar: some View {
-        @Bindable var draft = app.draft
-        return HStack(spacing: 12) {
-            Button { previous() } label: { Image(systemName: "chevron.left").frame(width: 48, height: 52).background(.thinMaterial, in: .rect(cornerRadius: 16)) }
-            Button("Continue") { next() }.buttonStyle(PrimaryButtonStyle()).disabled(!canContinue)
-        }.padding()
+        HStack(spacing: LeafySpacing.compact) {
+            Button { previous() } label: {
+                Image(systemName: "chevron.left")
+                    .font(LeafyTypography.headline)
+                    .frame(width: 48, height: 52)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+            Button("Continue") { next() }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(!canContinue)
+        }
+        .leafyDetachedBottomControl()
     }
 
     private var canContinue: Bool {
-        let draft = app.draft
-        if draft.step == .eligibility { return draft.hasCompletedEligibility && draft.isEligible }
-        if draft.step == .body { return draft.hasValidMeasurements }
-        return true
-    }
-
-    private var eligibilityHeader: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(spacing: 10) {
-                Image(systemName: "checkmark.shield.fill")
-                    .font(.title2)
-                    .foregroundStyle(LeafyTheme.green)
-                    .frame(width: 48, height: 48)
-                    .background(LeafyTheme.mint, in: .circle)
-                Text("A quick safety check")
-                    .font(.title.bold())
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("These answers help us confirm Leafy’s estimates are appropriate for you.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-
-            Label("Leafy uses general adult wellness equations. These answers are not saved with your nutrition plan.", systemImage: "lock.shield")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(LeafyTheme.green.opacity(0.08), in: .rect(cornerRadius: 14))
+        switch app.draft.step {
+        case .adultEligibility: app.draft.confirmsAdult == true
+        case .healthConsiderations: app.draft.hasContraindication == false
+        case .height: (120...230).contains(app.draft.heightCM)
+        case .currentWeight: (35...350).contains(app.draft.currentWeightKG)
+        case .targetWeight: app.draft.hasValidMeasurements
+        default: true
         }
-    }
-
-    private var eligibilityGuidance: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                .font(.title2)
-                .foregroundStyle(LeafyTheme.green)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Personal guidance is best")
-                    .font(.headline)
-                Text(eligibilityGuidanceMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
-    }
-
-    private var eligibilityGuidanceMessage: String {
-        if app.draft.confirmsAdult == false {
-            return "Leafy’s generic calorie targets are intended for adults. Please seek guidance from a parent or guardian and a qualified health professional."
-        }
-        return "Generic calorie targets may not be appropriate right now. Please work with a qualified clinician or registered dietitian."
     }
 
     private func next() {
-        let draft = app.draft
-        var next = draft.step.rawValue + 1
-        if draft.step == .activity && draft.goal == .maintain { next = OnboardingDraft.Step.results.rawValue }
-        if next == OnboardingDraft.Step.results.rawValue {
+        let steps = visibleQuestionSteps
+        guard let index = steps.firstIndex(of: app.draft.step) else { return }
+        if app.draft.step == .currentWeight { normalizeTargetIfNeeded() }
+        if index == steps.count - 1 {
             guard app.calculatePreview() else { return }
+            move(to: .results)
+        } else {
+            move(to: steps[index + 1])
         }
-        draft.step = OnboardingDraft.Step(rawValue: next) ?? .results
     }
 
     private func previous() {
-        let draft = app.draft
-        let prior = draft.step.rawValue - 1
-        draft.step = OnboardingDraft.Step(rawValue: max(0, prior)) ?? .welcome
+        let steps = visibleQuestionSteps
+        guard let index = steps.firstIndex(of: app.draft.step) else { return }
+        move(to: index == 0 ? .welcome : steps[index - 1])
     }
 
-    private func title(_ title: String, _ subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) { Text(title).font(.largeTitle.bold()); Text(subtitle).foregroundStyle(.secondary) }
+    private func move(to step: OnboardingDraft.Step) {
+        if reduceMotion { app.draft.step = step }
+        else { withAnimation(LeafyMotion.content) { app.draft.step = step } }
+    }
+
+    private func normalizeTargetIfNeeded() {
+        let draft = app.draft
+        if draft.goal == .lose, draft.targetWeightKG >= draft.currentWeightKG {
+            draft.targetWeightKG = max(35, draft.currentWeightKG - 5)
+        } else if draft.goal == .gain, draft.targetWeightKG <= draft.currentWeightKG {
+            draft.targetWeightKG = min(350, draft.currentWeightKG + 5)
+        }
+    }
+
+    private func age(for birthday: Date) -> Int {
+        Calendar.current.dateComponents([.year], from: birthday, to: .now).year ?? 0
     }
 
     private func paceText(_ pace: GoalPace) -> String {
@@ -354,337 +414,121 @@ struct OnboardingView: View {
     }
 }
 
-private struct WelcomeOutcomeRow: View {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 11) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(LeafyTheme.green)
-            Text(text)
-                .font(.subheadline)
-        }
-    }
-}
-
-private struct EligibilityQuestionCard: View {
+private struct SelectableRow: View {
     let title: String
-    let detail: String
-    let considerations: [String]
-    @Binding var selection: Bool?
+    var detail: String?
+    let selected: Bool
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 7) {
-                Text(title)
-                    .font(.headline)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                if !considerations.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(considerations, id: \.self) { consideration in
-                            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                                Image(systemName: "circle.fill")
-                                    .font(.system(size: 6))
-                                    .foregroundStyle(LeafyTheme.green)
-                                Text(consideration)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                    }
-                    .padding(.top, 3)
-                }
-            }
-
-            HStack(spacing: 10) {
-                answerButton("Yes", value: true)
-                answerButton("No", value: false)
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 18))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(selection == nil ? Color.primary.opacity(0.06) : LeafyTheme.green.opacity(0.55), lineWidth: 1.5)
-        }
-    }
-
-    private func answerButton(_ label: String, value: Bool) -> some View {
-        let selected = selection == value
-        return Button {
-            selection = value
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                Text(label)
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .foregroundStyle(selected ? .white : LeafyTheme.green)
-            .background(selected ? LeafyTheme.green : LeafyTheme.green.opacity(0.08), in: .rect(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(label), \(title)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-private struct ProfileSectionCard<Content: View>: View {
-    let title: String
-    let icon: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label(title, systemImage: icon)
-                .font(.headline)
-                .foregroundStyle(LeafyTheme.ink)
-                .symbolRenderingMode(.hierarchical)
-            content
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 18))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        }
-    }
-}
-
-private struct MeasurementFields: View {
-    private enum PickerKind: String, Identifiable {
-        case height, currentWeight, targetWeight
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .height: "Height"
-            case .currentWeight: "Current weight"
-            case .targetWeight: "Target weight"
-            }
-        }
-    }
-
-    @Bindable var draft: OnboardingDraft
-    @State private var activePicker: PickerKind?
-    @State private var pendingValue = 0.0
-
-    var body: some View {
-        measurementRow("Height", value: formattedHeight) { present(.height, value: draft.heightCM) }
-        Divider()
-        measurementRow("Current weight", value: formattedWeight(draft.currentWeightKG)) {
-            present(.currentWeight, value: draft.currentWeightKG)
-        }
-        if draft.goal != .maintain {
-            Divider()
-            measurementRow("Target weight", value: formattedWeight(draft.targetWeightKG)) {
-                present(.targetWeight, value: draft.targetWeightKG)
-            }
-        }
-        WeightGoalSummary(draft: draft)
-        .sheet(item: $activePicker) { kind in
-            measurementPicker(kind)
-                .presentationDetents([.height(360)])
-                .presentationDragIndicator(.visible)
-        }
-    }
-
-    private func measurementRow(_ label: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
-                Text(label).foregroundStyle(.primary)
+            HStack(alignment: .center, spacing: LeafySpacing.medium) {
+                VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
+                    Text(title).font(LeafyTypography.headline).foregroundStyle(.primary)
+                    if let detail {
+                        Text(detail).font(LeafyTypography.subheadline).foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
-                Text(value).foregroundStyle(.primary)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(LeafyTypography.title3)
+                    .foregroundStyle(selected ? LeafyTheme.green : Color.secondary.opacity(0.55))
+                    .contentTransition(.symbolEffect(.replace))
             }
+            .frame(minHeight: LeafyTheme.rowMinHeight)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 3)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityLabel(title)
     }
+}
 
-    private func present(_ kind: PickerKind, value: Double) {
-        pendingValue = value
-        activePicker = kind
-    }
+private struct HeightPicker: View {
+    @Bindable var draft: OnboardingDraft
 
-    private func measurementPicker(_ kind: PickerKind) -> some View {
-        NavigationStack {
-            Group {
-                if kind == .height { heightWheels } else { weightWheels }
-            }
-            .navigationTitle(kind.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { activePicker = nil }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        switch kind {
-                        case .height: draft.heightCM = pendingValue
-                        case .currentWeight: draft.currentWeightKG = pendingValue
-                        case .targetWeight: draft.targetWeightKG = pendingValue
-                        }
-                        activePicker = nil
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private var heightWheels: some View {
+    var body: some View {
         if draft.unitSystem == .metric {
-            HStack(spacing: 4) {
+            HStack(spacing: LeafySpacing.small) {
                 Picker("Centimeters", selection: Binding(
-                    get: { Int(pendingValue.rounded()) },
-                    set: { pendingValue = Double($0) }
+                    get: { Int(draft.heightCM.rounded()) },
+                    set: { draft.heightCM = Double($0) }
                 )) {
                     ForEach(120...230, id: \.self) { Text("\($0)").tag($0) }
                 }
                 .pickerStyle(.wheel)
                 Text("cm").foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 56)
         } else {
-            HStack(spacing: 8) {
-                Picker("Feet", selection: feetBinding) {
-                    ForEach(3...7, id: \.self) { Text("\($0) ft").tag($0) }
+            HStack(spacing: LeafySpacing.small) {
+                Picker("Feet", selection: Binding(
+                    get: { ImperialHeightSelection(centimeters: draft.heightCM).feet },
+                    set: { feet in
+                        let current = ImperialHeightSelection(centimeters: draft.heightCM)
+                        draft.heightCM = ImperialHeightSelection(feet: feet, inches: current.inches).centimeters
+                    }
+                )) {
+                    ForEach(4...7, id: \.self) { Text("\($0) ft").tag($0) }
                 }
-                Picker("Inches", selection: inchesBinding) {
+                .pickerStyle(.wheel)
+                .accessibilityIdentifier("heightFeetPicker")
+                Picker("Inches", selection: Binding(
+                    get: { ImperialHeightSelection(centimeters: draft.heightCM).inches },
+                    set: { inches in
+                        let current = ImperialHeightSelection(centimeters: draft.heightCM)
+                        draft.heightCM = ImperialHeightSelection(feet: current.feet, inches: inches).centimeters
+                    }
+                )) {
                     ForEach(0...11, id: \.self) { Text("\($0) in").tag($0) }
                 }
+                .pickerStyle(.wheel)
+                .accessibilityIdentifier("heightInchesPicker")
             }
-            .pickerStyle(.wheel)
-            .padding(.horizontal, 32)
         }
     }
+}
 
-    private var weightWheels: some View {
-        let isMetric = draft.unitSystem == .metric
-        let displayValue = isMetric ? pendingValue : pendingValue * 2.2046226218
-        let range = isMetric ? 35...350 : 77...772
-        return HStack(spacing: 0) {
+private struct WeightPicker: View {
+    @Binding var valueKG: Double
+    let unitSystem: UnitSystem
+
+    private var displayValue: Double { unitSystem == .metric ? valueKG : valueKG * 2.2046226218 }
+    private var tenths: Int { Int((displayValue * 10).rounded()) % 10 }
+
+    var body: some View {
+        let range = unitSystem == .metric ? 35...350 : 77...772
+        HStack(spacing: 0) {
             Picker("Whole", selection: Binding(
                 get: { Int(displayValue) },
-                set: { setPendingWeight(Double($0) + Double(weightTenths) / 10) }
+                set: { setDisplayValue(Double($0) + Double(tenths) / 10) }
             )) {
                 ForEach(range, id: \.self) { Text("\($0)").tag($0) }
             }
             .pickerStyle(.wheel)
-            Text(".").font(.title2.bold())
+            Text(".").font(LeafyTypography.title2)
             Picker("Tenths", selection: Binding(
-                get: { weightTenths },
-                set: { setPendingWeight(Double(Int(displayWeight)) + Double($0) / 10) }
+                get: { tenths },
+                set: { setDisplayValue(Double(Int(displayValue)) + Double($0) / 10) }
             )) {
                 ForEach(0...9, id: \.self) { Text("\($0)").tag($0) }
             }
             .pickerStyle(.wheel)
-            Text(isMetric ? "kg" : "lb").foregroundStyle(.secondary)
+            Text(unitSystem == .metric ? "kg" : "lb").foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 42)
     }
 
-    private var displayWeight: Double {
-        draft.unitSystem == .metric ? pendingValue : pendingValue * 2.2046226218
-    }
-
-    private var weightTenths: Int { Int((displayWeight * 10).rounded()) % 10 }
-
-    private func setPendingWeight(_ displayValue: Double) {
-        pendingValue = draft.unitSystem == .metric ? displayValue : displayValue / 2.2046226218
-    }
-
-    private var feetBinding: Binding<Int> {
-        Binding(
-            get: { Int((pendingValue / 2.54).rounded()) / 12 },
-            set: { pendingValue = Double($0 * 12 + inchesBinding.wrappedValue) * 2.54 }
-        )
-    }
-
-    private var inchesBinding: Binding<Int> {
-        Binding(
-            get: { Int((pendingValue / 2.54).rounded()) % 12 },
-            set: { pendingValue = Double(feetBinding.wrappedValue * 12 + $0) * 2.54 }
-        )
-    }
-
-    private var formattedHeight: String {
-        if draft.unitSystem == .metric { return "\(Int(draft.heightCM.rounded())) cm" }
-        let totalInches = Int((draft.heightCM / 2.54).rounded())
-        return "\(totalInches / 12) ft \(totalInches % 12) in"
-    }
-
-    private func formattedWeight(_ kilograms: Double) -> String {
-        let value = draft.unitSystem == .metric ? kilograms : kilograms * 2.2046226218
-        return String(format: "%.1f %@", value, draft.unitSystem == .metric ? "kg" : "lb")
+    private func setDisplayValue(_ value: Double) {
+        valueKG = unitSystem == .metric ? value : value / 2.2046226218
     }
 }
 
-private struct WeightGoalSummary: View {
-    var draft: OnboardingDraft
-
+private struct WelcomeOutcomeRow: View {
+    let text: String
+    init(_ text: String) { self.text = text }
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(headline)
-                    .font(.subheadline.weight(.semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: LeafySpacing.compact) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(LeafyTheme.green)
+            Text(text).font(LeafyTypography.subheadline)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(color.opacity(0.08), in: .rect(cornerRadius: 12))
-    }
-
-    private var isValid: Bool { draft.hasValidMeasurements }
-
-    private var color: Color {
-        isValid ? LeafyTheme.green : .orange
-    }
-
-    private var icon: String {
-        if !isValid { return "exclamationmark.triangle.fill" }
-        if draft.goal == .maintain { return "equal.circle.fill" }
-        return draft.goal == .lose ? "arrow.down.circle.fill" : "arrow.up.circle.fill"
-    }
-
-    private var headline: String {
-        if !isValid {
-            if !(120...230).contains(draft.heightCM) { return "Check your height" }
-            if !(35...350).contains(draft.currentWeightKG) { return "Check your current weight" }
-            return draft.goal == .lose ? "Choose a lower target weight" : "Choose a higher target weight"
-        }
-        if draft.goal == .maintain { return "Maintain around \(formattedWeight(draft.currentWeightKG))" }
-        return "\(formattedWeight(draft.goalDifferenceKG)) to \(draft.goal == .lose ? "lose" : "gain")"
-    }
-
-    private var detail: String {
-        if !isValid {
-            return "Your target should match the direction of your selected goal."
-        }
-        if draft.goal == .maintain { return "Leafy will calculate targets that support your current weight." }
-        return "You can adjust this target later as your goals change."
-    }
-
-    private func formattedWeight(_ kilograms: Double) -> String {
-        let value = draft.unitSystem == .imperial ? kilograms * 2.2046226218 : kilograms
-        return String(format: "%.1f %@", value, draft.unitSystem == .imperial ? "lb" : "kg")
     }
 }

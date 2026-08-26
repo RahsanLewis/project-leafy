@@ -1,0 +1,14 @@
+#include "Base.xcconfig"
+
+APP_ENVIRONMENT = production
+SUPABASE_URL = https:/$()/auccbmadpqowyksevygj.supabase.co
+SUPABASE_PUBLISHABLE_KEY = sb_publishable_3rle_NYxAUUOJrDeDi9FXQ_E_16Zh1_
+AUTH_CALLBACK_URL = https:/$()/auth.projectleafy.app/auth/callback
+AUTH_ASSOCIATED_DOMAIN = applinks:auth.projectleafy.app
+AUTH_URL_SCHEME = leafy
+
+// Google OAuth client identifiers are public configuration. The client secret
+// belongs only in Supabase and must never be committed to this repository.
+GOOGLE_IOS_CLIENT_ID = 113303368585-alm93dre4b0o57qddl1i5844kbdldgss.apps.googleusercontent.com
+GOOGLE_SERVER_CLIENT_ID = 113303368585-mqinnelkfmbs95bm37qdk2jnkqmpfnni.apps.googleusercontent.com
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.113303368585-alm93dre4b0o57qddl1i5844kbdldgss

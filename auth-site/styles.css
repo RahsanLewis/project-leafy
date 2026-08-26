@@ -1,5 +1,6 @@
 :root { color-scheme:light; --green:#21734d; --mint:#e8f4eb; --paper:#fff; --ink:#142019; --muted:#68736d; --line:#dce3de; }
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }
 body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--paper); color:var(--ink); line-height:1.58; }
 .shell { width:min(760px,calc(100% - 40px)); margin:0 auto; min-height:calc(100vh - 100px); }
 .brand { display:flex; align-items:center; gap:10px; padding:28px 0; font-size:22px; font-weight:750; }

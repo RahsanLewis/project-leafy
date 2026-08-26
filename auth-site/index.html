@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Leafy makes calorie tracking, nutrition insights, and weight trends clear.">
   <title>Leafy · Your nutrition, made clear</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="shell">
+  <main class="shell" id="home-content">
     <header class="brand"><span class="leaf">●</span><span>Leafy</span></header>
     <section class="hero">
       <p class="eyebrow">YOUR NUTRITION, MADE CLEAR</p>
@@ -21,6 +21,25 @@
       <a href="./support/"><strong>Support</strong><span>Get help with your account →</span></a>
     </nav>
   </main>
-  <footer>© 2026 Beyond Solid LLC · Leafy provides general wellness information, not medical advice.</footer>
+  <main class="shell auth-shell" id="auth-content" hidden>
+    <p class="eyebrow">SECURE ACCOUNT LINK</p>
+    <h1>Continue in Leafy</h1>
+    <p class="lede">Your account link is ready. Open Leafy on this device to finish securely.</p>
+    <a class="button" id="open-leafy" href="leafy://auth/callback">Open Leafy</a>
+    <p class="meta">If Leafy does not open, make sure it is installed and try this link again on your iPhone.</p>
+  </main>
+  <footer id="site-footer">© 2026 Beyond Solid LLC · Leafy provides general wellness information, not medical advice.</footer>
+  <script>
+    if (location.pathname.startsWith("/auth/")) {
+      document.title = "Continue in Leafy";
+      document.getElementById("home-content").hidden = true;
+      document.getElementById("site-footer").hidden = true;
+      document.getElementById("auth-content").hidden = false;
+
+      const scheme = location.hostname.startsWith("auth-staging.") ? "leafy-staging" : "leafy";
+      const route = location.pathname.replace(/^\/auth/, "") || "/callback";
+      document.getElementById("open-leafy").href = `${scheme}://auth${route}${location.search}${location.hash}`;
+    }
+  </script>
 </body>
 </html>

@@ -1,0 +1,14 @@
+#include "Base.xcconfig"
+
+APP_ENVIRONMENT = staging
+SUPABASE_URL = https:/$()/etokppyizagduatnritq.supabase.co
+SUPABASE_PUBLISHABLE_KEY = sb_publishable_N5U3yMB2E_RU74GF9_F4VA__4xdYxRE
+AUTH_CALLBACK_URL = https:/$()/auth-staging.projectleafy.app/auth/callback
+AUTH_ASSOCIATED_DOMAIN = applinks:auth-staging.projectleafy.app
+AUTH_URL_SCHEME = leafy-staging
+
+// Staging gets its own OAuth clients so test credentials and consent settings
+// can be changed without affecting TestFlight or App Store users.
+GOOGLE_IOS_CLIENT_ID = 341548879860-rqb00mlqh5amtiue7hdk85k8n2b21bcf.apps.googleusercontent.com
+GOOGLE_SERVER_CLIENT_ID = 341548879860-fspi0fit9d46bf5f964dd09ss1doip01.apps.googleusercontent.com
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.341548879860-rqb00mlqh5amtiue7hdk85k8n2b21bcf

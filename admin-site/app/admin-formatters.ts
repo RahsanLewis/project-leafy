@@ -1,0 +1,7 @@
+import type { Row } from "./admin-types";
+
+export function date(value: string) { return value ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Unknown date"; }
+export function titleCase(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+export function activeContributionCount(summary: Row) { const values = summary.contributions ?? {}; return ["pending_review", "needs_review", "processing", "draft"].reduce((total, status) => total + Number(values[status] ?? 0), 0) || "—"; }
+export function statusLabel(status: string) { return ({ pending_review: "Ready for review", needs_review: "Needs photos", processing: "Processing", draft: "Draft", accepted: "Approved", rejected: "Rejected" } as Row)[status] ?? status?.replaceAll("_", " ") ?? "Unknown"; }
+export function statusDescription(status: string, reason?: string) { if (reason) return reason; return ({ needs_review: "Leafy needs clearer package photos before this submission can be verified.", processing: "Leafy is reading the package and checking its product information.", draft: "The contributor started this submission but has not sent it for processing.", accepted: "This submission has been approved and published to the Leafy catalog.", rejected: "This submission was not published." } as Row)[status] ?? "This record is available for inspection."; }
