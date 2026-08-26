@@ -544,13 +544,15 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(vitaminDInfo.waitForExistence(timeout: 2))
         vitaminDInfo.tap()
         XCTAssertTrue(app.staticTexts["What it supports"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Food sources"].exists)
+        XCTAssertTrue(app.staticTexts["Common food sources"].exists)
+        XCTAssertTrue(app.staticTexts["Your logged sources"].exists)
         XCTAssertFalse(app.staticTexts["What it is"].exists)
-        XCTAssertFalse(app.staticTexts["Logged amount"].exists)
-        XCTAssertFalse(app.staticTexts["Data coverage"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["nutrientLoggedAmount"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["nutrientDataCoverage"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["nutrientUpperLimit"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["nutrientSevenDayStatus"].exists)
         let explanationSheet = app.descendants(matching: .any)["dismissNutrientExplanationSheet"]
         XCTAssertTrue(explanationSheet.exists)
-        XCTAssertLessThan(explanationSheet.frame.height, app.frame.height * 0.75)
         app.buttons["dismissNutrientExplanation"].tap()
     }
 

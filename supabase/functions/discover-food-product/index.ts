@@ -28,8 +28,15 @@ const nutrientCodes: Record<number, string> = {
   1177: 'folate_mcg_dfe', 1178: 'vitamin_b12_mcg', 1176: 'biotin_mcg', 1170: 'pantothenic_acid_mg',
   1091: 'phosphorus_mg', 1100: 'iodine_mcg', 1095: 'zinc_mg', 1103: 'selenium_mcg',
   1098: 'copper_mg', 1101: 'manganese_mg', 1096: 'chromium_mcg', 1102: 'molybdenum_mcg',
-  1088: 'chloride_mg', 1180: 'choline_mg', 1057: 'caffeine_mg',
+  1088: 'chloride_mg', 1180: 'choline_mg', 1057: 'caffeine_mg', 1094: 'sulfur_mg',
+  1221: 'histidine_g', 1212: 'isoleucine_g', 1213: 'leucine_g', 1214: 'lysine_g',
+  1215: 'methionine_g', 1217: 'phenylalanine_g', 1211: 'threonine_g',
+  1210: 'tryptophan_g', 1219: 'valine_g', 1216: 'cystine_g', 1218: 'tyrosine_g',
+  1316: 'linoleic_acid_g', 1269: 'linoleic_acid_g',
+  1404: 'alpha_linolenic_acid_g', 1270: 'alpha_linolenic_acid_g',
 }
+
+const nutrientPriority: Record<number, number> = { 1316: 1, 1269: 2, 1404: 1, 1270: 2 }
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -184,24 +191,32 @@ async function importUSDA(admin: any, fdcID: number) {
     source_updated_at: food.modifiedDate ?? null, verification_status: 'verified', raw_source: food,
   }).select('id').single()
   if (versionError) throw versionError
-  const nutrients = ((food.foodNutrients ?? []) as Record<string, unknown>[]).flatMap((item) => {
+  const nutrientCandidates = ((food.foodNutrients ?? []) as Record<string, unknown>[]).flatMap((item) => {
     const nutrient = item.nutrient as Record<string, unknown> | undefined
     const id = Number(nutrient?.id ?? item.nutrientId)
     const code = nutrientCodes[id]
     const amount = Number(item.amount ?? item.value)
-    return code && Number.isFinite(amount) && amount >= 0 ? [{ food_version_id: version.id, nutrient_code: code, amount_per_100g: amount, derivation_method: 'label' }] : []
+    return code && Number.isFinite(amount) && amount >= 0
+      ? [{ id, code, amount, item, priority: nutrientPriority[id] ?? 1 }]
+      : []
   })
+  const selectedByCode = new Map<string, typeof nutrientCandidates[number]>()
+  for (const candidate of nutrientCandidates) {
+    const current = selectedByCode.get(candidate.code)
+    if (!current || candidate.priority < current.priority) selectedByCode.set(candidate.code, candidate)
+  }
+  const selectedNutrients = [...selectedByCode.values()]
+  const nutrients = selectedNutrients.map((candidate) => ({
+    food_version_id: version.id, nutrient_code: candidate.code,
+    amount_per_100g: candidate.amount, derivation_method: 'label',
+  }))
   if (nutrients.length) { const result = await admin.from('food_version_nutrients').insert(nutrients); if (result.error) throw result.error }
   const servingAmount = Number(food.servingSize)
   const servingUnit = String(food.servingSizeUnit ?? '')
   if (Number.isFinite(servingAmount) && servingAmount > 0 && /^(g|gram|grams|grm)$/i.test(servingUnit)) {
     const portionResult = await admin.from('food_portions').insert({ food_version_id: version.id, amount: 1, unit: 'serving', description: food.householdServingFullText ?? 'Serving', gram_weight: servingAmount, source: 'usda_fdc' })
     if (portionResult.error) throw portionResult.error
-    const sourceByCode = new Map(((food.foodNutrients ?? []) as Record<string, unknown>[]).flatMap((item) => {
-      const nutrient = item.nutrient as Record<string, unknown> | undefined
-      const code = nutrientCodes[Number(nutrient?.id ?? item.nutrientId)]
-      return code ? [[code, item] as const] : []
-    }))
+    const sourceByCode = new Map(selectedNutrients.map((candidate) => [candidate.code, candidate.item] as const))
     const servingRows = nutrients.map((item) => {
       const source = sourceByCode.get(item.nutrient_code)
       const percent = Number(source?.percentDailyValue)

@@ -71,6 +71,12 @@ struct FoodEntryInput: Equatable, Sendable {
 }
 
 enum NutrientTargetKind: String, Codable, Sendable { case goal, limit, informational }
+enum NutrientUpperLimitScope: String, Codable, Sendable {
+    case total
+    case preformedOnly = "preformed_only"
+    case syntheticOnly = "synthetic_only"
+    case supplementalOnly = "supplemental_only"
+}
 enum NutrientDerivationMethod: String, Codable, Sendable {
     case laboratory, label, calculated, estimated
     case userEntered = "user_entered"
@@ -128,6 +134,22 @@ struct DailyNutrient: Codable, Equatable, Identifiable, Sendable {
     let estimatedAmount: Double
     let verifiedAmount: Double
     let confidence: Double?
+    let targetBasisAmount: Double?
+    let targetBasisCodes: [String]
+    let targetType: String?
+    let upperLimitAmount: Double?
+    let upperLimitScope: NutrientUpperLimitScope?
+    let guidanceLimitAmount: Double?
+    let guidanceLimitType: String?
+    let belowTargetFlag: Bool?
+    let excessFlag: Bool?
+    let trendQualifyingDays: Int
+    let trendRequiredDays: Int
+    let trendPercentOfTarget: Double?
+    let trendPercentOfUpperLimit: Double?
+    let referenceURL: URL?
+    let referenceNote: String?
+    let foodSources: [NutrientSourceContribution]
     var id: String { code }
 
     enum CodingKeys: String, CodingKey {
@@ -139,11 +161,108 @@ struct DailyNutrient: Codable, Equatable, Identifiable, Sendable {
         case percentOfTarget = "percent_of_target"
         case estimatedAmount = "estimated_amount"
         case verifiedAmount = "verified_amount"
+        case targetBasisAmount = "target_basis_amount"
+        case targetBasisCodes = "target_basis_codes"
+        case targetType = "target_type"
+        case upperLimitAmount = "upper_limit_amount"
+        case upperLimitScope = "upper_limit_scope"
+        case guidanceLimitAmount = "guidance_limit_amount"
+        case guidanceLimitType = "guidance_limit_type"
+        case belowTargetFlag = "below_target_flag"
+        case excessFlag = "excess_flag"
+        case trendQualifyingDays = "trend_qualifying_days"
+        case trendRequiredDays = "trend_required_days"
+        case trendPercentOfTarget = "trend_percent_of_target"
+        case trendPercentOfUpperLimit = "trend_percent_of_upper_limit"
+        case referenceURL = "reference_url"
+        case referenceNote = "reference_note"
+        case foodSources = "food_sources"
+    }
+
+    init(
+        code: String, name: String, unit: String, nutrientClass: String,
+        displayOrder: Int, targetKind: NutrientTargetKind, amount: Double,
+        targetAmount: Double?, percentOfTarget: Double?, coverage: Double?,
+        estimatedAmount: Double, verifiedAmount: Double, confidence: Double?,
+        targetBasisAmount: Double? = nil, targetBasisCodes: [String] = [], targetType: String? = nil,
+        upperLimitAmount: Double? = nil, upperLimitScope: NutrientUpperLimitScope? = nil,
+        guidanceLimitAmount: Double? = nil, guidanceLimitType: String? = nil,
+        belowTargetFlag: Bool? = nil, excessFlag: Bool? = nil,
+        trendQualifyingDays: Int = 0, trendRequiredDays: Int = 4,
+        trendPercentOfTarget: Double? = nil, trendPercentOfUpperLimit: Double? = nil,
+        referenceURL: URL? = nil, referenceNote: String? = nil,
+        foodSources: [NutrientSourceContribution] = []
+    ) {
+        self.code = code; self.name = name; self.unit = unit; self.nutrientClass = nutrientClass
+        self.displayOrder = displayOrder; self.targetKind = targetKind; self.amount = amount
+        self.targetAmount = targetAmount; self.percentOfTarget = percentOfTarget; self.coverage = coverage
+        self.estimatedAmount = estimatedAmount; self.verifiedAmount = verifiedAmount; self.confidence = confidence
+        self.targetBasisAmount = targetBasisAmount; self.targetBasisCodes = targetBasisCodes; self.targetType = targetType
+        self.upperLimitAmount = upperLimitAmount; self.upperLimitScope = upperLimitScope
+        self.guidanceLimitAmount = guidanceLimitAmount; self.guidanceLimitType = guidanceLimitType
+        self.belowTargetFlag = belowTargetFlag; self.excessFlag = excessFlag
+        self.trendQualifyingDays = trendQualifyingDays; self.trendRequiredDays = trendRequiredDays
+        self.trendPercentOfTarget = trendPercentOfTarget; self.trendPercentOfUpperLimit = trendPercentOfUpperLimit
+        self.referenceURL = referenceURL; self.referenceNote = referenceNote; self.foodSources = foodSources
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            code: try values.decode(String.self, forKey: .code),
+            name: try values.decode(String.self, forKey: .name),
+            unit: try values.decode(String.self, forKey: .unit),
+            nutrientClass: try values.decode(String.self, forKey: .nutrientClass),
+            displayOrder: try values.decode(Int.self, forKey: .displayOrder),
+            targetKind: try values.decode(NutrientTargetKind.self, forKey: .targetKind),
+            amount: try values.decode(Double.self, forKey: .amount),
+            targetAmount: try values.decodeIfPresent(Double.self, forKey: .targetAmount),
+            percentOfTarget: try values.decodeIfPresent(Double.self, forKey: .percentOfTarget),
+            coverage: try values.decodeIfPresent(Double.self, forKey: .coverage),
+            estimatedAmount: try values.decode(Double.self, forKey: .estimatedAmount),
+            verifiedAmount: try values.decode(Double.self, forKey: .verifiedAmount),
+            confidence: try values.decodeIfPresent(Double.self, forKey: .confidence),
+            targetBasisAmount: try values.decodeIfPresent(Double.self, forKey: .targetBasisAmount),
+            targetBasisCodes: try values.decodeIfPresent([String].self, forKey: .targetBasisCodes) ?? [],
+            targetType: try values.decodeIfPresent(String.self, forKey: .targetType),
+            upperLimitAmount: try values.decodeIfPresent(Double.self, forKey: .upperLimitAmount),
+            upperLimitScope: try values.decodeIfPresent(NutrientUpperLimitScope.self, forKey: .upperLimitScope),
+            guidanceLimitAmount: try values.decodeIfPresent(Double.self, forKey: .guidanceLimitAmount),
+            guidanceLimitType: try values.decodeIfPresent(String.self, forKey: .guidanceLimitType),
+            belowTargetFlag: try values.decodeIfPresent(Bool.self, forKey: .belowTargetFlag),
+            excessFlag: try values.decodeIfPresent(Bool.self, forKey: .excessFlag),
+            trendQualifyingDays: try values.decodeIfPresent(Int.self, forKey: .trendQualifyingDays) ?? 0,
+            trendRequiredDays: try values.decodeIfPresent(Int.self, forKey: .trendRequiredDays) ?? 4,
+            trendPercentOfTarget: try values.decodeIfPresent(Double.self, forKey: .trendPercentOfTarget),
+            trendPercentOfUpperLimit: try values.decodeIfPresent(Double.self, forKey: .trendPercentOfUpperLimit),
+            referenceURL: try values.decodeIfPresent(URL.self, forKey: .referenceURL),
+            referenceNote: try values.decodeIfPresent(String.self, forKey: .referenceNote),
+            foodSources: try values.decodeIfPresent([NutrientSourceContribution].self, forKey: .foodSources) ?? []
+        )
     }
 
     var progress: Double { min(max(percentOfTarget ?? 0, 0), 1) }
     var hasEstimate: Bool { estimatedAmount > 0 }
     var hasSufficientCoverage: Bool { (coverage ?? 0) >= 0.8 }
+}
+
+struct NutrientSourceContribution: Codable, Equatable, Identifiable, Sendable {
+    let consumptionItemID: UUID
+    let foodEntryID: UUID?
+    let name: String
+    let amount: Double
+    let percentOfDailyAmount: Double?
+    let derivationMethod: NutrientDerivationMethod
+    let confidence: Double?
+    var id: UUID { consumptionItemID }
+
+    enum CodingKeys: String, CodingKey {
+        case name, amount, confidence
+        case consumptionItemID = "consumption_item_id"
+        case foodEntryID = "food_entry_id"
+        case percentOfDailyAmount = "percent_of_daily_amount"
+        case derivationMethod = "derivation_method"
+    }
 }
 
 struct NutrientReference: Codable, Equatable, Sendable {
@@ -190,23 +309,33 @@ struct NutrientAutoFillResponse: Codable, Sendable {
 
 enum NutritionGroup: String, CaseIterable, Hashable, Sendable {
     case macros
-    case fiberAndCholine
     case vitamins
     case minerals
+    case essentialAminoAcids
+    case essentialFattyAcids
+    case fiber
+    case choline
     case limits
     case other
 
-    static let detailOrder: [Self] = [.macros, .fiberAndCholine, .vitamins, .minerals, .limits, .other]
-    // Daily Nutrition intentionally has four broad sections: Macros (rendered
-    // separately), Vitamins, Minerals, and Other nutrients.
-    static let dailyOrder: [Self] = [.vitamins, .minerals, .other]
+    static let detailOrder: [Self] = [
+        .macros, .vitamins, .minerals, .essentialAminoAcids, .essentialFattyAcids,
+        .fiber, .choline, .limits, .other
+    ]
+    static let dailyOrder: [Self] = [
+        .vitamins, .minerals, .essentialAminoAcids, .essentialFattyAcids,
+        .fiber, .choline, .limits, .other
+    ]
 
     var title: String {
         switch self {
         case .macros: "Macros"
-        case .fiberAndCholine: "Fiber & choline"
         case .vitamins: "Vitamins"
         case .minerals: "Minerals"
+        case .essentialAminoAcids: "Essential amino acids"
+        case .essentialFattyAcids: "Essential fatty acids"
+        case .fiber: "Fiber"
+        case .choline: "Choline"
         case .limits: "Nutrients to limit"
         case .other: "Other nutrients"
         }
@@ -226,7 +355,7 @@ enum NutrientCatalog {
         .init(code: "protein_g", name: "Protein", unit: "g", group: .macros),
         .init(code: "carbohydrate_g", name: "Carbohydrate", unit: "g", group: .macros),
         .init(code: "fat_g", name: "Fat", unit: "g", group: .macros),
-        .init(code: "fiber_g", name: "Dietary fiber", unit: "g", group: .fiberAndCholine),
+        .init(code: "fiber_g", name: "Dietary fiber", unit: "g", group: .fiber),
         .init(code: "vitamin_a_mcg_rae", name: "Vitamin A", unit: "mcg RAE", group: .vitamins),
         .init(code: "vitamin_c_mg", name: "Vitamin C", unit: "mg", group: .vitamins),
         .init(code: "vitamin_d_mcg", name: "Vitamin D", unit: "mcg", group: .vitamins),
@@ -253,7 +382,19 @@ enum NutrientCatalog {
         .init(code: "chromium_mcg", name: "Chromium", unit: "mcg", group: .minerals),
         .init(code: "molybdenum_mcg", name: "Molybdenum", unit: "mcg", group: .minerals),
         .init(code: "chloride_mg", name: "Chloride", unit: "mg", group: .minerals),
-        .init(code: "choline_mg", name: "Choline", unit: "mg", group: .fiberAndCholine),
+        .init(code: "sulfur_mg", name: "Sulfur", unit: "mg", group: .minerals),
+        .init(code: "histidine_g", name: "Histidine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "isoleucine_g", name: "Isoleucine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "leucine_g", name: "Leucine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "lysine_g", name: "Lysine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "methionine_g", name: "Methionine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "phenylalanine_g", name: "Phenylalanine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "threonine_g", name: "Threonine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "tryptophan_g", name: "Tryptophan", unit: "g", group: .essentialAminoAcids),
+        .init(code: "valine_g", name: "Valine", unit: "g", group: .essentialAminoAcids),
+        .init(code: "linoleic_acid_g", name: "Linoleic acid (LA, omega-6)", unit: "g", group: .essentialFattyAcids),
+        .init(code: "alpha_linolenic_acid_g", name: "Alpha-linolenic acid (ALA, omega-3)", unit: "g", group: .essentialFattyAcids),
+        .init(code: "choline_mg", name: "Choline", unit: "mg", group: .choline),
         .init(code: "saturated_fat_g", name: "Saturated fat", unit: "g", group: .limits),
         .init(code: "sodium_mg", name: "Sodium", unit: "mg", group: .minerals),
         .init(code: "added_sugars_g", name: "Added sugars", unit: "g", group: .limits),
@@ -274,6 +415,12 @@ enum NutrientCatalog {
         "sodium_mg", "potassium_mg", "calcium_mg", "iron_mg", "magnesium_mg",
         "zinc_mg", "iodine_mcg", "phosphorus_mg", "selenium_mcg", "copper_mg",
         "manganese_mg", "chloride_mg", "chromium_mcg", "molybdenum_mcg",
+        "sulfur_mg",
+        // Essential amino acids
+        "histidine_g", "isoleucine_g", "leucine_g", "lysine_g", "methionine_g",
+        "phenylalanine_g", "threonine_g", "tryptophan_g", "valine_g",
+        // Essential fatty acids
+        "linoleic_acid_g", "alpha_linolenic_acid_g",
         // Other nutrients
         "fiber_g", "saturated_fat_g", "added_sugars_g", "trans_fat_g",
         "cholesterol_mg", "sugars_g", "choline_mg", "caffeine_mg",

@@ -75,16 +75,22 @@ final class DailyNutritionModelsTests: XCTestCase {
     func testNutritionGroupsUseClearStableTitles() {
         XCTAssertEqual(
             NutritionGroup.dailyOrder.map(\.title),
-            ["Vitamins", "Minerals", "Other nutrients"]
+            [
+                "Vitamins", "Minerals", "Essential amino acids", "Essential fatty acids",
+                "Fiber", "Choline", "Nutrients to limit", "Other nutrients"
+            ]
         )
     }
 
     func testNutrientCatalogKeepsExpectedGroupCounts() {
         let counts = Dictionary(grouping: NutrientCatalog.items, by: \.group).mapValues(\.count)
 
-        XCTAssertEqual(counts[.fiberAndCholine], 2)
+        XCTAssertEqual(counts[.fiber], 1)
+        XCTAssertEqual(counts[.choline], 1)
         XCTAssertEqual(counts[.vitamins], 13)
-        XCTAssertEqual(counts[.minerals], 14)
+        XCTAssertEqual(counts[.minerals], 15)
+        XCTAssertEqual(counts[.essentialAminoAcids], 9)
+        XCTAssertEqual(counts[.essentialFattyAcids], 2)
         XCTAssertEqual(counts[.limits], 3)
         XCTAssertEqual(counts[.other], 3)
         XCTAssertNil(NutrientCatalog.items.first { $0.code == "water_g" || $0.code == "alcohol_g" })
@@ -92,7 +98,8 @@ final class DailyNutritionModelsTests: XCTestCase {
 
     func testEveryMicronutrientHasReviewedEducationalCopy() throws {
         let micronutrients = NutrientCatalog.items.filter {
-            $0.group == .vitamins || $0.group == .minerals
+            [.vitamins, .minerals, .essentialAminoAcids, .essentialFattyAcids, .fiber, .choline]
+                .contains($0.group)
         }
 
         XCTAssertFalse(micronutrients.isEmpty)
@@ -107,6 +114,25 @@ final class DailyNutritionModelsTests: XCTestCase {
             XCTAssertTrue(education.sourceURL.hasPrefix("https://ods.od.nih.gov/"))
             XCTAssertFalse(education.reviewedOn.isEmpty)
         }
+    }
+
+    func testRollingFlagsAndFoodSourcesAreRetained() {
+        let source = NutrientSourceContribution(
+            consumptionItemID: UUID(), foodEntryID: nil, name: "Black beans", amount: 8,
+            percentOfDailyAmount: 0.8, derivationMethod: .calculated, confidence: 1
+        )
+        let nutrient = DailyNutrient(
+            code: "fiber_g", name: "Dietary fiber", unit: "g", nutrientClass: "fiber",
+            displayOrder: 1, targetKind: .goal, amount: 10, targetAmount: 25,
+            percentOfTarget: 0.4, coverage: 1, estimatedAmount: 2, verifiedAmount: 8,
+            confidence: 0.9, belowTargetFlag: true, excessFlag: nil,
+            trendQualifyingDays: 4, trendRequiredDays: 4, trendPercentOfTarget: 0.75,
+            foodSources: [source]
+        )
+
+        XCTAssertEqual(nutrient.belowTargetFlag, true)
+        XCTAssertEqual(nutrient.trendQualifyingDays, 4)
+        XCTAssertEqual(nutrient.foodSources.first?.name, "Black beans")
     }
 
     func testDailyNutritionUsesFourBroadCategoriesAndSortsLimitsFirst() {

@@ -6,7 +6,10 @@ export const nutrientCodes = [
   'niacin_mg_ne', 'vitamin_b6_mg', 'folate_mcg_dfe', 'vitamin_b12_mcg', 'biotin_mcg',
   'pantothenic_acid_mg', 'phosphorus_mg', 'iodine_mcg', 'zinc_mg', 'selenium_mcg',
   'copper_mg', 'manganese_mg', 'chromium_mcg', 'molybdenum_mcg', 'chloride_mg',
-  'choline_mg', 'caffeine_mg',
+  'choline_mg', 'caffeine_mg', 'sulfur_mg',
+  'histidine_g', 'isoleucine_g', 'leucine_g', 'lysine_g', 'methionine_g',
+  'phenylalanine_g', 'threonine_g', 'tryptophan_g', 'valine_g',
+  'cystine_g', 'tyrosine_g', 'linoleic_acid_g', 'alpha_linolenic_acid_g',
 ] as const
 
 export type NutrientCode = typeof nutrientCodes[number]
@@ -35,6 +38,10 @@ export const nutrientUnits: Record<NutrientCode, string> = {
   pantothenic_acid_mg: 'mg', phosphorus_mg: 'mg', iodine_mcg: 'mcg', zinc_mg: 'mg',
   selenium_mcg: 'mcg', copper_mg: 'mg', manganese_mg: 'mg', chromium_mcg: 'mcg',
   molybdenum_mcg: 'mcg', chloride_mg: 'mg', choline_mg: 'mg', caffeine_mg: 'mg',
+  sulfur_mg: 'mg', histidine_g: 'g', isoleucine_g: 'g', leucine_g: 'g', lysine_g: 'g',
+  methionine_g: 'g', phenylalanine_g: 'g', threonine_g: 'g', tryptophan_g: 'g',
+  valine_g: 'g', cystine_g: 'g', tyrosine_g: 'g', linoleic_acid_g: 'g',
+  alpha_linolenic_acid_g: 'g',
 }
 
 export function normalizeNutrients(value: unknown): EstimatedNutrient[] {

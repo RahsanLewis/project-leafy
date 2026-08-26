@@ -54,7 +54,7 @@ async function processJob(admin: Admin, userID: string, job: Row) {
       const estimates = await estimateMissingNutrients(userID, item, missing)
       const snapshots = estimates.map((value) => ({
         consumption_item_id: item.id, nutrient_code: value.code, amount: value.amount,
-        derivation_method: 'estimated', source_version: 'leafy-nutrient-enrichment-1', confidence: value.confidence,
+        derivation_method: 'estimated', source_version: 'leafy-nutrient-enrichment-2', confidence: value.confidence,
       }))
       const saved = await admin.from('consumption_item_nutrients').insert(snapshots)
       if (saved.error) throw saved.error
@@ -65,7 +65,7 @@ async function processJob(admin: Admin, userID: string, job: Row) {
         const cache = estimates.map((value) => ({
           food_version_id: item.food_version_id, nutrient_code: value.code,
           amount_per_100g: value.amount * 100 / grams, derivation_method: 'estimated',
-          source_version: 'leafy-nutrient-enrichment-1', confidence: value.confidence,
+          source_version: 'leafy-nutrient-enrichment-2', confidence: value.confidence,
         }))
         const cached = await admin.from('food_version_nutrients').insert(cache)
         // A concurrent worker may already have filled a code; snapshots remain valid.
@@ -74,7 +74,7 @@ async function processJob(admin: Admin, userID: string, job: Row) {
     }
     const source = [item.description, item.calories_kcal, item.normalized_grams, item.portion_description, item.food_version_id].join('|')
     await admin.from('nutrient_enrichment_jobs').update({
-      status: 'complete', source_hash: await sha256(source), model_version: 'leafy-nutrient-enrichment-1',
+      status: 'complete', source_hash: await sha256(source), model_version: 'leafy-nutrient-enrichment-2',
       last_error: null, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq('id', jobID)
     const legacy = await admin.from('consumption_items').select('legacy_food_entry_id').eq('id', item.id).maybeSingle()

@@ -1,10 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { buildDailyNutritionSummary, type NutritionRow } from '../_shared/daily-nutrition.ts'
 import { cors, json } from '../_shared/http.ts'
 import { processNutrientJobs } from '../_shared/nutrient-enrichment.ts'
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
-
-type Row = Record<string, unknown>
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -18,31 +17,49 @@ Deno.serve(async (request) => {
     if (authError || !user) return json({ error: 'Unauthorized' }, 401)
     const body = await request.json() as { local_date?: string }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.local_date ?? '')) return json({ error: 'A valid local date is required.' }, 400)
+
+    const selectedDate = body.local_date!
+    const dates = rollingDates(selectedDate)
     const admin = createClient(url, secret)
-
-    const { data: occasions, error: occasionError } = await admin.from('eating_occasions')
-      .select('id').eq('user_id', user.id).eq('local_date', body.local_date)
-    if (occasionError) throw occasionError
-    const occasionIDs = (occasions ?? []).map((row: Row) => String(row.id))
-    if (!occasionIDs.length) return json(await emptySummary(admin, body.local_date!))
-
-    const { data: items, error: itemError } = await admin.from('consumption_items')
-      .select('id,calories_kcal').eq('user_id', user.id).in('occasion_id', occasionIDs).is('deleted_at', null)
-    if (itemError) throw itemError
-    const itemRows = (items ?? []) as Row[]
-    const itemIDs = itemRows.map((row) => String(row.id))
-    if (!itemIDs.length) return json(await emptySummary(admin, body.local_date!))
-
-    const [{ data: observations, error: observationError }, { data: jobs, error: jobsError }, metadata] = await Promise.all([
-      admin.from('consumption_item_nutrients').select('consumption_item_id,nutrient_code,amount,derivation_method,confidence').in('consumption_item_id', itemIDs),
-      admin.from('nutrient_enrichment_jobs').select('status').in('consumption_item_id', itemIDs),
-      loadMetadata(admin),
+    const [{ data: occasions, error: occasionError }, metadata] = await Promise.all([
+      admin.from('eating_occasions').select('id,local_date').eq('user_id', user.id)
+        .gte('local_date', dates[0]).lte('local_date', selectedDate),
+      loadMetadata(admin, user.id, selectedDate),
     ])
-    if (observationError) throw observationError
-    if (jobsError) throw jobsError
-    const jobRows = (jobs ?? []) as Row[]
-    EdgeRuntime.waitUntil(processNutrientJobs(admin, user.id, 3).catch((error) => console.error('nutrient retry resume failed', error)))
-    return json(buildSummary(body.local_date!, itemRows, (observations ?? []) as Row[], metadata, jobRows))
+    if (occasionError) throw occasionError
+    const occasionRows = (occasions ?? []) as NutritionRow[]
+    const dateByOccasion = new Map(occasionRows.map((row) => [String(row.id), String(row.local_date)]))
+    const occasionIDs = [...dateByOccasion.keys()]
+    let itemRows: NutritionRow[] = []
+    let observations: NutritionRow[] = []
+    let jobs: NutritionRow[] = []
+    if (occasionIDs.length) {
+      const { data: items, error: itemError } = await admin.from('consumption_items')
+        .select('id,occasion_id,legacy_food_entry_id,description,calories_kcal')
+        .eq('user_id', user.id).in('occasion_id', occasionIDs).is('deleted_at', null)
+      if (itemError) throw itemError
+      itemRows = ((items ?? []) as NutritionRow[]).map((item) => ({
+        ...item, local_date: dateByOccasion.get(String(item.occasion_id)),
+      }))
+      const itemIDs = itemRows.map((row) => String(row.id))
+      if (itemIDs.length) {
+        const selectedItemIDs = itemRows.filter((row) => row.local_date === selectedDate).map((row) => String(row.id))
+        const [observationResult, jobResult] = await Promise.all([
+          admin.from('consumption_item_nutrients')
+            .select('consumption_item_id,nutrient_code,amount,derivation_method,confidence').in('consumption_item_id', itemIDs),
+          selectedItemIDs.length
+            ? admin.from('nutrient_enrichment_jobs').select('status').in('consumption_item_id', selectedItemIDs)
+            : Promise.resolve({ data: [], error: null }),
+        ])
+        if (observationResult.error) throw observationResult.error
+        if (jobResult.error) throw jobResult.error
+        observations = (observationResult.data ?? []) as NutritionRow[]
+        jobs = (jobResult.data ?? []) as NutritionRow[]
+      }
+    }
+    EdgeRuntime.waitUntil(processNutrientJobs(admin, user.id, 3)
+      .catch((error) => console.error('nutrient retry resume failed', error)))
+    return json(buildDailyNutritionSummary(selectedDate, dates, itemRows, observations, metadata, jobs))
   } catch (error) {
     console.error('daily-nutrition failed', error)
     return json({ error: error instanceof Error ? error.message : 'Unable to load daily nutrition.' }, 400)
@@ -50,67 +67,41 @@ Deno.serve(async (request) => {
 })
 
 // deno-lint-ignore no-explicit-any
-async function loadMetadata(admin: any) {
-  const [{ data: definitions, error: definitionError }, { data: reference, error: referenceError }] = await Promise.all([
-    admin.from('nutrient_definitions').select('code,name,unit,nutrient_class,display_order,target_kind').order('display_order'),
-    admin.from('nutrient_reference_sets').select('id,code,name,population,source_url,nutrient_reference_values(nutrient_code,amount)')
-      .eq('code', 'fda_adults_4_plus_2020').single(),
+async function loadMetadata(admin: any, userID: string, selectedDate: string) {
+  const [definitionsResult, referenceResult, profileResult, weightsResult] = await Promise.all([
+    admin.from('nutrient_definitions')
+      .select('code,name,unit,nutrient_class,display_order,target_kind,is_displayed,essentiality_note')
+      .order('display_order'),
+    admin.from('nutrient_reference_sets')
+      .select('nutrient_reference_values(nutrient_code,amount)').eq('code', 'fda_adults_4_plus_2020').single(),
+    admin.from('profiles').select('birth_date,calculation_sex,current_weight_kg').eq('user_id', userID).single(),
+    admin.from('weight_entries').select('recorded_on,weight_kg').eq('user_id', userID)
+      .lte('recorded_on', selectedDate).order('recorded_on', { ascending: false }),
   ])
-  if (definitionError) throw definitionError
-  if (referenceError) throw referenceError
-  return { definitions: (definitions ?? []) as Row[], reference: reference as Row }
-}
-
-// deno-lint-ignore no-explicit-any
-async function emptySummary(admin: any, localDate: string) {
-  const metadata = await loadMetadata(admin)
-  return buildSummary(localDate, [], [], metadata)
-}
-
-function buildSummary(localDate: string, items: Row[], observations: Row[], metadata: { definitions: Row[]; reference: Row }, jobs: Row[] = []) {
-  const caloriesByItem = new Map(items.map((item) => [String(item.id), Number(item.calories_kcal ?? 0)]))
-  const totalCalories = [...caloriesByItem.values()].reduce((sum, value) => sum + value, 0)
-  const targetRows = (metadata.reference.nutrient_reference_values ?? []) as Row[]
-  const targets = new Map(targetRows.map((row) => [String(row.nutrient_code), Number(row.amount)]))
-  const byCode = new Map<string, Row[]>()
-  for (const row of observations) {
-    const code = String(row.nutrient_code)
-    byCode.set(code, [...(byCode.get(code) ?? []), row])
-  }
-  const nutrients = metadata.definitions.filter((definition) => String(definition.code) !== 'energy_kcal').map((definition) => {
-    const code = String(definition.code)
-    const rows = byCode.get(code) ?? []
-    const covered = new Set(rows.map((row) => String(row.consumption_item_id)))
-    const coveredCalories = [...covered].reduce((sum, id) => sum + (caloriesByItem.get(id) ?? 0), 0)
-    const amount = rows.reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
-    const estimatedAmount = rows.filter((row) => row.derivation_method === 'estimated').reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
-    const confidenceWeights = rows.filter((row) => row.confidence != null)
-    const confidence = confidenceWeights.length
-      ? confidenceWeights.reduce((sum, row) => sum + Number(row.confidence), 0) / confidenceWeights.length
-      : null
-    const target = targets.get(code) ?? null
-    return {
-      code, name: definition.name, unit: definition.unit, nutrient_class: definition.nutrient_class,
-      display_order: definition.display_order, target_kind: definition.target_kind,
-      amount, target_amount: target, percent_of_target: target ? amount / target : null,
-      coverage: totalCalories > 0 ? coveredCalories / totalCalories : null,
-      estimated_amount: estimatedAmount, verified_amount: Math.max(0, amount - estimatedAmount), confidence,
-    }
-  })
-  const macroCodes = ['protein_g', 'carbohydrate_g', 'fat_g']
-  const macroCoveredItems = items.filter((item) => macroCodes.every((code) =>
-    (byCode.get(code) ?? []).some((row) => String(row.consumption_item_id) === String(item.id))))
-  const macroCoveredCalories = macroCoveredItems.reduce((sum, item) => sum + Number(item.calories_kcal ?? 0), 0)
+  if (definitionsResult.error) throw definitionsResult.error
+  if (referenceResult.error) throw referenceResult.error
+  if (profileResult.error) throw profileResult.error
+  if (weightsResult.error) throw weightsResult.error
+  const targets = (referenceResult.data?.nutrient_reference_values ?? []) as NutritionRow[]
   return {
-    local_date: localDate, total_calories: totalCalories,
-    macro_coverage: totalCalories > 0 ? macroCoveredCalories / totalCalories : null,
-    reference: {
-      code: metadata.reference.code, name: metadata.reference.name,
-      population: metadata.reference.population, source_url: metadata.reference.source_url,
+    definitions: (definitionsResult.data ?? []) as NutritionRow[],
+    legacyTargets: new Map(targets.map((row) => [String(row.nutrient_code), Number(row.amount)])),
+    profile: {
+      birth_date: String(profileResult.data.birth_date),
+      calculation_sex: profileResult.data.calculation_sex,
+      current_weight_kg: Number(profileResult.data.current_weight_kg),
     },
-    nutrients,
-    enrichment_status: jobs.some((job) => ['queued', 'processing', 'retry_wait'].includes(String(job.status)))
-      ? 'processing' : jobs.some((job) => job.status === 'failed') ? 'failed' : 'complete',
-    pending_item_count: jobs.filter((job) => ['queued', 'processing', 'retry_wait'].includes(String(job.status))).length,
+    weights: ((weightsResult.data ?? []) as NutritionRow[]).map((row) => ({
+      recorded_on: String(row.recorded_on), weight_kg: Number(row.weight_kg),
+    })),
   }
+}
+
+function rollingDates(endDate: string): string[] {
+  const date = new Date(`${endDate}T00:00:00Z`)
+  return Array.from({ length: 7 }, (_, index) => {
+    const value = new Date(date)
+    value.setUTCDate(date.getUTCDate() - (6 - index))
+    return value.toISOString().slice(0, 10)
+  })
 }

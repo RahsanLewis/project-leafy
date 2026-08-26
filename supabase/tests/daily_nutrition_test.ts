@@ -4,6 +4,9 @@ import { normalizeNutrients, nutrientCodes } from '../functions/_shared/nutrient
 const migration = await Deno.readTextFile(
   new URL('../migrations/202608070002_daily_nutrition.sql', import.meta.url),
 )
+const essentialMigration = await Deno.readTextFile(
+  new URL('../migrations/202608260001_essential_nutrient_tracking.sql', import.meta.url),
+)
 
 Deno.test('nutrient normalization keeps the FDA set and rejects invalid values', () => {
   const nutrients = normalizeNutrients([
@@ -19,6 +22,16 @@ Deno.test('nutrient normalization keeps the FDA set and rejects invalid values',
   const supportedCodes: readonly string[] = nutrientCodes
   assertEquals(supportedCodes.includes('water_g'), false)
   assertEquals(supportedCodes.includes('alcohol_g'), false)
+  assertEquals(supportedCodes.includes('histidine_g'), true)
+  assertEquals(supportedCodes.includes('alpha_linolenic_acid_g'), true)
+})
+
+Deno.test('essential nutrient migration includes source aliases and a scoped backfill', () => {
+  assertStringIncludes(essentialMigration, "'sulfur_mg', 1094")
+  assertStringIncludes(essentialMigration, "'linoleic_acid_g', 1316")
+  assertStringIncludes(essentialMigration, "1269, 'linoleic_acid_g'")
+  assertStringIncludes(essentialMigration, 'nasem_dri_adults_2026_1')
+  assertStringIncludes(essentialMigration, 'raw_backfill_2026_1')
 })
 
 Deno.test('daily nutrition migration is versioned and preserves nutrient provenance', () => {

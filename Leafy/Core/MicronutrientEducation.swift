@@ -10,7 +10,7 @@ struct MicronutrientEducation: Equatable, Sendable {
 
 enum MicronutrientEducationCatalog {
     static let sourceURL = "https://ods.od.nih.gov/factsheets/list-VitaminsMinerals/"
-    static let reviewedOn = "2026-08-19"
+    static let reviewedOn = "2026-08-26"
 
     static func education(for code: String) -> MicronutrientEducation? { entries[code] }
 
@@ -51,6 +51,20 @@ enum MicronutrientEducationCatalog {
         "chromium_mcg": item("Chromium is a trace mineral whose role in human health is still being studied.", "It may be involved in insulin action and the metabolism of carbohydrates, fats, and protein.", ["meat", "whole grains", "broccoli", "grape juice"]),
         "molybdenum_mcg": item("Molybdenum is an essential trace mineral.", "It helps enzymes process proteins and other compounds.", ["legumes", "whole grains", "nuts", "dairy"]),
         "chloride_mg": item("Chloride is an electrolyte and mineral.", "It supports fluid balance and helps form stomach acid used in digestion.", ["table salt", "seaweed", "tomatoes", "lettuce", "olives"]),
-        "sodium_mg": item("Sodium is an electrolyte the body needs in small amounts.", "It supports fluid balance, nerve signals, and muscle function. Most diets provide enough, so Leafy tracks it against a daily limit.", ["table salt", "bread", "cheese", "cured meats", "soups", "sauces"]),
+        "sulfur_mg": item("Sulfur is present in sulfur-containing amino acids and other compounds.", "It contributes to proteins and compounds used throughout the body, although no separate daily intake target is established.", ["meat", "fish", "eggs", "dairy", "legumes", "nuts"]),
+        "histidine_g": item("Histidine is an essential amino acid.", "It contributes to protein production and is used to make histamine and other compounds.", ["meat", "fish", "dairy", "soy foods", "beans"]),
+        "isoleucine_g": item("Isoleucine is an essential branched-chain amino acid.", "It contributes to protein production and normal energy metabolism.", ["meat", "fish", "eggs", "dairy", "soy foods", "legumes"]),
+        "leucine_g": item("Leucine is an essential branched-chain amino acid.", "It contributes to protein production, including muscle protein turnover.", ["meat", "fish", "dairy", "eggs", "soy foods", "beans"]),
+        "lysine_g": item("Lysine is an essential amino acid.", "It contributes to proteins and compounds involved in normal growth and tissue maintenance.", ["meat", "fish", "dairy", "eggs", "soy foods", "legumes"]),
+        "methionine_g": item("Methionine is an essential sulfur-containing amino acid.", "It contributes to proteins and methylation pathways; its target is assessed together with cysteine.", ["eggs", "fish", "meat", "sesame seeds", "Brazil nuts", "legumes"]),
+        "phenylalanine_g": item("Phenylalanine is an essential aromatic amino acid.", "It contributes to proteins and can be converted to tyrosine; its target is assessed together with tyrosine.", ["meat", "fish", "dairy", "soy foods", "beans", "nuts"]),
+        "threonine_g": item("Threonine is an essential amino acid.", "It contributes to proteins, including structural and intestinal proteins.", ["meat", "fish", "dairy", "eggs", "soy foods", "beans"]),
+        "tryptophan_g": item("Tryptophan is an essential amino acid.", "It contributes to proteins and is used to make serotonin, melatonin, and niacin.", ["poultry", "eggs", "dairy", "soy foods", "seeds", "oats"]),
+        "valine_g": item("Valine is an essential branched-chain amino acid.", "It contributes to protein production and normal tissue metabolism.", ["meat", "fish", "dairy", "eggs", "soy foods", "legumes"]),
+        "linoleic_acid_g": item("Linoleic acid is the essential omega-6 fatty acid.", "It contributes to cell membranes and compounds involved in normal signaling.", ["soybean oil", "sunflower oil", "nuts", "seeds", "tofu"]),
+        "alpha_linolenic_acid_g": item("Alpha-linolenic acid is the essential omega-3 fatty acid.", "It contributes to cell membranes and can be converted in limited amounts to longer-chain omega-3 fats.", ["flaxseed", "chia seeds", "walnuts", "canola oil", "soy foods"]),
+        "fiber_g": item("Dietary fiber is the portion of plant carbohydrate not fully digested in the small intestine.", "It supports bowel function and can contribute to fullness, cholesterol management, and steadier glucose response.", ["beans", "lentils", "whole grains", "vegetables", "fruit", "nuts and seeds"]),
+        "choline_mg": item("Choline is an essential nutrient tracked in its own category.", "It supports cell membranes, acetylcholine production, lipid transport, and methylation.", ["eggs", "meat", "fish", "soybeans", "dairy", "broccoli"]),
+        "sodium_mg": item("Sodium is an electrolyte the body needs in small amounts.", "It supports fluid balance, nerve signals, and muscle function. Leafy separates its Adequate Intake from chronic-disease reduction guidance.", ["table salt", "bread", "cheese", "cured meats", "soups", "sauces"]),
     ]
 }

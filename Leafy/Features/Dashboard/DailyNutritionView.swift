@@ -4,9 +4,17 @@ enum NutritionPresentation {
     static let groupOrder = NutritionGroup.dailyOrder
 
     static func group(for nutrient: DailyNutrient) -> NutritionGroup {
+        if nutrient.targetKind == .limit,
+           ["fat", "carbohydrate", "other"].contains(nutrient.nutrientClass.lowercased()) {
+            return .limits
+        }
         switch nutrient.nutrientClass.lowercased() {
         case "vitamin": return .vitamins
         case "mineral": return .minerals
+        case "amino_acid": return .essentialAminoAcids
+        case "essential_fatty_acid": return .essentialFattyAcids
+        case "fiber": return .fiber
+        case "choline": return .choline
         default: return .other
         }
     }
@@ -28,6 +36,8 @@ enum NutritionPresentation {
     }
 
     private static func statusRank(_ nutrient: DailyNutrient) -> Int {
+        if nutrient.excessFlag == true { return 0 }
+        if nutrient.belowTargetFlag == true { return 1 }
         guard let percent = nutrient.percentOfTarget else { return 5 }
         switch nutrient.targetKind {
         case .limit:
@@ -303,13 +313,25 @@ private struct NutrientProgressRow: View {
         let estimateMark = nutrient.hasEstimate ? "≈" : ""
         let amount = "\(estimateMark)\(format(nutrient.amount)) \(nutrient.unit)"
         guard let target = nutrient.targetAmount else { return amount }
+        if nutrient.targetBasisCodes.count > 1, let basis = nutrient.targetBasisAmount {
+            return "\(amount) · pair \(format(basis)) of \(format(target))"
+        }
         return "\(amount) of \(format(target))"
     }
     private var barColor: Color {
-        nutrient.targetKind == .limit && (nutrient.percentOfTarget ?? 0) >= 0.8 ? .orange : LeafyTheme.green
+        if nutrient.excessFlag == true { return .red }
+        if nutrient.belowTargetFlag == true { return .orange }
+        return nutrient.targetKind == .limit && (nutrient.percentOfTarget ?? 0) >= 0.8 ? .orange : LeafyTheme.green
     }
     private var statusText: String? {
-        guard hasKnownData, let target = nutrient.targetAmount else { return nil }
+        guard hasKnownData else { return nil }
+        if nutrient.excessFlag == true { return "Above the 7-day upper limit" }
+        if nutrient.belowTargetFlag == true { return "Below the 7-day target" }
+        if nutrient.belowTargetFlag == false { return "7-day target met" }
+        if nutrient.targetAmount != nil && nutrient.trendQualifyingDays < nutrient.trendRequiredDays {
+            return "Need \(nutrient.trendRequiredDays - nutrient.trendQualifyingDays) more covered day\(nutrient.trendRequiredDays - nutrient.trendQualifyingDays == 1 ? "" : "s")"
+        }
+        guard let target = nutrient.targetAmount else { return nil }
         let difference = target - nutrient.amount
         if nutrient.targetKind == .limit {
             if difference < 0 { return "\(format(abs(difference))) \(nutrient.unit) over limit" }
@@ -318,7 +340,11 @@ private struct NutrientProgressRow: View {
         }
         return nil
     }
-    private var statusColor: Color { nutrient.targetKind == .limit ? .orange : .secondary }
+    private var statusColor: Color {
+        if nutrient.excessFlag == true { return .red }
+        if nutrient.belowTargetFlag == true { return .orange }
+        return nutrient.targetKind == .limit ? .orange : .secondary
+    }
     private func format(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...2))) }
 }
 
@@ -330,18 +356,48 @@ private struct NutrientExplanationSheet: View {
             title: nutrient.name,
             dismissIdentifier: "dismissNutrientExplanation"
         ) {
+            Text(targetExplanation)
+                .font(LeafyTypography.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if let education = MicronutrientEducationCatalog.education(for: nutrient.code) {
                 educationSection("What it supports", education.healthRole)
-                educationSection("Food sources", education.foodSources.joined(separator: ", "))
+                educationSection("Common food sources", education.foodSources.joined(separator: ", "))
+            }
+            LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
+                .accessibilityIdentifier("nutrientLoggedAmount")
+            if let target = nutrient.targetAmount {
+                LabeledContent(targetLabel, value: "\(format(target)) \(nutrient.unit)")
+                LabeledContent("Daily target", value: nutrient.percentOfTarget?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
             } else {
-                Text(targetExplanation)
-                    .font(LeafyTypography.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                LabeledContent("Logged amount", value: "\(format(nutrient.amount)) \(nutrient.unit)")
-                LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
-                if nutrient.hasEstimate {
-                    LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
+                LabeledContent("Recommended amount", value: "No established target")
+            }
+            LabeledContent("Upper limit", value: upperLimitText)
+                .accessibilityIdentifier("nutrientUpperLimit")
+            LabeledContent("7-day status", value: trendStatus)
+                .accessibilityIdentifier("nutrientSevenDayStatus")
+            LabeledContent("Data coverage", value: nutrient.coverage?.formatted(.percent.precision(.fractionLength(0))) ?? "Unavailable")
+                .accessibilityIdentifier("nutrientDataCoverage")
+            if nutrient.hasEstimate {
+                LabeledContent("Estimated", value: "\(format(nutrient.estimatedAmount)) \(nutrient.unit)")
+            }
+            if let note = nutrient.referenceNote {
+                educationSection("How this target works", note)
+            }
+            VStack(alignment: .leading, spacing: LeafySpacing.small) {
+                Text("Your logged sources").font(LeafyTypography.headline)
+                if nutrient.foodSources.isEmpty {
+                    Text("No contributing foods with known data.")
+                        .font(LeafyTypography.body).foregroundStyle(.secondary)
+                } else {
+                    ForEach(nutrient.foodSources) { source in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(source.name).font(LeafyTypography.body)
+                            Spacer()
+                            Text("\(format(source.amount)) \(nutrient.unit)")
+                                .font(LeafyTypography.subheadlineSemibold).monospacedDigit()
+                        }
+                    }
                 }
             }
         }
@@ -360,10 +416,36 @@ private struct NutrientExplanationSheet: View {
 
     private var targetExplanation: String {
         switch nutrient.targetKind {
-        case .goal: "Leafy shows your known intake against a general Daily Value. Progress during a single day is not a diagnosis or a sign of deficiency."
+        case .goal: "The amount and percentage describe this day. Low and high status use up to seven days and are general guidance—not a diagnosis."
         case .limit: "Leafy shows your known intake against a general daily limit so you can keep the amount in context."
         case .informational: "Leafy tracks this nutrient for context even though it does not have a daily target here."
         }
+    }
+    private var targetLabel: String {
+        switch nutrient.targetType {
+        case "rda": "Recommended amount (RDA)"
+        case "ai": "Recommended amount (AI)"
+        case "weight_based_rda": "Weight-based RDA"
+        case "legacy_ai": "Historical AI"
+        default: "Recommended amount"
+        }
+    }
+    private var upperLimitText: String {
+        guard let upper = nutrient.upperLimitAmount else { return "No established upper limit" }
+        let amount = "\(format(upper)) \(nutrient.unit)"
+        switch nutrient.upperLimitScope {
+        case .preformedOnly: return amount + " · preformed only"
+        case .syntheticOnly: return amount + " · synthetic only"
+        case .supplementalOnly: return amount + " · supplements only"
+        default: return amount
+        }
+    }
+    private var trendStatus: String {
+        if nutrient.excessFlag == true { return "Above upper limit" }
+        if nutrient.belowTargetFlag == true { return "Below target" }
+        if nutrient.belowTargetFlag == false { return "Target met" }
+        if nutrient.targetAmount == nil { return "Not assessable" }
+        return "Need \(max(0, nutrient.trendRequiredDays - nutrient.trendQualifyingDays)) more covered days"
     }
     private func format(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...2))) }
 }
