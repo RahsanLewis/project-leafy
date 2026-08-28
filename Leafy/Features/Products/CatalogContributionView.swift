@@ -234,7 +234,7 @@ struct CatalogContributionView: View {
                 .font(.system(size: 58)).foregroundStyle(LeafyTheme.green)
             Text("Leafy is identifying it").font(LeafyTypography.title2)
             Text(intent == .log
-                 ? "Your food will appear in today’s log after Leafy reads the label. You can leave this screen now."
+                 ? "Added to your food log. Leafy is reading the label now, and nutrition will appear when it’s ready."
                  : "Leafy will verify the package and add it to the catalog when it is ready.")
                 .font(LeafyTypography.body).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

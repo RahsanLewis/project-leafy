@@ -9,6 +9,15 @@ const functionSource = await Deno.readTextFile(
 const automationMigration = await Deno.readTextFile(
   new URL('../migrations/202608150001_automated_catalog_ingestion.sql', import.meta.url),
 )
+const pendingLogMigration = await Deno.readTextFile(
+  new URL('../migrations/202608280002_catalog_pending_food_logs.sql', import.meta.url),
+)
+const reviewFunctionSource = await Deno.readTextFile(
+  new URL('../functions/review-catalog-contribution/index.ts', import.meta.url),
+)
+const catalogLogSource = await Deno.readTextFile(
+  new URL('../functions/_shared/catalog-log.ts', import.meta.url),
+)
 
 Deno.test('catalog contributions retain revisions, nutrients, evidence, and status events', () => {
   assertStringIncludes(migration, 'create table public.catalog_contribution_revisions')
@@ -53,4 +62,21 @@ Deno.test('online sources verify identity but package values remain authoritativ
   assertStringIncludes(functionSource, 'const fields = normalizeFields(body.confirmed_fields')
   assertStringIncludes(functionSource, 'let status = "pending_review"')
   assertStringIncludes(functionSource, ': "community_confirmed"')
+})
+
+Deno.test('unknown-product logging intent is durable, visible, cancellable, and idempotent', () => {
+  assertStringIncludes(pendingLogMigration, 'create table public.catalog_contribution_log_requests')
+  assertStringIncludes(pendingLogMigration, 'food_entries_catalog_contribution_log_idx')
+  assertStringIncludes(pendingLogMigration, 'Preserve requests queued by the previous JSON-backed implementation')
+  assertStringIncludes(functionSource, 'action === "pending_logs"')
+  assertStringIncludes(functionSource, 'action === "cancel_log"')
+  assertStringIncludes(catalogLogSource, 'catalog_log_request_id')
+  assertStringIncludes(catalogLogSource, 'onConflict: "consumption_item_id,nutrient_code"')
+})
+
+Deno.test('automatic, retry, retake, and manual-review paths settle deferred logs', () => {
+  assertStringIncludes(functionSource, 'await fulfillCatalogLogRequest')
+  assertStringIncludes(functionSource, '"needs_action", message')
+  assertStringIncludes(functionSource, '"failed", message')
+  assertStringIncludes(reviewFunctionSource, 'await fulfillCatalogLogRequest(admin, claim.data)')
 })

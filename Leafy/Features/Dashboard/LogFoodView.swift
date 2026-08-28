@@ -71,7 +71,7 @@ struct LogFoodView: View {
         hasLoggedFood = true
         hasDraft = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        withAnimation(LeafyMotion.state) { successMessage = "Food added" }
+        withAnimation(LeafyMotion.state) { successMessage = "Added to your food log" }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.2))
             withAnimation(LeafyMotion.state) { successMessage = nil }

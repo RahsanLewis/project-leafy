@@ -397,6 +397,26 @@ actor PlanService {
         return result.contributions
     }
 
+    func fetchPendingCatalogLogs(on date: Date, calendar: Calendar = .current) async throws -> [PendingCatalogLog] {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "pending_logs",
+            "local_date": Self.localDayString(for: date, calendar: calendar),
+        ])
+        let result: PendingCatalogLogListResponse = try await request(
+            function: "manage-catalog-contribution", body: body,
+            response: PendingCatalogLogListResponse.self
+        )
+        return result.pendingLogs
+    }
+
+    func cancelPendingCatalogLog(contributionID: UUID) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "action": "cancel_log",
+            "contribution_id": contributionID.uuidString.lowercased(),
+        ])
+        _ = try await request(function: "manage-catalog-contribution", body: body, response: EmptyResponse.self)
+    }
+
     func uploadCatalogLabelPhoto(_ data: Data, contributionID: UUID, assetKind: String) async throws -> CatalogContribution {
         guard data.count <= 8 * 1024 * 1024 else { throw ServiceError.invalidResponse(413, "Choose a label photo smaller than 8 MB.") }
         guard let userID = await currentUserID() else { throw ServiceError.notAuthenticated }

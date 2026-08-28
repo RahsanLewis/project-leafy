@@ -370,6 +370,19 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
+    func testPendingCatalogFoodIsVisibleBeforeNutritionFinishes() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn", "-PendingCatalogLog"]
+        app.launch()
+
+        app.swipeUp()
+        let row = app.descendants(matching: .any)["pendingFoodEntryRow-A7C9D51F-C3B4-44E0-B3D9-F41EAAF71D5A"]
+        XCTAssertTrue(row.waitForExistence(timeout: 3))
+        XCTAssertTrue(row.label.contains("Sea Salt Chips"))
+        XCTAssertTrue(row.label.contains("Calculating nutrition"))
+    }
+
+    @MainActor
     func testLogFoodChooseFromLibraryOpensSystemPhotoPicker() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]

@@ -50,4 +50,16 @@ final class CatalogContributionModelsTests: XCTestCase {
         XCTAssertEqual(contribution.extractionDiagnostics?.requestedAssets, ["ingredients"])
         XCTAssertEqual(contribution.extractionDiagnostics?.missingFields, ["Ingredients"])
     }
+
+    func testPendingCatalogLogDecodesActionableState() throws {
+        let json = """
+        {"id":"A7C9D51F-C3B4-44E0-B3D9-F41EAAF71D5A","contribution_id":"B7C9D51F-C3B4-44E0-B3D9-F41EAAF71D5B","name":"Sea Salt Chips","barcode":"012345678905","serving_count":1.5,"consumed_at":"2026-08-28T17:30:00Z","local_date":"2026-08-28","time_zone":"America/New_York","meal_type":"snack","status":"needs_action","message":"Add a clearer label photo.","updated_at":"2026-08-28T17:31:00Z"}
+        """
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let pending = try decoder.decode(PendingCatalogLog.self, from: Data(json.utf8))
+        XCTAssertEqual(pending.status, .needsAction)
+        XCTAssertEqual(pending.mealType, .snack)
+        XCTAssertEqual(pending.servingCount, 1.5)
+        XCTAssertEqual(pending.name, "Sea Salt Chips")
+    }
 }

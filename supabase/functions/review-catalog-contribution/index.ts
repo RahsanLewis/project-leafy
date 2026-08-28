@@ -5,6 +5,7 @@ import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
 import { PFQS_INGREDIENT_DATABASE_VERSION } from "../_shared/pfqs/types.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
 import { nutrientUnits as sharedNutrientUnits } from "../_shared/nutrients.ts";
+import { fulfillCatalogLogRequest } from "../_shared/catalog-log.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -451,6 +452,7 @@ Deno.serve(async (request) => {
         );
       }
       try {
+        await fulfillCatalogLogRequest(admin, claim.data);
         const existing = await admin.from("food_versions").select("id").eq(
           "gtin",
           contribution.gtin,

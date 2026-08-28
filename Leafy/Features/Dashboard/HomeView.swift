@@ -7,6 +7,7 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editorEntry: FoodEntry?
     @State private var nutritionEntry: FoodEntry?
+    @State private var pendingLogToResolve: PendingCatalogLog?
     @State private var dayValueOpacity = 1.0
     @State private var isChangingDay = false
     @State private var showDayLoading = false
@@ -112,30 +113,40 @@ struct HomeView: View {
             .leafyBorderlessRows(separators: false)
 
             Section {
-                if app.isDailyLoading && app.foodEntries.isEmpty {
+                if app.isDailyLoading && foodLogItems.isEmpty {
                     HStack { Spacer(); ProgressView("Loading your day…"); Spacer() }
                         .padding(.vertical, 32)
-                } else if app.foodEntries.isEmpty {
+                } else if foodLogItems.isEmpty {
                     EmptyFoodLog()
                         .opacity(dayValueOpacity)
                 } else {
-                    ForEach(app.foodEntries) { entry in
-                        FoodEntryRow(entry: entry, valueOpacity: dayValueOpacity)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                nutritionEntry = entry
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("Delete", role: .destructive) {
-                                    Task { _ = await app.deleteFoodEntry(entry) }
+                    ForEach(foodLogItems) { item in
+                        switch item {
+                        case .completed(let entry):
+                            FoodEntryRow(entry: entry, valueOpacity: dayValueOpacity)
+                                .contentShape(Rectangle())
+                                .onTapGesture { nutritionEntry = entry }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button("Delete", role: .destructive) {
+                                        Task { _ = await app.deleteFoodEntry(entry) }
+                                    }
+                                    Button { editorEntry = entry } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                    .tint(LeafyTheme.green)
                                 }
-                                Button {
-                                    editorEntry = entry
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
+                        case .pending(let pending):
+                            PendingCatalogLogRow(pending: pending, valueOpacity: dayValueOpacity)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if pending.status == .needsAction { pendingLogToResolve = pending }
                                 }
-                                .tint(LeafyTheme.green)
-                            }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button("Remove", role: .destructive) {
+                                        Task { _ = await app.cancelPendingCatalogLog(pending) }
+                                    }
+                                }
+                        }
                     }
                 }
             } header: {
@@ -145,7 +156,7 @@ struct HomeView: View {
                         .foregroundStyle(.primary)
                         .textCase(nil)
                     Spacer()
-                    Text("\(app.foodEntries.count) \(app.foodEntries.count == 1 ? "item" : "items")")
+                    Text("\(foodLogItems.count) \(foodLogItems.count == 1 ? "item" : "items")")
                         .font(LeafyTypography.caption)
                         .foregroundStyle(.secondary)
                         .textCase(nil)
@@ -190,8 +201,23 @@ struct HomeView: View {
         .navigationDestination(item: $nutritionEntry) { entry in
             FoodEntryNutritionView(entry: entry)
         }
+        .navigationDestination(item: $pendingLogToResolve) { pending in
+            CatalogContributionView(
+                barcode: pending.barcode,
+                intent: .log,
+                onCompleted: { Task { await app.loadDailyLog() } }
+            )
+        }
         .task {
             if app.dailyPlan == nil && !app.isDailyLoading { await app.loadDailyLog() }
+        }
+        .task(id: app.pendingCatalogLogs.isEmpty) {
+            guard !app.isPreviewMode, !app.pendingCatalogLogs.isEmpty else { return }
+            while !Task.isCancelled && !app.pendingCatalogLogs.isEmpty {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                await app.loadDailyLog()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
@@ -200,6 +226,11 @@ struct HomeView: View {
                 await app.loadMorningCheckIn(presentWhenNeeded: true)
             }
         }
+    }
+
+    private var foodLogItems: [FoodLogItem] {
+        (app.foodEntries.map(FoodLogItem.completed) + app.pendingCatalogLogs.map(FoodLogItem.pending))
+            .sorted { $0.consumedAt < $1.consumedAt }
     }
 
     private func changeDay(by days: Int) {
@@ -239,6 +270,24 @@ struct HomeView: View {
                 }
             }
             isChangingDay = false
+        }
+    }
+}
+
+private enum FoodLogItem: Identifiable {
+    case completed(FoodEntry)
+    case pending(PendingCatalogLog)
+
+    var id: String {
+        switch self {
+        case .completed(let entry): return "entry-\(entry.id)"
+        case .pending(let pending): return "pending-\(pending.id)"
+        }
+    }
+    var consumedAt: Date {
+        switch self {
+        case .completed(let entry): return entry.consumedAt
+        case .pending(let pending): return pending.consumedAt
         }
     }
 }
@@ -547,6 +596,46 @@ private struct FoodEntryRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("foodEntryRow-\(entry.id.uuidString)")
         .accessibilityHint("Double tap for nutrition details. Swipe left for edit or delete actions.")
+    }
+}
+
+private struct PendingCatalogLogRow: View {
+    let pending: PendingCatalogLog
+    let valueOpacity: Double
+
+    private var statusText: String {
+        switch pending.status {
+        case .pending, .processing: return "Calculating nutrition…"
+        case .needsAction: return pending.message ?? "More package details needed"
+        case .failed: return pending.message ?? "Leafy couldn’t finish this item"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(pending.consumedAt.formatted(date: .omitted, time: .shortened))
+                .font(LeafyTypography.caption).monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 68, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pending.name).font(LeafyTypography.bodyMedium).lineLimit(2)
+                Label(statusText, systemImage: pending.status == .needsAction ? "camera.fill" : "hourglass")
+                    .font(LeafyTypography.caption)
+                    .foregroundStyle(pending.status == .failed ? .orange : LeafyTheme.green)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            if pending.status == .pending || pending.status == .processing {
+                ProgressView().controlSize(.small)
+            } else if pending.status == .needsAction {
+                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, LeafySpacing.small)
+        .opacity(valueOpacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pendingFoodEntryRow-\(pending.id.uuidString)")
+        .accessibilityHint(pending.status == .needsAction ? "Double tap to add the requested package photo. Swipe left to remove." : "Swipe left to remove from the food log.")
     }
 }
 

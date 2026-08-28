@@ -44,6 +44,16 @@ extension AppCoordinator {
         route = .dashboard
         isAuthenticated = true
         foodEntries = []
+        if ProcessInfo.processInfo.arguments.contains("-PendingCatalogLog") {
+            pendingCatalogLogs = [PendingCatalogLog(
+                id: UUID(uuidString: "A7C9D51F-C3B4-44E0-B3D9-F41EAAF71D5A")!,
+                contributionID: UUID(uuidString: "B7C9D51F-C3B4-44E0-B3D9-F41EAAF71D5B")!,
+                name: "Sea Salt Chips", barcode: "012345678905", servingCount: 1,
+                consumedAt: calendar.date(bySettingHour: 12, minute: 30, second: 0, of: today) ?? today,
+                localDate: PlanService.localDayString(for: today), timeZone: calendar.timeZone.identifier,
+                mealType: .snack, status: .processing, message: nil, updatedAt: .now
+            )]
+        }
         dailyNutrition = Self.previewDailyNutrition(plan: plan)
         let previewCheckInEntries = ProcessInfo.processInfo.arguments.contains("-EmptyMorningCheckIn")
             ? []

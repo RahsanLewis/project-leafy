@@ -15,6 +15,7 @@ final class AppCoordinator {
     var currentPlan: NutritionPlan?
     var selectedLogDate: Date { get { dailyLog.selectedLogDate } set { dailyLog.selectedLogDate = newValue } }
     var foodEntries: [FoodEntry] { get { dailyLog.foodEntries } set { dailyLog.foodEntries = newValue } }
+    var pendingCatalogLogs: [PendingCatalogLog] { get { dailyLog.pendingCatalogLogs } set { dailyLog.pendingCatalogLogs = newValue } }
     var weightEntries: [WeightEntry] { get { weightStore.weightEntries } set { weightStore.weightEntries = newValue } }
     var dailyPlan: NutritionPlan? { get { dailyLog.dailyPlan } set { dailyLog.dailyPlan = newValue } }
     var dailyNutrition: DailyNutritionSummary? { get { dailyLog.dailyNutrition } set { dailyLog.dailyNutrition = newValue } }
@@ -305,9 +306,11 @@ final class AppCoordinator {
         do {
             async let loadedDay = dailyLog(for: selectedLogDate)
             async let loadedNutrition = service.fetchDailyNutrition(on: selectedLogDate)
+            async let loadedPending = service.fetchPendingCatalogLogs(on: selectedLogDate)
             let loaded = try await loadedDay
             dailyPlan = loaded.plan
             foodEntries = loaded.entries
+            if let pending = try? await loadedPending { pendingCatalogLogs = pending }
             dailyNutrition = try? await loadedNutrition
         } catch {
             dailyErrorMessage = userFacingMessage(for: error)
@@ -327,6 +330,7 @@ final class AppCoordinator {
             selectedLogDate = destination
             dailyPlan = currentPlan
             foodEntries = []
+            pendingCatalogLogs = []
             dailyNutrition = Self.previewDailyNutrition(plan: currentPlan)
             return true
         }
@@ -335,10 +339,12 @@ final class AppCoordinator {
         dailyErrorMessage = nil
         defer { isDailyLoading = false }
         do {
+            async let loadedPending = service.fetchPendingCatalogLogs(on: destination)
             let loaded = try await dailyLog(for: destination)
             selectedLogDate = destination
             dailyPlan = loaded.plan
             foodEntries = loaded.entries
+            pendingCatalogLogs = (try? await loadedPending) ?? []
             dailyNutrition = try? await service.fetchDailyNutrition(on: destination)
             return true
         } catch {
@@ -486,6 +492,12 @@ final class AppCoordinator {
                 localDate: servingCount == nil ? nil : selectedLogDate,
                 mealType: mealType
             )
+            if let pending = result.pendingLog,
+               pending.localDate == PlanService.localDayString(for: selectedLogDate) {
+                pendingCatalogLogs.removeAll { $0.contributionID == pending.contributionID }
+                pendingCatalogLogs.append(pending)
+                pendingCatalogLogs.sort { $0.consumedAt < $1.consumedAt }
+            }
             await loadCatalogContributions()
             return result
         } catch {
@@ -532,6 +544,17 @@ final class AppCoordinator {
             dailyNutrition = try? await service.fetchDailyNutrition(on: selectedLogDate)
             return true
         } catch { catalogContributionErrorMessage = userFacingMessage(for: error); return false }
+    }
+
+    func cancelPendingCatalogLog(_ pending: PendingCatalogLog) async -> Bool {
+        do {
+            try await service.cancelPendingCatalogLog(contributionID: pending.contributionID)
+            pendingCatalogLogs.removeAll { $0.id == pending.id }
+            return true
+        } catch {
+            dailyErrorMessage = userFacingMessage(for: error)
+            return false
+        }
     }
 
     func loadNutrients(for entry: FoodEntry) async -> [NutrientAmountInput] {
@@ -930,6 +953,7 @@ final class AppCoordinator {
 
     func mealLoggerDidDismiss() async {
         pendingMealDescription = ""
+        await loadDailyLog()
         guard morningCheckInLoggingHandoff == .logging else { return }
 
         if isCICOPreview, let checkIn = morningCheckIn {

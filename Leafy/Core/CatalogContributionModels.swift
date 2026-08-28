@@ -228,7 +228,47 @@ struct CatalogContributionSubmitResponse: Codable, Sendable {
     let outcome: String
     let contribution: CatalogContribution
     let foodVersionID: UUID?
-    enum CodingKeys: String, CodingKey { case outcome, contribution; case foodVersionID = "food_version_id" }
+    let pendingLog: PendingCatalogLog?
+    enum CodingKeys: String, CodingKey {
+        case outcome, contribution
+        case foodVersionID = "food_version_id"
+        case pendingLog = "pending_log"
+    }
+}
+
+enum PendingCatalogLogStatus: String, Codable, Sendable {
+    case pending, processing, needsAction = "needs_action", failed
+}
+
+struct PendingCatalogLog: Codable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    let contributionID: UUID
+    let name: String
+    let barcode: String
+    let servingCount: Double
+    let consumedAt: Date
+    let localDate: String
+    let timeZone: String
+    let mealType: MealType
+    let status: PendingCatalogLogStatus
+    let message: String?
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, barcode, status, message
+        case contributionID = "contribution_id"
+        case servingCount = "serving_count"
+        case consumedAt = "consumed_at"
+        case localDate = "local_date"
+        case timeZone = "time_zone"
+        case mealType = "meal_type"
+        case updatedAt = "updated_at"
+    }
+}
+
+struct PendingCatalogLogListResponse: Codable, Sendable {
+    let pendingLogs: [PendingCatalogLog]
+    enum CodingKeys: String, CodingKey { case pendingLogs = "pending_logs" }
 }
 
 private extension String {

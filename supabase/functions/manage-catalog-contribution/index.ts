@@ -6,6 +6,7 @@ import { normalizePFQSJurisdiction } from "../_shared/pfqs/scorer.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
 import { nutrientCodes, nutrientUnits } from "../_shared/nutrients.ts";
 import { applyNutritionFootnoteDeclarations } from "../_shared/package-label.ts";
+import { fulfillCatalogLogRequest, markCatalogLogRequest } from "../_shared/catalog-log.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -19,6 +20,8 @@ type Body = {
     | "submit"
     | "list"
     | "detail"
+    | "pending_logs"
+    | "cancel_log"
     | "delete_draft"
     | "log"
     | "admin_retry";
@@ -254,6 +257,9 @@ Deno.serve(async (request) => {
       );
       return json({ contributions: await list(admin, user.id) });
     }
+    if (action === "pending_logs") {
+      return json({ pending_logs: await pendingLogs(admin, user.id, body.local_date) });
+    }
     if (!body.contribution_id) {
       return json({ error: "A contribution identifier is required." }, 400);
     }
@@ -289,6 +295,7 @@ Deno.serve(async (request) => {
         outcome: "processing",
         contribution: queued,
         food_version_id: null,
+        pending_log: await pendingLogForContribution(admin, user.id, String(contribution.id)),
       }, 202);
     }
     if (action === "submit") {
@@ -296,6 +303,15 @@ Deno.serve(async (request) => {
     }
     if (action === "delete_draft") {
       return json(await deleteDraft(admin, contribution));
+    }
+    if (action === "cancel_log") {
+      const cancelled = await admin.from("catalog_contribution_log_requests").update({
+        status: "cancelled", updated_at: new Date().toISOString(),
+      }).eq("contribution_id", contribution.id).eq("user_id", user.id)
+        .in("status", ["pending", "processing", "needs_action", "failed"])
+        .select("id").maybeSingle();
+      if (cancelled.error) throw cancelled.error;
+      return json({ ok: true });
     }
     if (action === "log") {
       return json({
@@ -385,6 +401,59 @@ async function list(admin: any, userID: string) {
   ).order("updated_at", { ascending: false }).limit(100);
   if (result.error) throw result.error;
   return result.data ?? [];
+}
+
+async function pendingLogs(admin: any, userID: string, localDate?: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(localDate ?? ""))) {
+    throw new Error("Choose a valid food-log date.");
+  }
+  const result = await admin.from("catalog_contribution_log_requests").select(
+    "id,contribution_id,serving_count,consumed_at,local_date,time_zone,meal_type,status,last_error,food_entry_id,created_at,updated_at,catalog_contributions(gtin,confirmed_fields,extracted_fields,status)",
+  ).eq("user_id", userID).eq("local_date", localDate)
+    .in("status", ["pending", "processing", "needs_action", "failed"])
+    .order("consumed_at", { ascending: true });
+  if (result.error) throw result.error;
+  return (result.data ?? []).map((row: Row) => {
+    const contribution = row.catalog_contributions as Row ?? {};
+    const fields = contribution.confirmed_fields as Row ?? contribution.extracted_fields as Row ?? {};
+    return {
+      id: row.id,
+      contribution_id: row.contribution_id,
+      name: fields.product_name || `Barcode ${contribution.gtin ?? ""}`,
+      barcode: contribution.gtin,
+      serving_count: row.serving_count,
+      consumed_at: row.consumed_at,
+      local_date: row.local_date,
+      time_zone: row.time_zone,
+      meal_type: row.meal_type,
+      status: row.status,
+      message: row.last_error,
+      updated_at: row.updated_at,
+    };
+  });
+}
+
+async function pendingLogForContribution(admin: any, userID: string, contributionID: string) {
+  const result = await admin.from("catalog_contribution_log_requests").select("*")
+    .eq("user_id", userID).eq("contribution_id", contributionID).maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) return null;
+  const contribution = await owned(admin, userID, contributionID);
+  const fields = contribution.confirmed_fields as Row ?? contribution.extracted_fields as Row ?? {};
+  return {
+    id: result.data.id,
+    contribution_id: contributionID,
+    name: fields.product_name || `Barcode ${contribution.gtin}`,
+    barcode: contribution.gtin,
+    serving_count: result.data.serving_count,
+    consumed_at: result.data.consumed_at,
+    local_date: result.data.local_date,
+    time_zone: result.data.time_zone,
+    meal_type: result.data.meal_type,
+    status: result.data.status,
+    message: result.data.last_error,
+    updated_at: result.data.updated_at,
+  };
 }
 
 async function resumeReadyJobs(admin: any, userID: string) {
@@ -625,6 +694,23 @@ async function enqueueAutomation(
     updated_at: now,
   }, { onConflict: "contribution_id" });
   if (job.error) throw job.error;
+  if (requestedLog) {
+    const logRequest = await admin.from("catalog_contribution_log_requests").upsert({
+      contribution_id: contribution.id,
+      user_id: userID,
+      serving_count: requestedLog.serving_count,
+      consumed_at: requestedLog.consumed_at,
+      local_date: requestedLog.local_date,
+      time_zone: requestedLog.time_zone,
+      meal_type: requestedLog.meal_type,
+      status: "pending",
+      food_entry_id: null,
+      last_error: null,
+      completed_at: null,
+      updated_at: now,
+    }, { onConflict: "contribution_id" });
+    if (logRequest.error) throw logRequest.error;
+  }
   await event(
     admin,
     String(contribution.id),
@@ -728,6 +814,7 @@ async function runAutomation(
         updated_at: new Date().toISOString(),
       }).eq("id", contributionID);
       if (updated.error) throw updated.error;
+      await markCatalogLogRequest(admin, contributionID, "needs_action", message);
       await finishJob(admin, contributionID, "complete", null);
       await event(
         admin,
@@ -763,33 +850,11 @@ async function runAutomation(
     // label into the manual queue.
     const autoPublish = validation.auto_approve === true;
 
-    // A private nutrient snapshot can be logged before the shared product is published.
-    const job = await admin.from("catalog_contribution_jobs").select(
-      "requested_log",
-    ).eq("contribution_id", contributionID).single();
-    if (job.error) throw job.error;
-    const requestedLog = job.data?.requested_log as Row | null;
-    if (requestedLog && !requestedLog.logged_entry_id) {
-      const provisional = {
-        ...contribution,
-        status: "pending_review",
-        confirmed_fields: fields,
-        accepted_food_version_id: null,
-      };
-      const logBody = {
-        ...requestedLog,
-      } as Body;
-      const servingGrams = Number(fields.serving_grams);
-      if (Number.isFinite(servingGrams) && servingGrams > 0) {
-        logBody.grams = servingGrams * Number(requestedLog.serving_count ?? 1);
-      }
-      const entry = await logContribution(admin, userID, provisional, logBody);
-      const savedLog = await admin.from("catalog_contribution_jobs").update({
-        requested_log: { ...requestedLog, logged_entry_id: entry.id },
-        updated_at: new Date().toISOString(),
-      }).eq("contribution_id", contributionID);
-      if (savedLog.error) throw savedLog.error;
-    }
+    // Fulfill the user's original logging intent before shared publication.
+    await fulfillCatalogLogRequest(admin, {
+      ...contribution,
+      confirmed_fields: fields,
+    });
 
     let foodVersionID: string | null = null;
     let status = "pending_review";
@@ -871,6 +936,9 @@ async function runAutomation(
           "Leafy could not finish automatic verification. Our catalog team will review it.",
         updated_at: new Date().toISOString(),
       }).eq("id", contributionID);
+      await markCatalogLogRequest(admin, contributionID, "failed", message);
+    } else {
+      await markCatalogLogRequest(admin, contributionID, "pending", null);
     }
     throw error;
   }

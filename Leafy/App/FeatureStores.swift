@@ -6,6 +6,7 @@ final class DailyLogStore {
     let service: PlanService
     var selectedLogDate = Calendar.current.startOfDay(for: .now)
     var foodEntries: [FoodEntry] = []
+    var pendingCatalogLogs: [PendingCatalogLog] = []
     var dailyPlan: NutritionPlan?
     var dailyNutrition: DailyNutritionSummary?
     var isNutrientAutoFillLoading = false
