@@ -1,6 +1,6 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { requireUser } from '../_shared/auth.ts'
 import { buildDailyNutritionSummary, type NutritionRow } from '../_shared/daily-nutrition.ts'
-import { cors, json } from '../_shared/http.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 import { processNutrientJobs } from '../_shared/nutrient-enrichment.ts'
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
@@ -8,19 +8,12 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const auth = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await auth.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
+    const { user, admin } = await requireUser(request)
     const body = await request.json() as { local_date?: string }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.local_date ?? '')) return json({ error: 'A valid local date is required.' }, 400)
 
     const selectedDate = body.local_date!
     const dates = rollingDates(selectedDate)
-    const admin = createClient(url, secret)
     const [{ data: occasions, error: occasionError }, metadata] = await Promise.all([
       admin.from('eating_occasions').select('id,local_date').eq('user_id', user.id)
         .gte('local_date', dates[0]).lte('local_date', selectedDate),
@@ -62,7 +55,7 @@ Deno.serve(async (request) => {
     return json(buildDailyNutritionSummary(selectedDate, dates, itemRows, observations, metadata, jobs))
   } catch (error) {
     console.error('daily-nutrition failed', error)
-    return json({ error: error instanceof Error ? error.message : 'Unable to load daily nutrition.' }, 400)
+    return errorResponse(error, 'Unable to load daily nutrition.')
   }
 })
 

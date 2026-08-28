@@ -1,24 +1,17 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { requireUser } from '../_shared/auth.ts'
 import { calculate, type Input } from '../_shared/calculator.ts'
-import { cors, json } from '../_shared/http.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const authClient = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await authClient.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
+    const { user, admin } = await requireUser(request)
     const payload = await request.json() as Input & {
       plan_input?: Input
       legal_acceptances?: { terms_version?: number; privacy_version?: number; core_data_use_version?: number; locale?: string; app_version?: string }
     }
     const input = payload.plan_input ?? payload
     const result = calculate(input)
-    const admin = createClient(url, secret)
     if (payload.legal_acceptances) {
       const legal = payload.legal_acceptances
       const rows = [
@@ -41,6 +34,6 @@ Deno.serve(async (request) => {
     if (error) throw error
     return json(data)
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Unable to save plan' }, 400)
+    return errorResponse(error, 'Unable to save plan')
   }
 })

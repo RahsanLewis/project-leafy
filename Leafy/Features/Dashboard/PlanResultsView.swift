@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlanResultsView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let plan: NutritionPlan
     let input: NutritionPlanInput
     let isPreview: Bool
@@ -208,7 +208,7 @@ struct PlanResultsView: View {
 }
 
 private struct PlanCalculationView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let plan: NutritionPlan
     let input: NutritionPlanInput
 

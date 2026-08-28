@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MyContributionsView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var selectedProduct: ProductDetail?
 
     var body: some View {

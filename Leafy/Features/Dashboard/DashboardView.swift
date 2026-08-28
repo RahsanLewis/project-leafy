@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DashboardView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var selection: DashboardTab = .today
 
     var body: some View {

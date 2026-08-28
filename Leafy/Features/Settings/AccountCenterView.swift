@@ -6,7 +6,7 @@ struct AccountCenterView: View {
         var id: String { rawValue }
     }
 
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(AppLockCoordinator.self) private var appLock
     @State private var credentialKind: CredentialChangeView.Kind?
     @State private var confirmation: Confirmation?
@@ -125,7 +125,7 @@ struct CredentialChangeView: View {
         var id: String { rawValue }
     }
 
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     let kind: Kind
     @State private var value = ""

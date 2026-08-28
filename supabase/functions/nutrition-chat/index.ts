@@ -1,5 +1,5 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { cors, json } from "../_shared/http.ts";
+import { requireUser } from "../_shared/auth.ts";
+import { cors, errorResponse, json } from "../_shared/http.ts";
 import {
   mealEstimateItemSchema,
   normalizeMealOutput,
@@ -31,18 +31,7 @@ Deno.serve(async (request) => {
     return new Response("ok", { headers: cors });
   }
   try {
-    const authorization = request.headers.get("Authorization") ?? "";
-    const url = Deno.env.get("SUPABASE_URL")!;
-    const publishable = Deno.env.get("SUPABASE_ANON_KEY") ??
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-    const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
-      Deno.env.get("SUPABASE_SECRET_KEY")!;
-    const auth = createClient(url, publishable, {
-      global: { headers: { Authorization: authorization } },
-    });
-    const { data: { user }, error: authError } = await auth.auth.getUser();
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
-    const admin = createClient(url, secret);
+    const { user, admin } = await requireUser(request);
     const body = await request.json() as Body;
 
     if (body.action === "list_threads") {
@@ -333,11 +322,7 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     console.error("nutrition-chat failed", error);
-    return json({
-      error: error instanceof Error
-        ? error.message
-        : "Ask Leafy could not answer right now.",
-    }, 400);
+    return errorResponse(error, "Ask Leafy could not answer right now.");
   }
 });
 

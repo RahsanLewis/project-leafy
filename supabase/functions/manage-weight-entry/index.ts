@@ -1,6 +1,6 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { requireUser } from '../_shared/auth.ts'
 import { type Input } from '../_shared/calculator.ts'
-import { cors, json } from '../_shared/http.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 import { findWeightEntryIndex } from '../_shared/weight-entry.ts'
 
 type WeightRow = {
@@ -22,18 +22,11 @@ type RequestBody = {
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const authClient = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await authClient.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
+    const { user, admin } = await requireUser(request)
 
     const body = await request.json() as RequestBody
     if (body.action !== 'upsert' && body.action !== 'delete') return json({ error: 'Unsupported weight action' }, 400)
 
-    const admin = createClient(url, secret)
     const [{ data: profile, error: profileError }, { data: history, error: historyError }] = await Promise.all([
       admin.from('profiles').select('*').eq('user_id', user.id).single(),
       admin.from('weight_entries').select('*').eq('user_id', user.id).order('recorded_on', { ascending: false }),
@@ -117,7 +110,7 @@ Deno.serve(async (request) => {
     return json(data)
   } catch (error) {
     console.error('manage-weight-entry failed', error)
-    return json({ error: errorMessage(error) }, 400)
+    return errorResponse(error, errorMessage(error))
   }
 })
 

@@ -1,5 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { cors, json } from '../_shared/http.ts'
+import { requireUser } from '../_shared/auth.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 import {
   mealEstimateSchema, mealPromptVersion, mealSchemaVersion,
   normalizeMealOutput, systemPrompt, userPrompt,
@@ -32,14 +32,7 @@ type Body = {
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const auth = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await auth.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
-    const admin = createClient(url, secret)
+    const { user, admin } = await requireUser(request)
     const body = await request.json() as Body
     if (body.action === 'delete_entry') {
       if (!body.food_entry_id || !isUUID(body.food_entry_id)) return json({ error: 'A valid food entry is required.' }, 400)
@@ -136,9 +129,7 @@ Deno.serve(async (request) => {
     return json(result)
   } catch (error) {
     console.error('estimate-meal failed', error)
-    const message = error instanceof Error ? error.message : 'Unable to estimate that meal.'
-    const status = message === 'Unauthorized' ? 401 : 400
-    return json({ error: message }, status)
+    return errorResponse(error, 'Unable to estimate that meal.')
   }
 })
 

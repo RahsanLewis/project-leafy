@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct OnboardingView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showWhySex = false
 

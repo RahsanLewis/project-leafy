@@ -1,0 +1,20 @@
+[
+  {
+    "name": "male steady loss",
+    "now": "2026-07-29T12:00:00Z",
+    "input": { "birth_date": "1996-07-01", "calculation_sex": "male", "height_cm": 180, "current_weight_kg": 90, "target_weight_kg": 80, "activity_level": "moderate", "goal": "lose", "pace": "steady", "unit_system": "metric" },
+    "expected": { "calculator_version": "msj-amdr-v1", "bmr_kcal": 1880, "tdee_kcal": 2914, "calorie_target_kcal": 2480, "protein_g": 128, "carbohydrate_g": 306, "fat_g": 83, "projected_weekly_change_kg": 0.39454545454545453, "estimated_goal_date": "2027-01-23" }
+  },
+  {
+    "name": "female maintenance",
+    "now": "2026-07-29T12:00:00Z",
+    "input": { "birth_date": "1986-01-01", "calculation_sex": "female", "height_cm": 165, "current_weight_kg": 65, "target_weight_kg": null, "activity_level": "light", "goal": "maintain", "pace": "steady", "unit_system": "imperial" },
+    "expected": { "calculator_version": "msj-amdr-v1", "bmr_kcal": 1320, "tdee_kcal": 1815, "calorie_target_kcal": 1820, "protein_g": 78, "carbohydrate_g": 241, "fat_g": 61, "projected_weekly_change_kg": 0, "estimated_goal_date": null }
+  },
+  {
+    "name": "female gentle gain",
+    "now": "2026-07-29T12:00:00Z",
+    "input": { "birth_date": "1992-09-14", "calculation_sex": "female", "height_cm": 170, "current_weight_kg": 62, "target_weight_kg": 68, "activity_level": "very_active", "goal": "gain", "pace": "gentle", "unit_system": "metric" },
+    "expected": { "calculator_version": "msj-amdr-v1", "bmr_kcal": 1357, "tdee_kcal": 2340, "calorie_target_kcal": 2460, "protein_g": 109, "carbohydrate_g": 322, "fat_g": 82, "projected_weekly_change_kg": 0.10912499999999992, "estimated_goal_date": "2027-08-18" }
+  }
+]

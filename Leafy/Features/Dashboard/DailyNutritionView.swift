@@ -55,7 +55,7 @@ enum NutritionPresentation {
 }
 
 struct DailyNutritionView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isChangingDay = false
     @State private var expandedGroups: Set<NutritionGroup> = []

@@ -29,7 +29,7 @@ struct WeightView: View {
         }
     }
 
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chartRange: ChartRange = .month
     @State private var selectedChartDate: Date?
@@ -960,7 +960,7 @@ private struct WeightHistoryRow: View {
 }
 
 private struct WeightHistoryView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var editingEntry: WeightEntry?
     @State private var showingEditor = false
 

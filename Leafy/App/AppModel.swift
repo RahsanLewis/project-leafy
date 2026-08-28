@@ -13,28 +13,28 @@ final class AppCoordinator {
     var draft = OnboardingDraft()
     var preview: NutritionPlan?
     var currentPlan: NutritionPlan?
-    var selectedLogDate = Calendar.current.startOfDay(for: .now)
-    var foodEntries: [FoodEntry] = []
-    var weightEntries: [WeightEntry] = []
-    var dailyPlan: NutritionPlan?
-    var dailyNutrition: DailyNutritionSummary?
-    var isNutrientAutoFillLoading = false
-    var nutrientAutoFillError: String?
-    var morningCheckIn: MorningCheckIn?
-    var showMorningCheckIn = false
-    var hasMorningCheckInReminder = false
-    var planAdjustmentNotice: PlanAdjustmentNotice?
-    var isCheckInMutationInProgress = false
-    var checkInErrorMessage: String?
-    var isDailyLoading = false
-    var isFoodMutationInProgress = false
-    var productSearchResults: [ProductSummary] = []
-    var productHistory: [ProductSummary] = []
-    var isProductLoading = false
-    var productErrorMessage: String?
-    var catalogContributions: [CatalogContribution] = []
-    var isCatalogContributionLoading = false
-    var catalogContributionErrorMessage: String?
+    var selectedLogDate: Date { get { dailyLog.selectedLogDate } set { dailyLog.selectedLogDate = newValue } }
+    var foodEntries: [FoodEntry] { get { dailyLog.foodEntries } set { dailyLog.foodEntries = newValue } }
+    var weightEntries: [WeightEntry] { get { weightStore.weightEntries } set { weightStore.weightEntries = newValue } }
+    var dailyPlan: NutritionPlan? { get { dailyLog.dailyPlan } set { dailyLog.dailyPlan = newValue } }
+    var dailyNutrition: DailyNutritionSummary? { get { dailyLog.dailyNutrition } set { dailyLog.dailyNutrition = newValue } }
+    var isNutrientAutoFillLoading: Bool { get { dailyLog.isNutrientAutoFillLoading } set { dailyLog.isNutrientAutoFillLoading = newValue } }
+    var nutrientAutoFillError: String? { get { dailyLog.nutrientAutoFillError } set { dailyLog.nutrientAutoFillError = newValue } }
+    var morningCheckIn: MorningCheckIn? { get { dailyLog.morningCheckIn } set { dailyLog.morningCheckIn = newValue } }
+    var showMorningCheckIn: Bool { get { dailyLog.showMorningCheckIn } set { dailyLog.showMorningCheckIn = newValue } }
+    var hasMorningCheckInReminder: Bool { get { dailyLog.hasMorningCheckInReminder } set { dailyLog.hasMorningCheckInReminder = newValue } }
+    var planAdjustmentNotice: PlanAdjustmentNotice? { get { dailyLog.planAdjustmentNotice } set { dailyLog.planAdjustmentNotice = newValue } }
+    var isCheckInMutationInProgress: Bool { get { dailyLog.isCheckInMutationInProgress } set { dailyLog.isCheckInMutationInProgress = newValue } }
+    var checkInErrorMessage: String? { get { dailyLog.checkInErrorMessage } set { dailyLog.checkInErrorMessage = newValue } }
+    var isDailyLoading: Bool { get { dailyLog.isDailyLoading } set { dailyLog.isDailyLoading = newValue } }
+    var isFoodMutationInProgress: Bool { get { dailyLog.isFoodMutationInProgress } set { dailyLog.isFoodMutationInProgress = newValue } }
+    var productSearchResults: [ProductSummary] { get { productStore.productSearchResults } set { productStore.productSearchResults = newValue } }
+    var productHistory: [ProductSummary] { get { productStore.productHistory } set { productStore.productHistory = newValue } }
+    var isProductLoading: Bool { get { productStore.isProductLoading } set { productStore.isProductLoading = newValue } }
+    var productErrorMessage: String? { get { productStore.productErrorMessage } set { productStore.productErrorMessage = newValue } }
+    var catalogContributions: [CatalogContribution] { get { productStore.catalogContributions } set { productStore.catalogContributions = newValue } }
+    var isCatalogContributionLoading: Bool { get { productStore.isCatalogContributionLoading } set { productStore.isCatalogContributionLoading = newValue } }
+    var catalogContributionErrorMessage: String? { get { productStore.catalogContributionErrorMessage } set { productStore.catalogContributionErrorMessage = newValue } }
     var mealEstimate: MealEstimate?
     var mealEstimateActivity: MealEstimateActivity = .idle
     var isMealEstimateLoading: Bool { mealEstimateActivity != .idle }
@@ -47,35 +47,35 @@ final class AppCoordinator {
     var chatMealLoggingMessageID: UUID?
     var pendingChatClientMessageID: UUID?
     var pendingChatText: String?
-    var showLogFood = false
-    var pendingMealDescription = ""
+    var showLogFood: Bool { get { dailyLog.showLogFood } set { dailyLog.showLogFood = newValue } }
+    var pendingMealDescription: String { get { dailyLog.pendingMealDescription } set { dailyLog.pendingMealDescription = newValue } }
     private var mealEstimateSessionID: UUID?
     private var mealPhotoObjectPath: String?
     private var mealEstimateLogDate = Calendar.current.startOfDay(for: .now)
-    var isWeightLoading = false
-    var isWeightMutationInProgress = false
-    var weightErrorMessage: String?
-    var weightErrorTitle = "We couldn’t update your weight"
-    var weightStatusMessage: String?
-    var lastWeightOutcome: WeightMutationOutcome?
-    var dailyErrorMessage: String?
+    var isWeightLoading: Bool { get { weightStore.isWeightLoading } set { weightStore.isWeightLoading = newValue } }
+    var isWeightMutationInProgress: Bool { get { weightStore.isWeightMutationInProgress } set { weightStore.isWeightMutationInProgress = newValue } }
+    var weightErrorMessage: String? { get { weightStore.weightErrorMessage } set { weightStore.weightErrorMessage = newValue } }
+    var weightErrorTitle: String { get { weightStore.weightErrorTitle } set { weightStore.weightErrorTitle = newValue } }
+    var weightStatusMessage: String? { get { weightStore.weightStatusMessage } set { weightStore.weightStatusMessage = newValue } }
+    var lastWeightOutcome: WeightMutationOutcome? { get { weightStore.lastWeightOutcome } set { weightStore.lastWeightOutcome = newValue } }
+    var dailyErrorMessage: String? { get { dailyLog.dailyErrorMessage } set { dailyLog.dailyErrorMessage = newValue } }
     var errorMessage: String?
     var statusMessage: String?
     var saveState: SaveState = .idle
-    var email = ""
-    var password = ""
-    var passwordConfirmation = ""
-    var showAuthentication = false
-    var isAuthenticated = false
-    var account: LeafyAccount?
-    var termsAccepted = false
-    var privacyAccepted = false
-    var coreDataAccepted = false
-    var showCoreDataAcknowledgment = false
-    var isCoreDataAcknowledgmentLoading = false
-    var coreDataAcknowledgmentError: String?
-    var authFlowState: AuthFlowState = .signedOut
-    var showPasswordRecovery = false
+    var email: String { get { authSession.email } set { authSession.email = newValue } }
+    var password: String { get { authSession.password } set { authSession.password = newValue } }
+    var passwordConfirmation: String { get { authSession.passwordConfirmation } set { authSession.passwordConfirmation = newValue } }
+    var showAuthentication: Bool { get { authSession.showAuthentication } set { authSession.showAuthentication = newValue } }
+    var isAuthenticated: Bool { get { authSession.isAuthenticated } set { authSession.isAuthenticated = newValue } }
+    var account: LeafyAccount? { get { authSession.account } set { authSession.account = newValue } }
+    var termsAccepted: Bool { get { authSession.termsAccepted } set { authSession.termsAccepted = newValue } }
+    var privacyAccepted: Bool { get { authSession.privacyAccepted } set { authSession.privacyAccepted = newValue } }
+    var coreDataAccepted: Bool { get { authSession.coreDataAccepted } set { authSession.coreDataAccepted = newValue } }
+    var showCoreDataAcknowledgment: Bool { get { authSession.showCoreDataAcknowledgment } set { authSession.showCoreDataAcknowledgment = newValue } }
+    var isCoreDataAcknowledgmentLoading: Bool { get { authSession.isCoreDataAcknowledgmentLoading } set { authSession.isCoreDataAcknowledgmentLoading = newValue } }
+    var coreDataAcknowledgmentError: String? { get { authSession.coreDataAcknowledgmentError } set { authSession.coreDataAcknowledgmentError = newValue } }
+    var authFlowState: AuthFlowState { get { authSession.authFlowState } set { authSession.authFlowState = newValue } }
+    var showPasswordRecovery: Bool { get { authSession.showPasswordRecovery } set { authSession.showPasswordRecovery = newValue } }
     let pendingOnboardingCache = PendingOnboardingCache()
     private var authObserverTask: Task<Void, Never>?
     private var lastPromptedCheckInDay: Date?
@@ -99,13 +99,27 @@ final class AppCoordinator {
 
     let configuration: AppConfiguration
     let service: PlanService
+    let authSession: AuthSessionStore
+    let dailyLog: DailyLogStore
+    let productStore: ProductStore
+    let weightStore: WeightStore
+    let aiMealStore: AIMealStore
+    let chatStore: ChatStore
     let cache = PlanCache()
     private let isCICOPreview: Bool
 
     init(configuration: AppConfiguration = .live()) {
         self.configuration = configuration
-        self.service = PlanService(configuration: configuration)
-        self.isCICOPreview = ProcessInfo.processInfo.arguments.contains("-CICOPreview")
+        let service = PlanService(configuration: configuration)
+        self.service = service
+        authSession = AuthSessionStore(service: service)
+        dailyLog = DailyLogStore(service: service)
+        let previewMode = ProcessInfo.processInfo.arguments.contains("-CICOPreview")
+        productStore = ProductStore(service: service, dailyLog: dailyLog, isPreview: previewMode)
+        weightStore = WeightStore(service: service)
+        aiMealStore = AIMealStore(service: service, dailyLog: dailyLog, isPreview: previewMode)
+        chatStore = ChatStore(service: service, dailyLog: dailyLog, isPreview: previewMode)
+        self.isCICOPreview = previewMode
         if isCICOPreview { configureCICOPreview() }
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FoodEntryEditorView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
 
     let entry: FoodEntry?

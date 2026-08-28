@@ -22,6 +22,7 @@ struct FoodEntry: Codable, Equatable, Hashable, Identifiable, Sendable {
     var calorieMethod: String? = nil
     var canonicalFoodVersionID: UUID? = nil
     var score: ProductNutritionScore? = nil
+    var nutrients: [NutrientAmountInput]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, calories
@@ -42,7 +43,7 @@ struct FoodEntry: Codable, Equatable, Hashable, Identifiable, Sendable {
         case entrySource = "entry_source"
         case calorieMethod = "calorie_method"
         case canonicalFoodVersionID = "canonical_food_version_id"
-        case score
+        case score, nutrients
     }
 
     var isAIEstimate: Bool { entrySource == "photo_ai" || entrySource == "text_ai" }
@@ -338,105 +339,6 @@ enum NutritionGroup: String, CaseIterable, Hashable, Sendable {
         case .choline: "Choline"
         case .limits: "Nutrients to limit"
         case .other: "Other nutrients"
-        }
-    }
-}
-
-enum NutrientCatalog {
-    struct Item: Identifiable, Hashable, Sendable {
-        let code: String
-        let name: String
-        let unit: String
-        let group: NutritionGroup
-        var id: String { code }
-    }
-
-    static let items: [Item] = [
-        .init(code: "protein_g", name: "Protein", unit: "g", group: .macros),
-        .init(code: "carbohydrate_g", name: "Carbohydrate", unit: "g", group: .macros),
-        .init(code: "fat_g", name: "Fat", unit: "g", group: .macros),
-        .init(code: "fiber_g", name: "Dietary fiber", unit: "g", group: .fiber),
-        .init(code: "vitamin_a_mcg_rae", name: "Vitamin A", unit: "mcg RAE", group: .vitamins),
-        .init(code: "vitamin_c_mg", name: "Vitamin C", unit: "mg", group: .vitamins),
-        .init(code: "vitamin_d_mcg", name: "Vitamin D", unit: "mcg", group: .vitamins),
-        .init(code: "vitamin_e_mg", name: "Vitamin E", unit: "mg", group: .vitamins),
-        .init(code: "vitamin_k_mcg", name: "Vitamin K", unit: "mcg", group: .vitamins),
-        .init(code: "thiamin_mg", name: "Thiamin", unit: "mg", group: .vitamins),
-        .init(code: "riboflavin_mg", name: "Riboflavin", unit: "mg", group: .vitamins),
-        .init(code: "niacin_mg_ne", name: "Niacin", unit: "mg NE", group: .vitamins),
-        .init(code: "vitamin_b6_mg", name: "Vitamin B6", unit: "mg", group: .vitamins),
-        .init(code: "folate_mcg_dfe", name: "Folate", unit: "mcg DFE", group: .vitamins),
-        .init(code: "vitamin_b12_mcg", name: "Vitamin B12", unit: "mcg", group: .vitamins),
-        .init(code: "biotin_mcg", name: "Biotin", unit: "mcg", group: .vitamins),
-        .init(code: "pantothenic_acid_mg", name: "Pantothenic acid", unit: "mg", group: .vitamins),
-        .init(code: "calcium_mg", name: "Calcium", unit: "mg", group: .minerals),
-        .init(code: "iron_mg", name: "Iron", unit: "mg", group: .minerals),
-        .init(code: "magnesium_mg", name: "Magnesium", unit: "mg", group: .minerals),
-        .init(code: "phosphorus_mg", name: "Phosphorus", unit: "mg", group: .minerals),
-        .init(code: "iodine_mcg", name: "Iodine", unit: "mcg", group: .minerals),
-        .init(code: "potassium_mg", name: "Potassium", unit: "mg", group: .minerals),
-        .init(code: "zinc_mg", name: "Zinc", unit: "mg", group: .minerals),
-        .init(code: "selenium_mcg", name: "Selenium", unit: "mcg", group: .minerals),
-        .init(code: "copper_mg", name: "Copper", unit: "mg", group: .minerals),
-        .init(code: "manganese_mg", name: "Manganese", unit: "mg", group: .minerals),
-        .init(code: "chromium_mcg", name: "Chromium", unit: "mcg", group: .minerals),
-        .init(code: "molybdenum_mcg", name: "Molybdenum", unit: "mcg", group: .minerals),
-        .init(code: "chloride_mg", name: "Chloride", unit: "mg", group: .minerals),
-        .init(code: "sulfur_mg", name: "Sulfur", unit: "mg", group: .minerals),
-        .init(code: "histidine_g", name: "Histidine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "isoleucine_g", name: "Isoleucine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "leucine_g", name: "Leucine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "lysine_g", name: "Lysine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "methionine_g", name: "Methionine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "phenylalanine_g", name: "Phenylalanine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "threonine_g", name: "Threonine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "tryptophan_g", name: "Tryptophan", unit: "g", group: .essentialAminoAcids),
-        .init(code: "valine_g", name: "Valine", unit: "g", group: .essentialAminoAcids),
-        .init(code: "linoleic_acid_g", name: "Linoleic acid (LA, omega-6)", unit: "g", group: .essentialFattyAcids),
-        .init(code: "alpha_linolenic_acid_g", name: "Alpha-linolenic acid (ALA, omega-3)", unit: "g", group: .essentialFattyAcids),
-        .init(code: "choline_mg", name: "Choline", unit: "mg", group: .choline),
-        .init(code: "saturated_fat_g", name: "Saturated fat", unit: "g", group: .limits),
-        .init(code: "sodium_mg", name: "Sodium", unit: "mg", group: .minerals),
-        .init(code: "added_sugars_g", name: "Added sugars", unit: "g", group: .limits),
-        .init(code: "cholesterol_mg", name: "Cholesterol", unit: "mg", group: .limits),
-        .init(code: "sugars_g", name: "Total sugars", unit: "g", group: .other),
-        .init(code: "trans_fat_g", name: "Trans fat", unit: "g", group: .other),
-        .init(code: "caffeine_mg", name: "Caffeine", unit: "mg", group: .other),
-    ]
-
-    private static let importanceOrder: [String] = [
-        // Macros
-        "protein_g", "carbohydrate_g", "fat_g",
-        // Vitamins
-        "vitamin_d_mcg", "folate_mcg_dfe", "vitamin_b12_mcg", "vitamin_a_mcg_rae",
-        "vitamin_c_mg", "vitamin_e_mg", "vitamin_k_mcg", "vitamin_b6_mg",
-        "thiamin_mg", "riboflavin_mg", "niacin_mg_ne", "pantothenic_acid_mg", "biotin_mcg",
-        // Minerals
-        "sodium_mg", "potassium_mg", "calcium_mg", "iron_mg", "magnesium_mg",
-        "zinc_mg", "iodine_mcg", "phosphorus_mg", "selenium_mcg", "copper_mg",
-        "manganese_mg", "chloride_mg", "chromium_mcg", "molybdenum_mcg",
-        "sulfur_mg",
-        // Essential amino acids
-        "histidine_g", "isoleucine_g", "leucine_g", "lysine_g", "methionine_g",
-        "phenylalanine_g", "threonine_g", "tryptophan_g", "valine_g",
-        // Essential fatty acids
-        "linoleic_acid_g", "alpha_linolenic_acid_g",
-        // Other nutrients
-        "fiber_g", "saturated_fat_g", "added_sugars_g", "trans_fat_g",
-        "cholesterol_mg", "sugars_g", "choline_mg", "caffeine_mg",
-    ]
-
-    private static let importanceRanks = Dictionary(
-        uniqueKeysWithValues: importanceOrder.enumerated().map { ($0.element, $0.offset) }
-    )
-
-    static func importanceRank(for code: String) -> Int {
-        importanceRanks[code] ?? Int.max
-    }
-
-    static func items(in group: NutritionGroup) -> [Item] {
-        items.filter { $0.group == group }.sorted {
-            importanceRank(for: $0.code) < importanceRank(for: $1.code)
         }
     }
 }

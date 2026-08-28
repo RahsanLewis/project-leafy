@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct LogFoodView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var hasDraft = false
     @State private var showingDiscardConfirmation = false

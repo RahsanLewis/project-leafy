@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct ProductDetailView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let product: ProductDetail
     let intent: ProductDiscoveryIntent
     let impactContext: FoodImpactContext

@@ -92,7 +92,7 @@ final class DailyNutritionModelsTests: XCTestCase {
         XCTAssertEqual(counts[.essentialAminoAcids], 9)
         XCTAssertEqual(counts[.essentialFattyAcids], 2)
         XCTAssertEqual(counts[.limits], 3)
-        XCTAssertEqual(counts[.other], 3)
+        XCTAssertEqual(counts[.other], 5)
         XCTAssertNil(NutrientCatalog.items.first { $0.code == "water_g" || $0.code == "alcohol_g" })
     }
 

@@ -4,7 +4,7 @@ import UIKit
 private enum PlanEditPhase { case editing, review }
 
 struct PlanEditView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var original: NutritionPlanInput?
     @State private var edited: NutritionPlanInput?

@@ -2,12 +2,95 @@ import XCTest
 @testable import Leafy
 
 final class NutritionCalculatorTests: XCTestCase {
+    private struct GoldenFixture: Decodable {
+        struct Input: Decodable {
+            let birthDate: String
+            let calculationSex: CalculationSex
+            let heightCM: Double
+            let currentWeightKG: Double
+            let targetWeightKG: Double?
+            let activityLevel: ActivityLevel
+            let goal: WeightGoal
+            let pace: GoalPace
+            let unitSystem: UnitSystem
+
+            enum CodingKeys: String, CodingKey {
+                case birthDate = "birth_date", calculationSex = "calculation_sex"
+                case heightCM = "height_cm", currentWeightKG = "current_weight_kg"
+                case targetWeightKG = "target_weight_kg", activityLevel = "activity_level"
+                case goal, pace, unitSystem = "unit_system"
+            }
+        }
+        struct Expected: Decodable {
+            let calculatorVersion: String
+            let bmrKcal: Int
+            let tdeeKcal: Int
+            let calorieTargetKcal: Int
+            let proteinG: Int
+            let carbohydrateG: Int
+            let fatG: Int
+            let projectedWeeklyChangeKG: Double
+            let estimatedGoalDate: String?
+
+            enum CodingKeys: String, CodingKey {
+                case calculatorVersion = "calculator_version", bmrKcal = "bmr_kcal"
+                case tdeeKcal = "tdee_kcal", calorieTargetKcal = "calorie_target_kcal"
+                case proteinG = "protein_g", carbohydrateG = "carbohydrate_g", fatG = "fat_g"
+                case projectedWeeklyChangeKG = "projected_weekly_change_kg"
+                case estimatedGoalDate = "estimated_goal_date"
+            }
+        }
+        let name: String
+        let now: String
+        let input: Input
+        let expected: Expected
+    }
+
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return calendar
     }
     private var now: Date { ISO8601DateFormatter().date(from: "2026-07-29T12:00:00Z")! }
+
+    func testSharedGoldenFixtures() throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "calculator-fixtures", withExtension: "json"))
+        let fixtures = try JSONDecoder().decode([GoldenFixture].self, from: Data(contentsOf: url))
+        let dateOnly = DateFormatter()
+        dateOnly.locale = Locale(identifier: "en_US_POSIX")
+        dateOnly.calendar = calendar
+        dateOnly.dateFormat = "yyyy-MM-dd"
+        let iso = ISO8601DateFormatter()
+
+        for fixture in fixtures {
+            let input = NutritionPlanInput(
+                birthDate: try XCTUnwrap(dateOnly.date(from: fixture.input.birthDate)),
+                calculationSex: fixture.input.calculationSex,
+                heightCM: fixture.input.heightCM,
+                currentWeightKG: fixture.input.currentWeightKG,
+                targetWeightKG: fixture.input.targetWeightKG,
+                activityLevel: fixture.input.activityLevel,
+                goal: fixture.input.goal,
+                pace: fixture.input.pace,
+                unitSystem: fixture.input.unitSystem
+            )
+            let result = try NutritionCalculator.calculate(
+                input: input,
+                now: try XCTUnwrap(iso.date(from: fixture.now)),
+                calendar: calendar
+            )
+            let expected = fixture.expected
+            XCTAssertEqual(result.calculatorVersion, expected.calculatorVersion, fixture.name)
+            XCTAssertEqual(result.bmrKcal, expected.bmrKcal, fixture.name)
+            XCTAssertEqual(result.tdeeKcal, expected.tdeeKcal, fixture.name)
+            XCTAssertEqual(result.calorieTargetKcal, expected.calorieTargetKcal, fixture.name)
+            XCTAssertEqual(result.proteinG, expected.proteinG, fixture.name)
+            XCTAssertEqual(result.carbohydrateG, expected.carbohydrateG, fixture.name)
+            XCTAssertEqual(result.fatG, expected.fatG, fixture.name)
+            XCTAssertEqual(result.projectedWeeklyChangeKG, expected.projectedWeeklyChangeKG, accuracy: 1e-12, fixture.name)
+            XCTAssertEqual(result.estimatedGoalDate.map(dateOnly.string), expected.estimatedGoalDate, fixture.name)
+        }
+    }
 
     func testMaleSteadyLossFixture() throws {
         let input = NutritionPlanInput(

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlanView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var showingEditor = false
     @State private var updateConfirmation = false
 

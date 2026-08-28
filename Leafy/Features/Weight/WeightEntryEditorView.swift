@@ -77,7 +77,7 @@ struct WeightWheelPicker: View {
 }
 
 struct WeightEntryEditorView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     let entry: WeightEntry?
     @State private var selection: WeightWheelSelection

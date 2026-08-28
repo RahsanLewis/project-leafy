@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CoreDataUseAcknowledgmentView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var showDeleteConfirmation = false
     @State private var browser: SafariDestination?
 

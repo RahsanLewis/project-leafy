@@ -4,12 +4,12 @@ import XCTest
 @MainActor
 final class AuthenticationRoutingTests: XCTestCase {
     func testAppStartsInLaunchingState() {
-        let app = AppModel()
+        let app = AppCoordinator()
         XCTAssertEqual(app.route, .launching)
     }
 
     func testPresentingAuthenticationClearsTransientMessages() {
-        let app = AppModel()
+        let app = AppCoordinator()
         app.errorMessage = "Old error"
         app.statusMessage = "Old status"
 

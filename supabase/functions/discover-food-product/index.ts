@@ -1,5 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { cors, json } from '../_shared/http.ts'
+import { requireUser } from '../_shared/auth.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 import { calculateAndPersistPFQS, pfqsAPIResult } from '../_shared/pfqs/persistence.ts'
 import { normalizePFQSJurisdiction } from '../_shared/pfqs/scorer.ts'
 import type { PFQSNutrientCode, PFQSNutrients } from '../_shared/pfqs/types.ts'
@@ -41,14 +41,7 @@ const nutrientPriority: Record<number, number> = { 1316: 1, 1269: 2, 1404: 1, 12
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publicKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const auth = createClient(url, publicKey, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await auth.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
-    const admin = createClient(url, secret)
+    const { user, admin } = await requireUser(request)
     const body = await request.json() as Body
 
     if (body.action === 'search') {
@@ -145,7 +138,7 @@ Deno.serve(async (request) => {
     return json({ error: 'Unsupported product action.' }, 400)
   } catch (error) {
     console.error('discover-food-product failed', error)
-    return json({ error: error instanceof Error ? error.message : 'Unable to find that product.' }, 400)
+    return errorResponse(error, 'Unable to find that product.')
   }
 })
 

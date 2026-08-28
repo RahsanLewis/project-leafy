@@ -54,7 +54,10 @@ targets:
   LeafyTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [LeafyTests]
+    sources:
+      - LeafyTests
+      - path: SharedContracts
+        buildPhase: resources
     dependencies:
       - target: Leafy
     settings:

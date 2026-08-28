@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FoodEntryNutritionView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let entry: FoodEntry
     @State private var product: ProductDetail?
     @State private var attemptedLoad = false
@@ -339,7 +339,7 @@ struct NutritionValueDisclosure: View {
 }
 
 private struct LimitedFoodNutritionView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let entry: FoodEntry
     @State private var nutrients: [NutrientAmountInput] = []
     @State private var refreshedScore: ProductNutritionScore?

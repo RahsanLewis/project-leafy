@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DataPrivacyView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var browser: SafariDestination?
 
     var body: some View {
@@ -60,7 +60,7 @@ struct DataPrivacyView: View {
 }
 
 private struct CoreDataUseDetailView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @State private var browser: SafariDestination?
 
     var body: some View {

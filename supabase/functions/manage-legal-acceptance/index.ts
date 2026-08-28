@@ -1,18 +1,12 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { cors, json } from '../_shared/http.ts'
+import { requireUser } from '../_shared/auth.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 
 type Action = 'status' | 'accept'
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const auth = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await auth.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
+    const { user, admin } = await requireUser(request)
 
     const body = await request.json().catch(() => ({})) as {
       action?: Action
@@ -22,7 +16,6 @@ Deno.serve(async (request) => {
     }
     const version = Number(body.version ?? 0)
     if (!Number.isInteger(version) || version < 1) return json({ error: 'A valid acceptance version is required.' }, 400)
-    const admin = createClient(url, secret)
 
     if ((body.action ?? 'status') === 'accept') {
       const { error } = await admin.from('account_legal_acceptances').upsert({
@@ -40,6 +33,6 @@ Deno.serve(async (request) => {
     if (error) throw error
     return json({ accepted: data != null, version })
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Unable to update data-use acknowledgment' }, 400)
+    return errorResponse(error, 'Unable to update data-use acknowledgment')
   }
 })

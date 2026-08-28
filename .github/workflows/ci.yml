@@ -13,12 +13,14 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - run: deno run --allow-read scripts/generate-nutrient-catalog.ts --check
+      - run: deno check supabase/functions/*/index.ts
       - run: deno test --allow-read supabase/tests
 
-  ios-build:
+  ios-tests:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
       - run: xcodegen generate
-      - run: xcodebuild -project Leafy.xcodeproj -scheme Leafy -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - run: xcodebuild test -project Leafy.xcodeproj -scheme Leafy -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.2' -only-testing:LeafyTests CODE_SIGNING_ALLOWED=NO

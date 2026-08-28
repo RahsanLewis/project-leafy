@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FoodImpactDashboard: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let input: FoodImpactInput
     @Binding var servingScale: Double
     let servingDescription: (Double) -> String

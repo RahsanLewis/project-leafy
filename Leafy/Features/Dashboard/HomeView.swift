@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct HomeView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editorEntry: FoodEntry?
@@ -277,7 +277,7 @@ private struct MorningCheckInReminder: View {
 }
 
 private struct AdaptiveTargetNotice: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let notice: PlanAdjustmentNotice
 
     var body: some View {
@@ -318,7 +318,7 @@ private struct AdaptiveTargetNotice: View {
 }
 
 private struct DateNavigator: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     let isChangingDay: Bool
     let valueOpacity: Double
     let move: (Int) -> Void

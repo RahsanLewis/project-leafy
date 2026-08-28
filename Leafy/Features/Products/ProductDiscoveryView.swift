@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct ProductDiscoveryView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     let intent: ProductDiscoveryIntent
     let embedded: Bool

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NutrientEditorView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     let input: FoodEntryInput
     @Binding var values: [String: String]

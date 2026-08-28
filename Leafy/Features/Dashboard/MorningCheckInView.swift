@@ -8,7 +8,7 @@ struct MorningCheckInView: View {
         case logNow
     }
 
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step: Step = .intake

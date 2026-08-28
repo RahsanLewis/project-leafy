@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { requireCatalogAdmin } from "../_shared/auth.ts";
 import { calculateAndPersistPFQS } from "../_shared/pfqs/persistence.ts";
 import { normalizePFQSJurisdiction } from "../_shared/pfqs/scorer.ts";
 import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
@@ -9,11 +9,7 @@ import { nutrientUnits as sharedNutrientUnits } from "../_shared/nutrients.ts";
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 type Row = Record<string, any>;
-type Reviewer = { kind: "admin"; user_id: string; email: string } | {
-  kind: "key";
-  user_id: null;
-  email: "review-key";
-};
+type Reviewer = { kind: "admin"; user_id: string; email: string };
 type NutrientInput = {
   code: string;
   amount_per_serving: number;
@@ -58,13 +54,12 @@ Deno.serve(async (request) => {
       headers: { ...headers, "Content-Type": "application/json" },
     });
   try {
-    const url = Deno.env.get("SUPABASE_URL")!;
-    const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
-      Deno.env.get("SUPABASE_SECRET_KEY")!;
-    const admin = createClient(url, secret, {
-      auth: { persistSession: false },
-    });
-    const reviewer = await authorize(request, admin);
+    const { user, admin, url } = await requireCatalogAdmin(request);
+    const reviewer: Reviewer = {
+      kind: "admin",
+      user_id: user.id,
+      email: user.email ?? "unknown",
+    };
     const body = await request.json().catch(() => ({})) as Row;
     const action = body.action ?? "list";
 
@@ -88,7 +83,10 @@ Deno.serve(async (request) => {
         ),
         admin.from("food_versions").select("id", { count: "exact", head: true })
           .is("superseded_at", null).neq("verification_status", "rejected"),
-        admin.from("pfqs_ingredients").select("canonical_id", { count: "exact", head: true })
+        admin.from("pfqs_ingredients").select("canonical_id", {
+          count: "exact",
+          head: true,
+        })
           .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION),
       ]);
       for (const result of statusResults) if (result.error) throw result.error;
@@ -251,16 +249,28 @@ Deno.serve(async (request) => {
         .order("canonical_name").limit(limit);
       if (term) {
         const pattern = `%${safeFilter(term)}%`;
-        const aliasMatches = await admin.from("pfqs_ingredient_aliases").select("canonical_id")
+        const aliasMatches = await admin.from("pfqs_ingredient_aliases").select(
+          "canonical_id",
+        )
           .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
           .ilike("normalized_alias", pattern).limit(200);
         if (aliasMatches.error) throw aliasMatches.error;
-        const directMatches = await admin.from("pfqs_ingredients").select("canonical_id")
+        const directMatches = await admin.from("pfqs_ingredients").select(
+          "canonical_id",
+        )
           .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
-          .or(`canonical_name.ilike.${pattern},category.ilike.${pattern},family_id.ilike.${pattern}`)
+          .or(
+            `canonical_name.ilike.${pattern},category.ilike.${pattern},family_id.ilike.${pattern}`,
+          )
           .limit(200);
         if (directMatches.error) throw directMatches.error;
-        const ids = [...new Set([...(aliasMatches.data ?? []), ...(directMatches.data ?? [])].map((row: Row) => row.canonical_id))];
+        const ids = [
+          ...new Set(
+            [...(aliasMatches.data ?? []), ...(directMatches.data ?? [])].map((
+              row: Row,
+            ) => row.canonical_id),
+          ),
+        ];
         if (!ids.length) return respond({ ingredients: [] });
         ingredientQuery = admin.from("pfqs_ingredients").select("*")
           .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
@@ -268,22 +278,29 @@ Deno.serve(async (request) => {
       }
       const ingredientRows = await ingredientQuery;
       if (ingredientRows.error) throw ingredientRows.error;
-      const ids = (ingredientRows.data ?? []).map((row: Row) => row.canonical_id);
+      const ids = (ingredientRows.data ?? []).map((row: Row) =>
+        row.canonical_id
+      );
       const counts = new Map<string, Set<string>>();
       if (ids.length) {
         const occurrences = await admin.from("pfqs_food_ingredient_occurrences")
           .select("canonical_id,food_version_id")
-          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION).in("canonical_id", ids);
+          .eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+          .in("canonical_id", ids);
         if (occurrences.error) throw occurrences.error;
         for (const row of occurrences.data ?? []) {
-          if (!counts.has(row.canonical_id)) counts.set(row.canonical_id, new Set());
+          if (!counts.has(row.canonical_id)) {
+            counts.set(row.canonical_id, new Set());
+          }
           counts.get(row.canonical_id)!.add(row.food_version_id);
         }
       }
-      return respond({ ingredients: (ingredientRows.data ?? []).map((row: Row) => ({
-        ...row,
-        product_count: counts.get(row.canonical_id)?.size ?? 0,
-      })) });
+      return respond({
+        ingredients: (ingredientRows.data ?? []).map((row: Row) => ({
+          ...row,
+          product_count: counts.get(row.canonical_id)?.size ?? 0,
+        })),
+      });
     }
 
     if (action === "ingredient_detail") {
@@ -293,28 +310,44 @@ Deno.serve(async (request) => {
         .eq("canonical_id", canonicalID).single();
       if (ingredient.error) throw ingredient.error;
       const [aliases, occurrences] = await Promise.all([
-        admin.from("pfqs_ingredient_aliases").select("alias").eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION).eq("canonical_id", canonicalID).order("alias"),
-        admin.from("pfqs_food_ingredient_occurrences").select("food_version_id,raw_text,ingredient_path").eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION).eq("canonical_id", canonicalID).limit(100),
+        admin.from("pfqs_ingredient_aliases").select("alias").eq(
+          "ingredient_database_version",
+          PFQS_INGREDIENT_DATABASE_VERSION,
+        ).eq("canonical_id", canonicalID).order("alias"),
+        admin.from("pfqs_food_ingredient_occurrences").select(
+          "food_version_id,raw_text,ingredient_path",
+        ).eq("ingredient_database_version", PFQS_INGREDIENT_DATABASE_VERSION)
+          .eq("canonical_id", canonicalID).limit(100),
       ]);
       if (aliases.error) throw aliases.error;
       if (occurrences.error) throw occurrences.error;
-      const foodIDs = [...new Set((occurrences.data ?? []).map((row: Row) => row.food_version_id))];
+      const foodIDs = [
+        ...new Set(
+          (occurrences.data ?? []).map((row: Row) => row.food_version_id),
+        ),
+      ];
       let products: Row[] = [];
       if (foodIDs.length) {
-        const foods = await admin.from("food_versions").select("id,description,brand_name,gtin")
+        const foods = await admin.from("food_versions").select(
+          "id,description,brand_name,gtin",
+        )
           .in("id", foodIDs).is("superseded_at", null).limit(100);
         if (foods.error) throw foods.error;
         products = foods.data ?? [];
       }
       const concern = ingredient.data.risk_canonical_id
-        ? additiveRegistry.find((item) => item.canonical_id === ingredient.data.risk_canonical_id) ?? null
+        ? additiveRegistry.find((item) =>
+          item.canonical_id === ingredient.data.risk_canonical_id
+        ) ?? null
         : null;
-      return respond({ ingredient: {
-        ...ingredient.data,
-        aliases: (aliases.data ?? []).map((row: Row) => row.alias),
-        products,
-        concern,
-      } });
+      return respond({
+        ingredient: {
+          ...ingredient.data,
+          aliases: (aliases.data ?? []).map((row: Row) => row.alias),
+          products,
+          concern,
+        },
+      });
     }
 
     if (action === "additive_detail") {
@@ -358,7 +391,7 @@ Deno.serve(async (request) => {
         contribution,
         reviewer,
         url,
-        secret,
+        request.headers.get("authorization")!,
       );
       return respond({ contribution: await withEvidence(admin, retried) }, 202);
     }
@@ -479,43 +512,9 @@ function corsHeaders(origin: string) {
       : {}),
     "Vary": "Origin",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-leafy-admin-key",
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
-}
-
-async function authorize(request: Request, admin: any): Promise<Reviewer> {
-  const reviewKey = Deno.env.get("CATALOG_REVIEW_KEY");
-  if (reviewKey && request.headers.get("x-leafy-admin-key") === reviewKey) {
-    return { kind: "key", user_id: null, email: "review-key" };
-  }
-  const token = request.headers.get("authorization")?.replace(
-    /^Bearer\s+/i,
-    "",
-  );
-  if (!token) throw new Error("Unauthorized");
-  const userResult = await admin.auth.getUser(token);
-  if (userResult.error || !userResult.data.user) {
-    throw new Error("Unauthorized");
-  }
-  const user = userResult.data.user;
-  const bootstrapEmails = new Set(
-    (Deno.env.get("CATALOG_BOOTSTRAP_ADMIN_EMAILS") ?? "rahsan@beyondsolid.dev")
-      .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
-  );
-  if (user.email && bootstrapEmails.has(user.email.toLowerCase())) {
-    const bootstrap = await admin.from("admin_memberships").upsert({
-      user_id: user.id,
-      role: "catalog_admin",
-      active: true,
-    }, { onConflict: "user_id" });
-    if (bootstrap.error) throw bootstrap.error;
-  }
-  const membership = await admin.from("admin_memberships").select("role,active")
-    .eq("user_id", user.id).eq("role", "catalog_admin").eq("active", true)
-    .maybeSingle();
-  if (membership.error || !membership.data) throw new Error("Unauthorized");
-  return { kind: "admin", user_id: user.id, email: user.email ?? "unknown" };
 }
 
 async function withEvidence(admin: any, contribution: Row) {
@@ -718,7 +717,7 @@ async function retryRecognition(
   contribution: Row,
   reviewer: Reviewer,
   url: string,
-  secret: string,
+  authorization: string,
 ) {
   const now = new Date().toISOString();
   const job = await admin.from("catalog_contribution_jobs").upsert({
@@ -748,11 +747,13 @@ async function retryRecognition(
     "Recognition retried by catalog review.",
     reviewer,
   );
-  const key = Deno.env.get("CATALOG_REVIEW_KEY") ?? secret;
   EdgeRuntime.waitUntil(
     fetch(`${url}/functions/v1/manage-catalog-contribution`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-leafy-admin-key": key },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authorization,
+      },
       body: JSON.stringify({
         action: "admin_retry",
         contribution_id: contribution.id,
@@ -884,7 +885,10 @@ async function publish(admin: any, contribution: Row) {
     : null;
   let foodID: string;
   if (targetID) {
-    const target = await admin.from("food_versions").select("food_id").eq("id", targetID).is("superseded_at", null).single();
+    const target = await admin.from("food_versions").select("food_id").eq(
+      "id",
+      targetID,
+    ).is("superseded_at", null).single();
     if (target.error) throw target.error;
     foodID = String(target.data.food_id);
   } else {
@@ -981,7 +985,9 @@ async function publish(admin: any, contribution: Row) {
   if (labelWrite.error) throw labelWrite.error;
   await calculateAndPersistPFQS(admin, version.data.id, {
     product_name: String(fields.product_name),
-    jurisdiction: normalizePFQSJurisdiction(String(contribution.market_country ?? "US")),
+    jurisdiction: normalizePFQSJurisdiction(
+      String(contribution.market_country ?? "US"),
+    ),
     assessment_date: new Date().toISOString().slice(0, 10),
     serving_size: {
       amount: Number(fields.serving_amount),
@@ -996,10 +1002,12 @@ async function publish(admin: any, contribution: Row) {
     explicitly_reported_nutrients: pfqsNutrients.filter((item: Row) =>
       item.printed_on_label === true
     ).map((item: Row) => String(item.nutrient_code) as PFQSNutrientCode),
-    nutrient_evidence: Object.fromEntries(pfqsNutrients.map((item: Row) => [String(item.nutrient_code), {
-      source: item.printed_on_label === true ? "label" : "derived",
-      confidence: Number(item.confidence ?? 1),
-    }])),
+    nutrient_evidence: Object.fromEntries(
+      pfqsNutrients.map((item: Row) => [String(item.nutrient_code), {
+        source: item.printed_on_label === true ? "label" : "derived",
+        confidence: Number(item.confidence ?? 1),
+      }]),
+    ),
     ingredients_raw: String(fields.ingredients ?? ""),
     verification_status: "community_confirmed",
     product_type: "food",

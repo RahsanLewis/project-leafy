@@ -1,5 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { cors, json } from '../_shared/http.ts'
+import { requireUser } from '../_shared/auth.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 
 async function revokeApple(code: string) {
   const clientID = Deno.env.get('APPLE_CLIENT_ID')
@@ -19,16 +19,9 @@ async function revokeApple(code: string) {
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const authClient = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await authClient.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
+    const { user, admin } = await requireUser(request)
     const body = await request.json().catch(() => ({}))
     const appleRevoked = body.apple_authorization_code ? await revokeApple(body.apple_authorization_code) : false
-    const admin = createClient(url, secret)
     const { data: mediaRows, error: mediaError } = await admin.from('nutrition_media_assets')
       .select('object_path').eq('user_id', user.id).is('deleted_at', null)
     if (mediaError && mediaError.code !== '42P01') throw mediaError
@@ -47,6 +40,6 @@ Deno.serve(async (request) => {
     if (error) throw error
     return json({ ok: true, apple_revoked: appleRevoked })
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Unable to delete account' }, 400)
+    return errorResponse(error, 'Unable to delete account')
   }
 })

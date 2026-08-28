@@ -3,7 +3,9 @@ import SwiftUI
 import UIKit
 
 struct AIMealView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AIMealStore.self) private var mealStore
+    @Environment(ProductStore.self) private var products
+    @Environment(DailyLogStore.self) private var dailyLog
     let onSaved: () -> Void
     let embedded: Bool
     let logDay: Date
@@ -59,8 +61,8 @@ struct AIMealView: View {
             .padding(.bottom, 120)
         }
         .background(LeafyTheme.canvas)
-        .animation(LeafyMotion.content, value: app.mealEstimate != nil || selectedProduct != nil)
-        .navigationTitle(embedded ? "Log Food" : (app.mealEstimate == nil ? "Describe Food" : "Review nutrition"))
+        .animation(LeafyMotion.content, value: mealStore.estimate != nil || selectedProduct != nil)
+        .navigationTitle(embedded ? "Log Food" : (mealStore.estimate == nil ? "Describe Food" : "Review nutrition"))
         .navigationBarTitleDisplayMode(embedded ? .inline : .large)
         .safeAreaInset(edge: .bottom) {
             primaryAction
@@ -116,7 +118,7 @@ struct AIMealView: View {
             Task {
                 guard let data = try? await item.loadTransferable(type: Data.self),
                       let image = UIImage(data: data) else {
-                    app.mealEstimateErrorMessage = "Leafy couldn’t read that photo."
+                    mealStore.errorMessage = "Leafy couldn’t read that photo."
                     return
                 }
                 setImage(image)
@@ -124,20 +126,20 @@ struct AIMealView: View {
         }
         .onChange(of: description) { _, _ in updateDraftState() }
         .onChange(of: photoData) { _, _ in updateDraftState() }
-        .onChange(of: app.mealEstimate?.followUp?.id) { _, _ in
+        .onChange(of: mealStore.estimate?.followUp?.id) { _, _ in
             followUpAnswer = ""
             clarificationIsFocused = false
         }
         .onAppear { updateDraftState() }
         .task(id: description.trimmingCharacters(in: .whitespacesAndNewlines)) {
             let query = description.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard query.count >= 2, photoData == nil, selectedProduct == nil, app.mealEstimate == nil else {
-                if query.count < 2 { app.productSearchResults = [] }
+            guard query.count >= 2, photoData == nil, selectedProduct == nil, mealStore.estimate == nil else {
+                if query.count < 2 { products.productSearchResults = [] }
                 return
             }
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
-            await app.searchProducts(query)
+            await products.search(query)
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -154,7 +156,7 @@ struct AIMealView: View {
     @ViewBuilder private var flowContent: some View {
         if let selectedProduct {
             knownProductReview(selectedProduct)
-        } else if let estimate = app.mealEstimate {
+        } else if let estimate = mealStore.estimate {
             estimateContent(estimate)
         } else {
             composer
@@ -213,7 +215,7 @@ struct AIMealView: View {
 
             discoveryContent
 
-            if let message = app.mealEstimateErrorMessage {
+            if let message = mealStore.errorMessage {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(LeafyTypography.subheadline)
                     .foregroundStyle(.orange)
@@ -277,14 +279,14 @@ struct AIMealView: View {
                         .foregroundStyle(.secondary)
                         .tracking(0.6)
                     Spacer()
-                    if app.isProductLoading { ProgressView().controlSize(.small) }
+                    if products.isProductLoading { ProgressView().controlSize(.small) }
                 }
-                if app.productSearchResults.isEmpty && !app.isProductLoading {
+                if products.productSearchResults.isEmpty && !products.isProductLoading {
                     Text("No known food matches yet. Leafy can estimate the description below.")
                         .font(LeafyTypography.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    foodResultRows(app.productSearchResults)
+                    foodResultRows(products.productSearchResults)
                 }
             }
         }
@@ -332,7 +334,7 @@ struct AIMealView: View {
     private func open(_ product: ProductSummary) {
         descriptionIsFocused = false
         Task {
-            guard let detail = await app.loadProductDetail(product) else { return }
+            guard let detail = await products.detail(product) else { return }
             productServingCount = "1"
             selectedProduct = detail
             updateDraftState()
@@ -365,8 +367,8 @@ struct AIMealView: View {
     private func handleScannedCode(_ code: String) {
         showingScanner = false
         Task {
-            if let product = await app.lookupProduct(barcode: code) { open(product) }
-            else if app.productErrorMessage == nil {
+            if let product = await products.lookup(barcode: code) { open(product) }
+            else if products.productErrorMessage == nil {
                 unknownBarcode = code
                 showingUnknownProduct = true
             }
@@ -468,7 +470,7 @@ struct AIMealView: View {
             Button("Start over", role: .destructive) {
                 selectedProduct = nil
                 productServingCount = "1"
-                app.productErrorMessage = nil
+                products.productErrorMessage = nil
                 updateDraftState()
             }
             .frame(maxWidth: .infinity)
@@ -547,7 +549,7 @@ struct AIMealView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(estimate.items.enumerated()), id: \.element.id) { index, item in
                         MealEstimateItemCard(item: item) { name, portion, calories, estimatedGrams, nutrients in
-                            app.updateMealEstimateItem(
+                            mealStore.updateItem(
                                 id: item.id,
                                 name: name,
                                 portion: portion,
@@ -556,7 +558,7 @@ struct AIMealView: View {
                                 nutrients: nutrients
                             )
                         } onRemove: {
-                            app.removeMealEstimateItem(id: item.id)
+                            mealStore.removeItem(id: item.id)
                         }
                         if index < estimate.items.count - 1 {
                             Divider().overlay(LeafyTheme.hairline)
@@ -575,7 +577,7 @@ struct AIMealView: View {
                 .padding(.vertical, LeafySpacing.small)
             }
 
-            if let message = app.mealEstimateErrorMessage {
+            if let message = mealStore.errorMessage {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(LeafyTypography.subheadline).foregroundStyle(.orange)
             }
@@ -585,14 +587,14 @@ struct AIMealView: View {
 
             Button("Start over", role: .destructive) {
                 Task {
-                    await app.discardMealEstimate()
+                    await mealStore.discard()
                     resetInputs()
                     hasUnsavedDraft = false
                 }
             }
             .frame(maxWidth: .infinity)
         }
-        .overlay { if app.isMealEstimateLoading { ProgressView().controlSize(.large) } }
+        .overlay { if mealStore.isLoading { ProgressView().controlSize(.large) } }
     }
 
     @ViewBuilder private func clarification(_ estimate: MealEstimate) -> some View {
@@ -629,7 +631,7 @@ struct AIMealView: View {
                         .accessibilityIdentifier("mealClarificationAnswer")
                 }
 
-                if let message = app.mealEstimateErrorMessage {
+                if let message = mealStore.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(LeafyTypography.subheadline)
                         .foregroundStyle(.orange)
@@ -651,7 +653,7 @@ struct AIMealView: View {
         if let product = selectedProduct {
             Button {
                 Task {
-                    if await app.logProduct(
+                    if await products.log(
                         product,
                         grams: knownProductGrams(product),
                         consumedAt: mealDate,
@@ -663,14 +665,14 @@ struct AIMealView: View {
                     }
                 }
             } label: {
-                if app.isFoodMutationInProgress { ProgressView().tint(.white) }
+                if dailyLog.isFoodMutationInProgress { ProgressView().tint(.white) }
                 else { Text("Log \(knownProductCalories(product)) calories") }
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(app.isFoodMutationInProgress || validProductServingCount == nil)
+            .disabled(dailyLog.isFoodMutationInProgress || validProductServingCount == nil)
             .opacity(validProductServingCount == nil ? 0.45 : 1)
             .accessibilityIdentifier("confirmKnownFoodButton")
-        } else if let estimate = app.mealEstimate {
+        } else if let estimate = mealStore.estimate {
             if estimate.status == .needsClarification {
                 VStack(spacing: LeafySpacing.compact) {
                     Button {
@@ -680,7 +682,7 @@ struct AIMealView: View {
                         Text("Continue")
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(trimmedFollowUpAnswer.isEmpty || app.isMealEstimateLoading)
+                    .disabled(trimmedFollowUpAnswer.isEmpty || mealStore.isLoading)
                     .opacity(trimmedFollowUpAnswer.isEmpty ? 0.45 : 1)
                     .accessibilityIdentifier("submitMealClarificationButton")
 
@@ -691,25 +693,25 @@ struct AIMealView: View {
                     .font(LeafyTypography.subheadlineSemibold)
                     .foregroundStyle(LeafyTheme.green)
                     .frame(minHeight: LeafyTheme.minimumTouchTarget)
-                    .disabled(app.isMealEstimateLoading)
+                    .disabled(mealStore.isLoading)
                     .accessibilityIdentifier("skipMealClarificationButton")
                 }
             } else {
                 Button { confirm() } label: {
-                    if app.isMealEstimateLoading { ProgressView().tint(.white) }
+                    if mealStore.isLoading { ProgressView().tint(.white) }
                     else { Text("Log \(estimate.reviewedTotal) calories") }
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(estimate.items.isEmpty || app.isMealEstimateLoading)
+                .disabled(estimate.items.isEmpty || mealStore.isLoading)
                 .accessibilityIdentifier("confirmMealEstimateButton")
             }
-        } else if app.mealEstimate == nil {
+        } else if mealStore.estimate == nil {
             Button { analyze() } label: {
-                if app.isMealEstimateLoading { ProgressView().tint(.white) }
+                if mealStore.isLoading { ProgressView().tint(.white) }
                 else { Text("Analyze nutrition") }
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!canAnalyze || app.isMealEstimateLoading)
+            .disabled(!canAnalyze || mealStore.isLoading)
             .opacity(canAnalyze ? 1 : 0.45)
             .accessibilityIdentifier("analyzeMealButton")
         }
@@ -717,7 +719,7 @@ struct AIMealView: View {
 
     private func setImage(_ image: UIImage) {
         guard let data = image.leafyMealJPEG(), let normalized = UIImage(data: data) else {
-            app.mealEstimateErrorMessage = "Choose a smaller meal photo."
+            mealStore.errorMessage = "Choose a smaller meal photo."
             return
         }
         selectedImage = normalized
@@ -732,7 +734,7 @@ struct AIMealView: View {
         let date = mealDate
         let type = mealType
         beginAnalysis(hasPhoto: photo != nil) {
-            await app.analyzeMeal(
+            await mealStore.analyze(
                 description: inputDescription, photoData: photo,
                 consumedAt: date, localDate: date, mealType: type
             )
@@ -741,7 +743,7 @@ struct AIMealView: View {
 
     private func refineEstimate(answer: String?, skip: Bool) {
         beginAnalysis(hasPhoto: photoData != nil) {
-            await app.answerMealFollowUp(answer, skip: skip)
+            await mealStore.answer(answer, skip: skip)
         }
     }
 
@@ -770,12 +772,12 @@ struct AIMealView: View {
         analysisTask?.cancel()
         analysisTask = nil
         showingAnalysisWait = false
-        Task { await app.cancelMealEstimateAnalysis() }
+        Task { await mealStore.cancelAnalysis() }
     }
 
     private func confirm() {
         Task {
-            if await app.confirmMealEstimate() {
+            if await mealStore.confirm() {
                 resetInputs()
                 hasUnsavedDraft = false
                 onSaved()
@@ -790,7 +792,7 @@ struct AIMealView: View {
     }
 
     private func updateDraftState() {
-        hasUnsavedDraft = selectedProduct != nil || app.mealEstimate != nil || photoData != nil
+        hasUnsavedDraft = selectedProduct != nil || mealStore.estimate != nil || photoData != nil
             || !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -810,7 +812,6 @@ struct AIMealView: View {
 }
 
 private struct MealEstimateItemCard: View {
-    @Environment(AppModel.self) private var app
     @Environment(\.openURL) private var openURL
     let item: MealEstimateItem
     let onChange: (String, String, Int, Double?, [NutrientAmountInput]) -> Void
@@ -913,7 +914,7 @@ private struct MealEstimateItemCard: View {
                     .foregroundStyle(LeafyTheme.green)
                     .frame(minHeight: LeafyTheme.rowMinHeight)
                 }
-                if app.configuration.isFoodImpactEnabled {
+                if AppConfiguration.live().isFoodImpactEnabled {
                     NavigationLink {
                         AIItemImpactView(item: item)
                     } label: {

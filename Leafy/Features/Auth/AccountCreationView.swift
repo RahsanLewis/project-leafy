@@ -5,7 +5,7 @@ import UIKit
 struct AccountCreationView: View {
     private enum Field: Hashable { case email, password, confirmation }
 
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @FocusState private var focusedField: Field?
     @State private var rawNonce = ""
     @State private var providerError: String?

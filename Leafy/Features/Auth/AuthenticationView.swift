@@ -5,7 +5,7 @@ import UIKit
 struct AuthenticationView: View {
     private enum Field: Hashable { case email, password }
 
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
     @State private var rawNonce = ""

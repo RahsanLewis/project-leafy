@@ -1,25 +1,30 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { requireUser } from '../_shared/auth.ts'
 import { adaptiveCandidate, adaptiveModelVersion, isPlausible, rollingWeeklyTrend, type DatedWeight } from '../_shared/adaptive-energy.ts'
 import { type Input } from '../_shared/calculator.ts'
-import { cors, json } from '../_shared/http.ts'
+import { cors, errorResponse, HTTPError, json } from '../_shared/http.ts'
 
-type Action = 'confirmed' | 'incomplete' | 'fasted' | 'refresh'
-type RequestBody = { action: Action; local_date?: string; time_zone: string }
+type Action = 'confirmed' | 'incomplete' | 'fasted' | 'refresh' | 'acknowledge_adjustment'
+type RequestBody = { action: Action; local_date?: string; time_zone?: string; adjustment_id?: string }
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const authClient = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await authClient.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
-
+    const { user, admin } = await requireUser(request)
     const body = await request.json() as RequestBody
+    if (body.action === 'acknowledge_adjustment') {
+      if (!body.adjustment_id || !isUUID(body.adjustment_id)) return json({ error: 'A valid plan adjustment is required.' }, 400)
+      const owned = await admin.from('plan_adjustments').select('id,acknowledged_at')
+        .eq('id', body.adjustment_id).eq('user_id', user.id).maybeSingle()
+      if (owned.error) throw owned.error
+      if (!owned.data) throw new HTTPError(404, 'Plan adjustment not found.')
+      if (!owned.data.acknowledged_at) {
+        const update = await admin.from('plan_adjustments').update({ acknowledged_at: new Date().toISOString() })
+          .eq('id', body.adjustment_id).eq('user_id', user.id)
+        if (update.error) throw update.error
+      }
+      return json({ ok: true })
+    }
     if (!body.time_zone) return json({ error: 'A time zone is required.' }, 400)
-    const admin = createClient(url, secret)
     let day = null
 
     if (body.action !== 'refresh') {
@@ -53,7 +58,7 @@ Deno.serve(async (request) => {
     return json({ day, ...adaptive })
   } catch (error) {
     console.error('manage-daily-checkin failed', error)
-    return json({ error: errorMessage(error) }, 400)
+    return errorResponse(error, errorMessage(error))
   }
 })
 
@@ -170,3 +175,5 @@ function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string') return String((error as Record<string, unknown>).message)
   return 'Unable to update the daily check-in.'
 }
+
+function isUUID(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) }

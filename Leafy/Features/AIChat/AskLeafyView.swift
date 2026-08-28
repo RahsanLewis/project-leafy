@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct AskLeafyView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(ChatStore.self) private var chat
+    @Environment(DailyLogStore.self) private var dailyLog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var draft = ""
     @State private var retryID: UUID?
@@ -40,7 +41,7 @@ struct AskLeafyView: View {
         .sheet(isPresented: $showingHistory) { ConversationHistoryView(isPresented: $showingHistory) }
         .sheet(item: $reviewDraft) { draft in
             ChatMealReviewView(draft: draft) { updated in
-                if await app.confirmChatMeal(updated) {
+                if await chat.confirmMeal(updated) {
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     UIAccessibility.post(notification: .announcement, argument: "Meal logged")
                     reviewDraft = nil
@@ -56,7 +57,7 @@ struct AskLeafyView: View {
                 sheetIdentifier: "newChatConfirmationSheet"
             ) { startNewChat() }
         }
-        .task { if app.chatThreads.isEmpty { await app.loadChatThreads() } }
+        .task { if chat.threads.isEmpty { await chat.loadThreads() } }
         .onDisappear { focused = false; responseTask?.cancel() }
     }
 
@@ -64,21 +65,22 @@ struct AskLeafyView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: LeafySpacing.large) {
-                    if app.chatMessages.isEmpty { emptyState }
-                    ForEach(app.chatMessages) { message in
+                    if chat.messages.isEmpty { emptyState }
+                    ForEach(chat.messages) { message in
                         ChatMessageView(
                             message: message,
-                            onReview: { reviewDraft = app.chatMealReviewDraft(messageID: message.id) },
+                            onReview: { reviewDraft = chat.mealReviewDraft(messageID: message.id) },
                             onLogDescription: {
                                 if let description = message.suggestedLogDescription {
-                                    app.presentMealLogger(description: description)
+                                    dailyLog.pendingMealDescription = description
+                                    dailyLog.showLogFood = true
                                 }
                             }
                         )
                         .id(message.id)
                     }
-                    if app.isChatLoading { thinkingRow }
-                    if let error = app.chatErrorMessage { errorRow(error) }
+                    if chat.isLoading { thinkingRow }
+                    if let error = chat.errorMessage { errorRow(error) }
                     Color.clear.frame(height: 1).id("conversationBottom")
                 }
                 .padding(.horizontal, LeafyTheme.pageInset)
@@ -86,8 +88,8 @@ struct AskLeafyView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { focused = false })
-            .onChange(of: app.chatMessages.count) { _, _ in scrollToBottom(proxy) }
-            .onChange(of: app.isChatLoading) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: chat.messages.count) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: chat.isLoading) { _, _ in scrollToBottom(proxy) }
         }
     }
 
@@ -156,7 +158,7 @@ struct AskLeafyView: View {
                 Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
                     .frame(width: 44, height: 44).background(LeafyTheme.green, in: .circle)
             }
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || app.isChatLoading)
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chat.isLoading)
             .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
             .accessibilityLabel("Send")
         }
@@ -165,12 +167,12 @@ struct AskLeafyView: View {
 
     private func send(_ text: String, reusing id: UUID? = nil) {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !app.isChatLoading else { return }
+        guard !message.isEmpty, !chat.isLoading else { return }
         let clientID = id ?? UUID()
-        draft = ""; retryID = clientID; focused = false; app.chatErrorMessage = nil
+        draft = ""; retryID = clientID; focused = false; chat.errorMessage = nil
         UISelectionFeedbackGenerator().selectionChanged()
         responseTask = Task { @MainActor in
-            let succeeded = await app.sendChatMessage(message, clientMessageID: clientID)
+            let succeeded = await chat.send(message, clientMessageID: clientID)
             guard !Task.isCancelled else { return }
             if succeeded {
                 retryID = nil
@@ -184,22 +186,21 @@ struct AskLeafyView: View {
     }
 
     private func cancelResponse() {
-        let text = app.pendingChatText ?? ""
+        let text = chat.pendingText ?? ""
         responseTask?.cancel(); responseTask = nil
-        app.chatMessages.removeAll { $0.id == app.pendingChatClientMessageID }
-        app.isChatLoading = false
+        _ = chat.cancelPendingResponse()
         draft = text
     }
 
     private func requestNewChat() {
         focused = false
-        if !draft.isEmpty || app.isChatLoading { confirmingNewChat = true }
+        if !draft.isEmpty || chat.isLoading { confirmingNewChat = true }
         else { startNewChat() }
     }
 
     private func startNewChat() {
         responseTask?.cancel(); responseTask = nil; draft = ""; retryID = nil
-        app.startNewChat()
+        chat.startNewChat()
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
@@ -299,7 +300,7 @@ private struct ChatMealSummaryView: View {
 }
 
 private struct ChatMealReviewView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(ChatStore.self) private var chat
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ChatMealReviewDraft
     let onConfirm: (ChatMealReviewDraft) async -> Void
@@ -336,7 +337,7 @@ private struct ChatMealReviewView: View {
                         DatePicker("Time", selection: $draft.consumedAt, displayedComponents: .hourAndMinute)
                             .frame(minHeight: LeafyTheme.rowMinHeight)
                     }
-                    if let error = app.chatErrorMessage {
+                    if let error = chat.errorMessage {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .font(LeafyTypography.subheadline)
                             .foregroundStyle(.orange)
@@ -351,11 +352,11 @@ private struct ChatMealReviewView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .safeAreaInset(edge: .bottom) {
                 Button("Log meal · \(draft.totalCalories) Cal") { Task { await onConfirm(draft) } }
-                    .buttonStyle(PrimaryButtonStyle()).disabled(!draft.isValid || app.chatMealLoggingMessageID != nil)
+                    .buttonStyle(PrimaryButtonStyle()).disabled(!draft.isValid || chat.mealLoggingMessageID != nil)
                     .opacity(draft.isValid ? 1 : 0.45).leafyDetachedBottomControl()
                     .accessibilityIdentifier("logChatMealButton")
             }
-            .interactiveDismissDisabled(app.chatMealLoggingMessageID != nil)
+            .interactiveDismissDisabled(chat.mealLoggingMessageID != nil)
         }
     }
 }
@@ -376,12 +377,12 @@ private struct ChatMealReviewRow: View {
 }
 
 private struct ConversationHistoryView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(ChatStore.self) private var chat
     @Binding var isPresented: Bool
     @State private var query = ""
     @State private var deleting: NutritionChatThread?
     private var threads: [NutritionChatThread] {
-        query.isEmpty ? app.chatThreads : app.chatThreads.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        query.isEmpty ? chat.threads : chat.threads.filter { $0.title.localizedCaseInsensitiveContains(query) }
     }
     var body: some View {
         NavigationStack {
@@ -389,7 +390,7 @@ private struct ConversationHistoryView: View {
                 if threads.isEmpty { ContentUnavailableView(query.isEmpty ? "No conversations" : "No matches", systemImage: "bubble.left.and.bubble.right") }
                 ForEach(threads) { thread in
                     Button {
-                        Task { await app.openChatThread(thread); if app.chatErrorMessage == nil { isPresented = false } }
+                        Task { await chat.open(thread); if chat.errorMessage == nil { isPresented = false } }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(thread.title).font(LeafyTypography.headline).foregroundStyle(.primary)
@@ -397,7 +398,7 @@ private struct ConversationHistoryView: View {
                         }.frame(minHeight: LeafyTheme.rowMinHeight, alignment: .leading)
                     }.swipeActions { Button("Delete", role: .destructive) { deleting = thread } }
                 }.leafyBorderlessRows()
-                if let error = app.chatErrorMessage { Text(error).font(LeafyTypography.subheadline).foregroundStyle(.orange).leafyBorderlessRows(separators: false) }
+                if let error = chat.errorMessage { Text(error).font(LeafyTypography.subheadline).foregroundStyle(.orange).leafyBorderlessRows(separators: false) }
             }
             .leafyBorderlessList().searchable(text: $query, prompt: "Search conversations")
             .navigationTitle("Conversations")
@@ -410,7 +411,7 @@ private struct ConversationHistoryView: View {
                     confirmIdentifier: "confirmDeleteConversationButton",
                     sheetIdentifier: "deleteConversationConfirmationSheet"
                 ) {
-                    Task { await app.deleteChatThread(thread) }
+                    Task { await chat.delete(thread) }
                 }
             }
         }

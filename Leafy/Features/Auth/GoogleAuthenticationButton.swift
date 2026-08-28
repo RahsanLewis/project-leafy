@@ -5,7 +5,7 @@ import UIKit
 
 struct GoogleAuthenticationButton: View {
     enum Purpose { case createAndSave, signInAndLoad }
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.colorScheme) private var colorScheme
     let purpose: Purpose
     var isEnabled = true

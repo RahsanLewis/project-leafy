@@ -1,5 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import { cors, json } from '../_shared/http.ts'
+import { requireUser } from '../_shared/auth.ts'
+import { cors, errorResponse, json } from '../_shared/http.ts'
 import { normalizeNutrients, nutrientArraySchema, nutrientPrompt } from '../_shared/nutrients.ts'
 import { processNutrientJobs } from '../_shared/nutrient-enrichment.ts'
 import { scoreFoodEntry } from '../_shared/pfqs/entry.ts'
@@ -8,7 +8,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
 
 type NutrientInput = { code: string; amount: number; derivation_method?: string; source_version?: string; confidence?: number }
 type Body = {
-  action: 'create' | 'update' | 'autofill'
+  action: 'create' | 'update' | 'autofill' | 'delete'
   id?: string
   name?: string
   calories?: number
@@ -26,16 +26,16 @@ type Body = {
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const authorization = request.headers.get('Authorization') ?? ''
-    const url = Deno.env.get('SUPABASE_URL')!
-    const publishable = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-    const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
-    const auth = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
-    const { data: { user }, error: authError } = await auth.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
-    const admin = createClient(url, secret)
+    const { user, admin } = await requireUser(request)
     const body = await request.json() as Body
     if (body.action === 'autofill') return json(await autoFill(user.id, body))
+    if (body.action === 'delete') {
+      if (!body.id || !isUUID(body.id)) return json({ error: 'A valid food entry is required.' }, 400)
+      const result = await admin.from('food_entries').delete().eq('id', body.id).eq('user_id', user.id).select('id').maybeSingle()
+      if (result.error) throw result.error
+      if (!result.data) return json({ error: 'Food entry not found.' }, 404)
+      return json({ ok: true })
+    }
     const values = validatedEntry(body)
     let entry: Record<string, unknown>
     if (body.action === 'create') {
@@ -57,14 +57,17 @@ Deno.serve(async (request) => {
       })
       if (result.error) throw result.error
     }
-    const score = await scoreFoodEntry(admin, String(entry.id), user.id)
+    await scoreFoodEntry(admin, String(entry.id), user.id)
+    const aggregate = await admin.from('food_entries_with_score').select('*')
+      .eq('id', entry.id).eq('user_id', user.id).single()
+    if (aggregate.error) throw aggregate.error
     EdgeRuntime.waitUntil(processNutrientJobs(admin, user.id, 2).catch((error) => {
       console.error('background nutrient enrichment failed', error)
     }))
-    return json({ entry: { ...entry, score } })
+    return json({ entry: aggregate.data })
   } catch (error) {
     console.error('manage-food-entry failed', error)
-    return json({ error: error instanceof Error ? error.message : 'Unable to save that food.' }, 400)
+    return errorResponse(error, 'Unable to save that food.')
   }
 })
 

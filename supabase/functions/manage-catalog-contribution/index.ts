@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { cors, json } from "../_shared/http.ts";
+import { requireCatalogAdmin, requireUser } from "../_shared/auth.ts";
+import { cors, errorResponse, json } from "../_shared/http.ts";
 import { calculateAndPersistPFQS } from "../_shared/pfqs/persistence.ts";
 import { normalizePFQSJurisdiction } from "../_shared/pfqs/scorer.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
@@ -222,41 +223,27 @@ Deno.serve(async (request) => {
     return new Response("ok", { headers: cors });
   }
   try {
-    const authorization = request.headers.get("Authorization") ?? "";
-    const url = Deno.env.get("SUPABASE_URL")!;
-    const publishable = Deno.env.get("SUPABASE_ANON_KEY") ??
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-    const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
-      Deno.env.get("SUPABASE_SECRET_KEY")!;
     const body = await request.json().catch(() => ({})) as Body;
     const action = body.action ?? "list";
     if (action === "admin_retry") {
-      const internalKey = Deno.env.get("CATALOG_REVIEW_KEY") ?? secret;
-      if (request.headers.get("x-leafy-admin-key") !== internalKey) {
-        return json({ error: "Unauthorized" }, 401);
-      }
+      const { admin } = await requireCatalogAdmin(request);
       if (!body.contribution_id) {
         return json({ error: "A contribution identifier is required." }, 400);
       }
       const contribution = await byID(
-        adminClient(url, secret),
+        admin,
         body.contribution_id,
       );
       EdgeRuntime.waitUntil(
         runAutomation(
-          adminClient(url, secret),
+          admin,
           String(contribution.user_id),
           String(contribution.id),
         ).catch((error) => console.error("admin retry failed", error)),
       );
       return json({ outcome: "processing" }, 202);
     }
-    const auth = createClient(url, publishable, {
-      global: { headers: { Authorization: authorization } },
-    });
-    const { data: { user }, error: authError } = await auth.auth.getUser();
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
-    const admin = createClient(url, secret);
+    const { user, admin } = await requireUser(request);
 
     if (action === "start") return json(await start(admin, user.id, body));
     if (action === "list") {
@@ -318,11 +305,7 @@ Deno.serve(async (request) => {
     return json({ error: "Unsupported contribution action." }, 400);
   } catch (error) {
     console.error("manage-catalog-contribution failed", error);
-    return json({
-      error: error instanceof Error
-        ? error.message
-        : "Unable to update that product.",
-    }, 400);
+    return errorResponse(error, "Unable to update that product.");
   }
 });
 
@@ -360,8 +343,9 @@ async function start(admin: any, userID: string, body: Body) {
   ).eq("gtin", gtin)
     .in("status", ["draft", "processing", "pending_review", "needs_review"])
     .order("updated_at", { ascending: false }).limit(1);
-  if (body.refresh_existing === true && existing) resumedQuery = resumedQuery.eq("target_food_version_id", existing.id);
-  else resumedQuery = resumedQuery.is("target_food_version_id", null);
+  if (body.refresh_existing === true && existing) {
+    resumedQuery = resumedQuery.eq("target_food_version_id", existing.id);
+  } else resumedQuery = resumedQuery.is("target_food_version_id", null);
   const resumed = await resumedQuery.maybeSingle();
   if (resumed.error) throw resumed.error;
   if (resumed.data) {
@@ -375,7 +359,9 @@ async function start(admin: any, userID: string, body: Body) {
     gtin,
     market_country: market,
     status: "draft",
-    target_food_version_id: body.refresh_existing === true ? existing?.id ?? null : null,
+    target_food_version_id: body.refresh_existing === true
+      ? existing?.id ?? null
+      : null,
   }).select("*").single();
   if (created.error) throw created.error;
   await event(
@@ -1259,7 +1245,10 @@ async function publish(
     : null;
   let foodID: string;
   if (targetID) {
-    const target = await admin.from("food_versions").select("food_id").eq("id", targetID).is("superseded_at", null).single();
+    const target = await admin.from("food_versions").select("food_id").eq(
+      "id",
+      targetID,
+    ).is("superseded_at", null).single();
     if (target.error) throw target.error;
     foodID = String(target.data.food_id);
   } else {
@@ -1348,7 +1337,9 @@ async function publish(
   if (labelWrite.error) throw labelWrite.error;
   await calculateAndPersistPFQS(admin, version.data.id, {
     product_name: String(fields.product_name),
-    jurisdiction: normalizePFQSJurisdiction(String(contribution.market_country ?? "US")),
+    jurisdiction: normalizePFQSJurisdiction(
+      String(contribution.market_country ?? "US"),
+    ),
     assessment_date: new Date().toISOString().slice(0, 10),
     serving_size: {
       amount: Number(fields.serving_amount),
@@ -1361,9 +1352,12 @@ async function publish(
     explicitly_reported_nutrients: pfqsNutrients.map((item) =>
       item.code as PFQSNutrientCode
     ),
-    nutrient_evidence: Object.fromEntries(pfqsNutrients.map((item) => [item.code, {
-      source: "label", confidence: Number(item.confidence ?? 1),
-    }])),
+    nutrient_evidence: Object.fromEntries(
+      pfqsNutrients.map((item) => [item.code, {
+        source: "label",
+        confidence: Number(item.confidence ?? 1),
+      }]),
+    ),
     ingredients_raw: String(fields.ingredients ?? ""),
     verification_status: verification,
     product_type: "food",

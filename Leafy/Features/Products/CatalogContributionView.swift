@@ -34,7 +34,7 @@ struct CatalogContributionWaitEstimator {
 }
 
 struct CatalogContributionView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(AppCoordinator.self) private var app
     @Environment(\.dismiss) private var dismiss
     let barcode: String
     let intent: ProductDiscoveryIntent
