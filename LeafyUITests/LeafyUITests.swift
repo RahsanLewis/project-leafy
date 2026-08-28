@@ -370,6 +370,25 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
+    func testTodayScanShortcutCanContinueToAnalysisSearchPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["analyzeBarcodeButton"].waitForExistence(timeout: 3))
+        app.buttons["analyzeBarcodeButton"].tap()
+        XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
+        app.buttons["Search Instead"].tap()
+
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["close"].waitForExistence(timeout: 2))
+        app.buttons["close"].tap()
+        XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
+        app.navigationBars["Scan"].buttons["Done"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testLogFoodChooseFromLibraryOpensSystemPhotoPicker() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
@@ -462,27 +481,21 @@ final class LeafyUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
 
-        app.tabBars.buttons["Progress"].tap()
-        XCTAssertTrue(app.staticTexts["Actual weight"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["logFoodButton"].exists)
+        XCTAssertTrue(app.buttons["analyzeBarcodeButton"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Scan"].exists)
 
-        app.tabBars.buttons["Scan"].tap()
-        XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.navigationBars["Scan barcode"].exists)
-        XCTAssertTrue(app.searchFields.firstMatch.exists)
-        app.buttons["scanBarcodeButton"].tap()
+        app.buttons["analyzeBarcodeButton"].tap()
         XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
         app.navigationBars["Scan barcode"].buttons["Cancel"].tap()
-        XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+
+        app.tabBars.buttons["Progress"].tap()
+        XCTAssertTrue(app.staticTexts["Actual weight"].waitForExistence(timeout: 3))
 
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["morningReminderToggle"].exists)
-
-        app.tabBars.buttons["Scan"].tap()
-        XCTAssertTrue(app.buttons["scanBarcodeButton"].waitForExistence(timeout: 3))
-        app.buttons["scanBarcodeButton"].tap()
-        XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
-        app.navigationBars["Scan barcode"].buttons["Cancel"].tap()
     }
 
     @MainActor
@@ -662,7 +675,8 @@ final class LeafyUITests: XCTestCase {
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
-        XCTAssertTrue(app.tabBars.buttons["Scan"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Scan"].exists)
+        XCTAssertEqual(app.tabBars.buttons.count, 4)
         XCTAssertFalse(app.tabBars.buttons["Plan"].exists)
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(app.buttons["nutritionPlanLink"].waitForExistence(timeout: 3))

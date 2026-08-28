@@ -50,6 +50,7 @@ final class AppModel {
     var pendingChatClientMessageID: UUID?
     var pendingChatText: String?
     var showLogFood = false
+    var showProductScanner = false
     var pendingMealDescription = ""
     private var mealEstimateSessionID: UUID?
     private var mealPhotoObjectPath: String?
@@ -920,6 +921,10 @@ final class AppModel {
     func presentMealLogger(description: String = "") {
         pendingMealDescription = description
         showLogFood = true
+    }
+
+    func presentProductScanner() {
+        showProductScanner = true
     }
 
     func beginLoggingYesterdayFromMorningCheckIn() {

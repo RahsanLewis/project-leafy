@@ -38,6 +38,7 @@ struct CatalogContributionView: View {
     @Environment(\.dismiss) private var dismiss
     let barcode: String
     let intent: ProductDiscoveryIntent
+    let allowsLoggingFromAnalysis: Bool
     let onCompleted: (() -> Void)?
     let refreshExisting: Bool
     @Binding private var hasUnsavedDraft: Bool
@@ -61,12 +62,14 @@ struct CatalogContributionView: View {
     init(
         barcode: String,
         intent: ProductDiscoveryIntent,
+        allowsLoggingFromAnalysis: Bool = false,
         onCompleted: (() -> Void)?,
         refreshExisting: Bool = false,
         hasUnsavedDraft: Binding<Bool> = .constant(false)
     ) {
         self.barcode = barcode
         self.intent = intent
+        self.allowsLoggingFromAnalysis = allowsLoggingFromAnalysis
         self.onCompleted = onCompleted
         self.refreshExisting = refreshExisting
         _hasUnsavedDraft = hasUnsavedDraft
@@ -113,7 +116,13 @@ struct CatalogContributionView: View {
             Text("Leafy uses the structured facts read from these private package photos to identify this product and improve its shared food catalog. The photos are not shown publicly.")
         }
         .navigationDestination(item: $acceptedDetail) { product in
-            ProductDetailView(product: product, intent: intent, logDate: app.selectedLogDate, onLogged: { onCompleted?() })
+            ProductDetailView(
+                product: product,
+                intent: intent,
+                allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
+                logDate: app.selectedLogDate,
+                onLogged: { onCompleted?() }
+            )
         }
         .alert("Couldn’t add product", isPresented: Binding(
             get: { app.catalogContributionErrorMessage != nil },
