@@ -87,6 +87,15 @@ struct AccountCenterView: View {
                 }
             }
         }
+        .overlay {
+            if app.saveState == .deleting {
+                ProgressView("Deleting account…").padding().background(.regularMaterial, in: .rect(cornerRadius: LeafyRadius.control))
+            }
+        }
+        .alert("Something went wrong", isPresented: Binding(
+            get: { app.errorMessage != nil },
+            set: { if !$0 { app.errorMessage = nil } }
+        )) { Button("OK") {} } message: { Text(app.errorMessage ?? "") }
     }
 
     private var accountSummary: String {
