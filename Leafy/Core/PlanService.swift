@@ -660,9 +660,9 @@ actor PlanService {
         let _: EmptyResponse = try await request(function: "nutrition-chat", body: body, response: EmptyResponse.self)
     }
 
-    func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["apple_authorization_code": appleAuthorizationCode as Any].compactMapValues { $0 })
-        let _: EmptyResponse = try await request(function: "delete-account", body: body, response: EmptyResponse.self)
+    func deleteAccount(appleAuthorizationCode: String? = nil) async throws -> DeleteAccountResponse {
+        let body = try JSONSerialization.data(withJSONObject: AccountDeletion.requestPayload(appleAuthorizationCode: appleAuthorizationCode))
+        return try await request(function: "delete-account", body: body, response: DeleteAccountResponse.self)
     }
 
     private func request<T: Decodable>(function: String, body: Data, accessToken suppliedToken: String? = nil, response: T.Type) async throws -> T {

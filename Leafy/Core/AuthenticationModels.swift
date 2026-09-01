@@ -37,6 +37,10 @@ struct LeafyAccount: Equatable, Sendable {
     let email: String?
     let emailConfirmed: Bool
     let identities: [AccountIdentity]
+
+    var hasAppleIdentity: Bool {
+        identities.contains { $0.provider.caseInsensitiveCompare("apple") == .orderedSame }
+    }
 }
 
 enum AccountLegalDocument {

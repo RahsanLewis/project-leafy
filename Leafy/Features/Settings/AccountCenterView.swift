@@ -87,6 +87,15 @@ struct AccountCenterView: View {
                 }
             }
         }
+        .overlay {
+            if app.saveState == .deleting {
+                ProgressView("Deleting account…").padding().background(.regularMaterial, in: .rect(cornerRadius: LeafyRadius.control))
+            }
+        }
+        .alert("Something went wrong", isPresented: Binding(
+            get: { app.errorMessage != nil },
+            set: { if !$0 { app.errorMessage = nil } }
+        )) { Button("OK") {} } message: { Text(app.errorMessage ?? "") }
     }
 
     private var accountSummary: String {
@@ -104,8 +113,14 @@ struct AccountCenterView: View {
 
     private func confirmationMessage(for confirmation: Confirmation) -> String {
         switch confirmation {
-        case .signOutAll: "Every device using this account will need to sign in again."
-        case .delete: "This permanently removes your profile, plans, food logs, weight history, and product contributions."
+        case .signOutAll:
+            return "Every device using this account will need to sign in again."
+        case .delete:
+            var message = "This permanently removes your profile, plans, food logs, weight history, and product contributions."
+            if app.account?.hasAppleIdentity == true {
+                message += " Next, confirm with Sign in with Apple."
+            }
+            return message
         }
     }
 
