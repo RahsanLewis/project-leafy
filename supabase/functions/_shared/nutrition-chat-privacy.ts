@@ -13,9 +13,25 @@
  *
  * Catalog candidates are public USDA/Leafy records matched to the user's
  * question and are not private health fields.
+ *
+ * Router outcome never relaxes this invariant. Paid answer turns after a
+ * successful router, a failed router, an unverified fallback, or a local
+ * urgent heuristic all use the same tool policy: private context attached
+ * ⇒ no unconstrained web_search and no tool_choice required.
  */
 
 export type NutritionChatWebSearchTool = { type: "web_search" };
+
+/**
+ * How the pre-answer scope label was produced. Values align with Ask Leafy
+ * safety routing (`router` / `unverified` / `heuristic`) plus `failed` for
+ * the current fail-open catch. This label must not enable web_search.
+ */
+export type NutritionChatRouterPath =
+  | "router"
+  | "failed"
+  | "unverified"
+  | "heuristic";
 
 export type NutritionChatModelTurn = {
   includePrivateContext: boolean;
@@ -150,7 +166,12 @@ export function nutritionChatPrivateContextBlock(
 
 export function nutritionChatModelTurn(
   context: unknown,
+  routerPath: NutritionChatRouterPath = "router",
 ): NutritionChatModelTurn {
+  // routerPath is accepted on every paid answer path so callers cannot
+  // accidentally keep a separate "router failed → required web_search" body.
+  // It is intentionally unused for tool selection.
+  void routerPath;
   const attached = sanitizePrivateContext(context);
   const includePrivateContext = Object.keys(attached).length > 0;
   const groundingInstructions = nutritionChatGroundingInstructions(
@@ -232,6 +253,31 @@ export function applyNutritionChatTools(
     tool_choice: next.tool_choice,
   });
   return next;
+}
+
+export const NUTRITION_CHAT_ROUTER_PATHS = [
+  "router",
+  "failed",
+  "unverified",
+  "heuristic",
+] as const satisfies readonly NutritionChatRouterPath[];
+
+/**
+ * Single paid-answer entry point. Router failure / unverified / heuristic
+ * still attach private context when present, and therefore still omit
+ * unconstrained web_search.
+ */
+export function nutritionChatAnswerTurn(
+  context: unknown,
+  routerPath: NutritionChatRouterPath,
+): NutritionChatModelTurn {
+  const turn = nutritionChatModelTurn(context, routerPath);
+  assertPrivateContextToolInvariant({
+    includePrivateContext: turn.includePrivateContext,
+    tools: turn.tools,
+    tool_choice: turn.tool_choice,
+  });
+  return turn;
 }
 
 export function assertPromptAndToolsInvariant(input: {

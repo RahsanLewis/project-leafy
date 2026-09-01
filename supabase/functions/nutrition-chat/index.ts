@@ -15,7 +15,7 @@ import {
 import {
   applyNutritionChatTools,
   assertPromptAndToolsInvariant,
-  nutritionChatModelTurn,
+  nutritionChatAnswerTurn,
 } from "../_shared/nutrition-chat-privacy.ts";
 
 type Body = {
@@ -178,9 +178,11 @@ Deno.serve(async (request) => {
         assistant_message: decorated[1],
       });
     }
+    // Paid answer path, including when the scope router failed open to health.
+    // Tool policy is decided only by private context, never by router success.
     const context = await personalContext(admin, user.id, body.local_date);
     const foods = await catalogMatches(admin, message);
-    const turn = nutritionChatModelTurn(context);
+    const turn = nutritionChatAnswerTurn(context, routing.source);
     const prompt = systemPrompt(foods, routing.scope, turn, context.day);
     const model = Deno.env.get("OPENAI_CHAT_MODEL") ?? "gpt-5.6-sol";
     const responseBody = applyNutritionChatTools({
@@ -448,7 +450,7 @@ async function catalogMatches(admin: any, query: string) {
 function systemPrompt(
   foods: unknown[],
   routedScope: ChatScope,
-  turn: ReturnType<typeof nutritionChatModelTurn>,
+  turn: ReturnType<typeof nutritionChatAnswerTurn>,
   localDate?: string,
 ) {
   const dateLine = /^\d{4}-\d{2}-\d{2}$/.test(localDate ?? "")
@@ -556,6 +558,7 @@ async function routeScope(
     const parsed = JSON.parse(outputText(payload));
     return {
       scope: normalizeScope(parsed.scope),
+      source: "router" as const,
       model,
       inputTokens: payload.usage?.input_tokens ?? null,
       outputTokens: payload.usage?.output_tokens ?? null,
@@ -565,6 +568,7 @@ async function routeScope(
     console.warn("Ask Leafy scope router failed open", error);
     return {
       scope: "health" as ChatScope,
+      source: "failed" as const,
       model,
       inputTokens: null,
       outputTokens: null,
