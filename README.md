@@ -18,7 +18,7 @@ Leafy uses Plus Jakarta Sans under the SIL Open Font License. The bundled licens
 2. Debug builds use `Config/Staging.xcconfig`; Release and TestFlight builds use `Config/Production.xcconfig`. Keep their Supabase and Google OAuth clients isolated. Shared public URLs live in `Config/Base.xcconfig`. Never place a service-role key or OAuth client secret in the app.
 3. Link the Supabase staging project before local development, then run `supabase db push`. Deploy production changes deliberately by passing its project reference.
 4. Configure email/password, Apple, and Google providers separately in both Supabase environments. Enable Sign in with Apple for the app identifier in the Apple Developer portal.
-5. Deploy the Edge Functions in `supabase/functions`. For Apple revocation during deletion, configure `APPLE_CLIENT_ID` and a generated `APPLE_CLIENT_SECRET` as function secrets.
+5. Deploy the Edge Functions in `supabase/functions`. For Apple revocation during deletion, configure `APPLE_CLIENT_ID` and a generated `APPLE_CLIENT_SECRET` as function secrets. The delete-account contract is in `docs/account-deletion.md`.
 6. Configure `OPENAI_API_KEY` as a Supabase function secret for AI meal photo/text estimates and Ask Leafy. Set `OPENAI_MEAL_MODEL` and `OPENAI_CHAT_MODEL` to the approved model IDs. Keep all secrets server-side; never add them to an xcconfig or the iOS app.
 7. Select the Apple development team in Xcode, build, and run.
 

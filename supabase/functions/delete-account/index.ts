@@ -1,23 +1,79 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { cors, json } from '../_shared/http.ts'
+import {
+  DeleteAccountError,
+  NUTRITION_MEDIA_BUCKET,
+  deleteAuthenticatedAccount,
+  failureBody,
+  type AdminGateway,
+  type AppleConfig,
+  type AuthUserLike,
+  type DeleteAccountBody,
+  type StorageGateway,
+} from './account-deletion.ts'
 
-async function revokeApple(code: string) {
-  const clientID = Deno.env.get('APPLE_CLIENT_ID')
-  const clientSecret = Deno.env.get('APPLE_CLIENT_SECRET')
-  if (!clientID || !clientSecret) return false
-  const tokenBody = new URLSearchParams({ client_id: clientID, client_secret: clientSecret, code, grant_type: 'authorization_code' })
-  const tokenResponse = await fetch('https://appleid.apple.com/auth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: tokenBody })
-  if (!tokenResponse.ok) return false
-  const tokens = await tokenResponse.json()
-  const token = tokens.refresh_token ?? tokens.access_token
-  if (!token) return false
-  const revokeBody = new URLSearchParams({ client_id: clientID, client_secret: clientSecret, token, token_type_hint: tokens.refresh_token ? 'refresh_token' : 'access_token' })
-  const revokeResponse = await fetch('https://appleid.apple.com/auth/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: revokeBody })
-  return revokeResponse.ok
+const MISSING_TABLE = '42P01'
+
+function appleConfigFromEnv(env: Pick<typeof Deno.env, 'get'> = Deno.env): AppleConfig {
+  return {
+    clientID: env.get('APPLE_CLIENT_ID'),
+    clientSecret: env.get('APPLE_CLIENT_SECRET'),
+  }
+}
+
+function ignoreMissingTable(error: { code?: string } | null) {
+  return Boolean(error && error.code === MISSING_TABLE)
+}
+
+function createAdminGateway(admin: ReturnType<typeof createClient>): AdminGateway {
+  return {
+    async listNutritionMediaPaths(userId) {
+      // Include soft-deleted rows. Filtering deleted_at IS NULL orphans Storage objects (D-02).
+      const { data, error } = await admin.from('nutrition_media_assets')
+        .select('object_path')
+        .eq('user_id', userId)
+      if (error && !ignoreMissingTable(error)) throw error
+      return (data ?? []).map((row: { object_path?: string }) => String(row.object_path ?? '')).filter(Boolean)
+    },
+    async listProductLabelPaths(userId) {
+      const { data, error } = await admin.from('product_label_assets')
+        .select('object_path')
+        .eq('user_id', userId)
+      if (error && !ignoreMissingTable(error)) throw error
+      return (data ?? []).map((row: { object_path?: string }) => String(row.object_path ?? '')).filter(Boolean)
+    },
+    async deleteAuthUser(userId) {
+      const { error } = await admin.auth.admin.deleteUser(userId)
+      if (error) throw error
+    },
+  }
+}
+
+function createStorageGateway(admin: ReturnType<typeof createClient>): StorageGateway {
+  const bucket = admin.storage.from(NUTRITION_MEDIA_BUCKET)
+  return {
+    list(prefix, options) {
+      return bucket.list(prefix, options)
+    },
+    remove(paths) {
+      return bucket.remove(paths)
+    },
+  }
 }
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: cors })
+  if (request.method !== 'POST') {
+    return json({
+      ok: false,
+      error: 'Method not allowed',
+      error_code: 'method_not_allowed',
+      apple_revoked: false,
+      apple_revoke_error: null,
+      errors: ['Method not allowed'],
+    }, 405)
+  }
+
   try {
     const authorization = request.headers.get('Authorization') ?? ''
     const url = Deno.env.get('SUPABASE_URL')!
@@ -25,28 +81,36 @@ Deno.serve(async (request) => {
     const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!
     const authClient = createClient(url, publishable, { global: { headers: { Authorization: authorization } } })
     const { data: { user }, error: authError } = await authClient.auth.getUser()
-    if (authError || !user) return json({ error: 'Unauthorized' }, 401)
-    const body = await request.json().catch(() => ({}))
-    const appleRevoked = body.apple_authorization_code ? await revokeApple(body.apple_authorization_code) : false
-    const admin = createClient(url, secret)
-    const { data: mediaRows, error: mediaError } = await admin.from('nutrition_media_assets')
-      .select('object_path').eq('user_id', user.id).is('deleted_at', null)
-    if (mediaError && mediaError.code !== '42P01') throw mediaError
-    const { data: labelRows, error: labelError } = await admin.from('product_label_assets')
-      .select('object_path').eq('user_id', user.id)
-    if (labelError && labelError.code !== '42P01') throw labelError
-    const objectPaths = [
-      ...(mediaRows ?? []).map((row) => row.object_path),
-      ...(labelRows ?? []).map((row) => row.object_path),
-    ]
-    if (objectPaths.length) {
-      const { error: storageError } = await admin.storage.from('nutrition-media').remove(objectPaths)
-      if (storageError) throw storageError
+    if (authError || !user) {
+      return json({
+        ok: false,
+        error: 'Unauthorized',
+        error_code: 'unauthorized',
+        apple_revoked: false,
+        apple_revoke_error: null,
+        errors: ['Unauthorized'],
+      }, 401)
     }
-    const { error } = await admin.auth.admin.deleteUser(user.id)
-    if (error) throw error
-    return json({ ok: true, apple_revoked: appleRevoked })
+
+    const body = await request.json().catch(() => ({})) as DeleteAccountBody
+    const admin = createClient(url, secret)
+    const result = await deleteAuthenticatedAccount({
+      user: user as AuthUserLike,
+      body,
+      admin: createAdminGateway(admin),
+      storage: createStorageGateway(admin),
+      appleConfig: appleConfigFromEnv(),
+    })
+    return json(result)
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Unable to delete account' }, 400)
+    const status = error instanceof DeleteAccountError ? error.status : 400
+    return json(failureBody(error, {
+      ok: false,
+      error: 'Unable to delete account',
+      error_code: 'invalid_request',
+      apple_revoked: false,
+      apple_revoke_error: null,
+      errors: ['Unable to delete account'],
+    }), status)
   }
 })
