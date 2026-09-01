@@ -288,8 +288,14 @@ Deno.test("nutrition-chat wires the helper and does not hardcode required web_se
   assert(source.includes("applyNutritionChatTools"));
   assert(source.includes("assertPromptAndToolsInvariant"));
   assert(source.includes("nutritionChatAnswerTurn(context, routing.source)"));
-  assert(source.includes('source: "failed"'));
   assert(source.includes('source: "router"'));
+  assert(source.includes("fallback.source"));
+  assert(source.includes("unverified"));
+  assert(source.includes("heuristic"));
+  assertFalse(
+    source.includes('source: "failed"'),
+    "LEAFY-002 replaces fail-open `failed` with unverified/heuristic",
+  );
   assertFalse(/tool_choice:\s*"required"/.test(source));
   assertFalse(/tools:\s*\[\s*\{\s*type:\s*"web_search"\s*\}\s*\]/.test(source));
   assert(

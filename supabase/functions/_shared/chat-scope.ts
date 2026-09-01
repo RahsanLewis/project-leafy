@@ -1,5 +1,8 @@
 export type ChatScope = "health" | "mixed" | "off_topic" | "urgent_health";
 
+/** How the pre-answer scope label was produced. */
+export type ScopeRouterSource = "router" | "heuristic" | "unverified";
+
 export const offTopicRedirect =
   "I’m focused on nutrition and health, so I can’t help with that. I can help you plan what to eat or talk through a health question.";
 
@@ -40,8 +43,102 @@ export function countsTowardLimit(
   return scope !== "off_topic" || recentOffTopicAttempts >= graceAttempts;
 }
 
-export function normalizeScope(value: unknown): ChatScope {
-  return value === "mixed" || value === "off_topic" || value === "urgent_health"
+export function parseScope(value: unknown): ChatScope | null {
+  return value === "health" || value === "mixed" || value === "off_topic" ||
+      value === "urgent_health"
     ? value
-    : "health";
+    : null;
+}
+
+/**
+ * Default for an already-generated chat answer whose `scope` field is missing
+ * or unknown. Router output must use `parseScope` + `fallbackScope` instead —
+ * mapping unknown router labels to health would drop `urgent_health`.
+ */
+export function normalizeScope(value: unknown): ChatScope {
+  return parseScope(value) ?? "health";
+}
+
+/**
+ * Conservative local check used only when the LLM scope router is unavailable.
+ * Prefers false negatives on off-topic/mixed so wellness questions still reach
+ * the main model. Prefers catching obvious emergencies so `urgent_health` is
+ * not lost solely because the router HTTP call failed.
+ */
+const urgentHealthPatterns: RegExp[] = [
+  /\b(kill(?:ing)? myself|hurt myself|end my life|take my (?:own )?life|want to die|better off dead|don't want to live|do not want to live)\b/i,
+  /\b(suicide|suicidal|self[-\s]harm|self[-\s]injur(?:y|ies|ing)|overdose(?:d|s)?|overdosing)\b/i,
+  /\b(took (?:all |too many )?(?:my |the )?(?:pills|medication|meds|tablets))\b/i,
+  /\b(heart attack|cardiac arrest|can't breathe|cannot breathe|can’t breathe|difficulty breathing|trouble breathing|not breathing|choking)\b/i,
+  /\b(chest pain|crushing chest|tightness in (?:my )?chest|pressure in (?:my )?chest)\b/i,
+  /\b(anaphyla(?:xis|ctic)|severe allergic reaction|throat (?:is )?closing|swelling (?:of|in) (?:my )?throat)\b/i,
+  /\b(severe bleeding|bleeding (?:out|heavily)|won't stop bleeding|won’t stop bleeding)\b/i,
+  /\b(passed out|passing out|unconscious|lost consciousness|having a seizure|seizures?)\b/i,
+  /\b(call (?:911|999|112)|need (?:an )?ambulance|emergency room|go to (?:the )?er\b)\b/i,
+  /\b(stroke symptoms|signs of (?:a )?stroke|face drooping|can't (?:move|feel) (?:my )?(?:arm|face|leg))\b/i,
+];
+
+export function looksLikeUrgentHealth(
+  message: string,
+  history: Array<{ role: string; content: string }> = [],
+): boolean {
+  const recentUserText = history
+    .filter((row) => row.role === "user")
+    .slice(-2)
+    .map((row) => row.content)
+    .join("\n");
+  const haystack = `${recentUserText}\n${message}`;
+  return urgentHealthPatterns.some((pattern) => pattern.test(haystack));
+}
+
+/**
+ * Charter-aligned router-failure policy (verified against Ask Leafy UI):
+ * iOS surfaces `{ error }` and offers Retry, so a hard error is recoverable —
+ * but failing the whole turn would block ordinary wellness questions when the
+ * classifier is down. Product intent is to keep Ask Leafy available.
+ *
+ * Therefore: never fail open to a *trusted* `health` label. If a local
+ * urgent-keyword check matches, route `urgent_health` so the answering model
+ * is instructed to preserve it. Otherwise label `health` as `unverified` and
+ * force the answering model to re-classify, including `off_topic` and
+ * `urgent_health`. Off-topic is not decided locally (false-positive redirects
+ * would hide in-scope help).
+ */
+export function fallbackScope(
+  message: string,
+  history: Array<{ role: string; content: string }> = [],
+): { scope: ChatScope; source: Exclude<ScopeRouterSource, "router"> } {
+  if (looksLikeUrgentHealth(message, history)) {
+    return { scope: "urgent_health", source: "heuristic" };
+  }
+  return { scope: "health", source: "unverified" };
+}
+
+export function scopeRouterInstruction(
+  scope: ChatScope,
+  source: ScopeRouterSource,
+): string {
+  if (source === "heuristic") {
+    return "The LLM scope router was unavailable. A local urgent-keyword check classified the newest request as urgent_health. Preserve urgent_health. Clearly encourage appropriate urgent or emergency help and do not diagnose.";
+  }
+  if (source === "unverified") {
+    return "The LLM scope router was unavailable. There is no trusted scope label. You MUST classify the newest message yourself as health, mixed, off_topic, or urgent_health. Do not assume it is in-scope. Treat potentially urgent physical or mental-health situations as urgent_health. Answer in-scope wellness questions. If the request is off_topic, use the exact off-topic answer.";
+  }
+  return `The scope router classified the newest request as ${
+    JSON.stringify(scope)
+  }. Preserve urgent_health if routed that way. You may tighten health or mixed to off_topic, but never downgrade urgent_health.`;
+}
+
+/** Urgent always wins so a router outage cannot drop emergency handling. */
+export function effectiveChatScope(
+  routed: ChatScope,
+  response: ChatScope,
+  source: ScopeRouterSource,
+): ChatScope {
+  if (routed === "urgent_health" || response === "urgent_health") {
+    return "urgent_health";
+  }
+  if (response === "off_topic") return "off_topic";
+  if (source === "unverified") return response;
+  return routed;
 }

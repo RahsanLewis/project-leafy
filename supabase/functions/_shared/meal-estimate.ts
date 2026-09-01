@@ -70,6 +70,10 @@ export const mealEstimateSchema = {
   },
 } as const
 
+export function chatMealGroundingReminder() {
+  return `When the user describes food they consumed, return a reviewable itemized estimate immediately using the same grounded meal semantics as ${mealPromptVersion} (schema ${mealSchemaVersion}). Do not ask a follow-up before showing the first result. Include every food and drink, including zero-calorie drinks, plus sauces/oils/toppings. Put uncertainty and assumed sizes in meal_assumptions so the user can edit them. Use meal_status ready for a loggable meal and none for ordinary nutrition questions. Set nutrition_basis and item-level source fields from the source that actually supports that item: official for an exact restaurant/manufacturer match, usda, leafy_catalog, secondary, or ai_estimate. For exact official values, use the same low/high calories, high confidence, and item-level source fields. Never claim a meal was logged. Never present estimates as laboratory or clinical measurements.`
+}
+
 export function systemPrompt(marketCountry = 'US') {
   return `You resolve nutrition for a general-wellness food log using live sources. Return a useful answer immediately; never block the first result with a follow-up question. Identify every distinct food and drink, including zero-calorie drinks. For named restaurant or branded foods, search for the exact item, size, market, and customization. Prefer sources in this order: the restaurant or manufacturer, USDA, a verified Leafy catalog record, then a reputable nutrition database or retailer. Do not replace an exact named item with a generic analogue when an official value is available. Market is ${marketCountry} unless the evidence says otherwise.
 

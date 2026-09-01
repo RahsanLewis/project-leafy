@@ -1,17 +1,33 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { cors, json } from "../_shared/http.ts";
 import {
+  chatMealGroundingReminder,
   mealEstimateItemSchema,
+  mealPromptVersion,
+  mealSchemaVersion,
   normalizeMealOutput,
 } from "../_shared/meal-estimate.ts";
 import {
   type ChatScope,
+  type ScopeRouterSource,
   countsTowardLimit,
-  normalizeScope,
+  effectiveChatScope,
+  fallbackScope,
+  looksLikeUrgentHealth,
   offTopicRedirect,
+  parseScope,
   scopePrompt,
+  scopeRouterInstruction,
   scopeSchema,
 } from "../_shared/chat-scope.ts";
+import {
+  fetchOpenAIResponses,
+  openAIUsage,
+  openAIUserMessage,
+  openaiTimeoutMs,
+  parseOpenAIJSONOutput,
+  providerErrorMessage,
+} from "../_shared/openai.ts";
 import {
   applyNutritionChatTools,
   assertPromptAndToolsInvariant,
@@ -178,12 +194,19 @@ Deno.serve(async (request) => {
         assistant_message: decorated[1],
       });
     }
-    // Paid answer path, including when the scope router failed open to health.
-    // Tool policy is decided only by private context, never by router success.
+    // Paid answer path. Router, unverified, and heuristic all go through
+    // nutritionChatAnswerTurn so private context never pairs with required
+    // web_search. Tool policy is decided only by private context.
     const context = await personalContext(admin, user.id, body.local_date);
     const foods = await catalogMatches(admin, message);
     const turn = nutritionChatAnswerTurn(context, routing.source);
-    const prompt = systemPrompt(foods, routing.scope, turn, context.day);
+    const prompt = systemPrompt(
+      foods,
+      routing.scope,
+      routing.source,
+      turn,
+      context.day,
+    );
     const model = Deno.env.get("OPENAI_CHAT_MODEL") ?? "gpt-5.6-sol";
     const responseBody = applyNutritionChatTools({
       model,
@@ -214,39 +237,62 @@ Deno.serve(async (request) => {
       },
     }, turn);
     assertPromptAndToolsInvariant({ prompt, turn, body: responseBody });
-    let response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(responseBody),
-    });
-    let payload = await response.json();
     const requestedWebSearch = Boolean(turn.tools?.length);
-    let usedWebSearch = requestedWebSearch && response.ok;
-    if (!response.ok && requestedWebSearch) {
-      console.warn("Ask Leafy web search failed; returning an immediate model estimate", payload?.error?.message);
-      const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } = responseBody;
-      response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(fallbackBody),
-      });
-      payload = await response.json();
-      usedWebSearch = false;
-    }
-    if (!response.ok) {
-      throw new Error(
-        payload?.error?.message ?? "Ask Leafy could not answer right now.",
+    let usedWebSearch = false;
+    let payload: Record<string, unknown>;
+    try {
+      const first = await fetchOpenAIResponses(
+        key,
+        responseBody,
+        openaiTimeoutMs.chat,
       );
+      payload = first.payload;
+      usedWebSearch = requestedWebSearch && first.ok;
+      if (!first.ok && requestedWebSearch) {
+        console.warn(
+          "Ask Leafy web search failed; returning an immediate model estimate",
+          providerErrorMessage(first.payload),
+        );
+        const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } =
+          responseBody;
+        const fallback = await fetchOpenAIResponses(
+          key,
+          fallbackBody,
+          openaiTimeoutMs.chat,
+        );
+        payload = fallback.payload;
+        usedWebSearch = false;
+        if (!fallback.ok) {
+          console.warn(
+            "Ask Leafy answer request failed",
+            providerErrorMessage(fallback.payload),
+          );
+          throw new Error("Ask Leafy could not answer right now. Try again.");
+        }
+      } else if (!first.ok) {
+        console.warn(
+          "Ask Leafy answer request failed",
+          providerErrorMessage(first.payload),
+        );
+        throw new Error("Ask Leafy could not answer right now. Try again.");
+      }
+    } catch (error) {
+      throw new Error(openAIUserMessage(error, "chat"));
     }
-    const parsed = JSON.parse(outputText(payload));
-    const responseScope = normalizeScope(parsed.scope);
+    const parsed = parseOpenAIJSONOutput(
+      payload,
+      "Ask Leafy returned an empty response. Try again.",
+      "Ask Leafy returned an unreadable response. Try again.",
+    );
+    const parsedResponseScope = parseScope(parsed.scope);
+    const responseScope: ChatScope = parsedResponseScope ??
+      (looksLikeUrgentHealth(message, history) ? "urgent_health" : "health");
     const enforceRedirect = responseScope === "off_topic";
-    const effectiveScope: ChatScope = enforceRedirect
-      ? "off_topic"
-      : routing.scope;
+    const effectiveScope = effectiveChatScope(
+      routing.scope,
+      responseScope,
+      routing.source,
+    );
     if (enforceRedirect) {
       offTopicCount = await recentOffTopicCount(admin, user.id, since);
       shouldCount = countsTowardLimit("off_topic", offTopicCount);
@@ -320,10 +366,10 @@ Deno.serve(async (request) => {
         ? null
         : (parsed.suggested_log_description || null),
       model_id: model,
-      provider_response_id: payload.id ?? null,
+      provider_response_id: typeof payload.id === "string" ? payload.id : null,
       meal_estimate_session_id: mealSessionID,
-      input_tokens: payload.usage?.input_tokens ?? null,
-      output_tokens: payload.usage?.output_tokens ?? null,
+      input_tokens: openAIUsage(payload).inputTokens,
+      output_tokens: openAIUsage(payload).outputTokens,
       latency_ms: Date.now() - started,
     }).select(messageColumns).single();
     if (assistantRow.error) throw assistantRow.error;
@@ -346,9 +392,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error("nutrition-chat failed", error);
     return json({
-      error: error instanceof Error
-        ? error.message
-        : "Ask Leafy could not answer right now.",
+      error: openAIUserMessage(error, "chat"),
     }, 400);
   }
 });
@@ -450,6 +494,7 @@ async function catalogMatches(admin: any, query: string) {
 function systemPrompt(
   foods: unknown[],
   routedScope: ChatScope,
+  routerSource: ScopeRouterSource,
   turn: ReturnType<typeof nutritionChatAnswerTurn>,
   localDate?: string,
 ) {
@@ -464,9 +509,9 @@ Be practical, concise, nonjudgmental, and transparent about uncertainty. Never d
 
 ${turn.groundingInstructions}
 
-When the user describes food they consumed, return a reviewable itemized estimate immediately. Do not ask a follow-up before showing the first result. Include every food and drink, including zero-calorie drinks, plus sauces/oils/toppings. Put uncertainty and assumed sizes in meal_assumptions so the user can edit them. Use meal_status ready for a loggable meal and none for ordinary nutrition questions. For exact official values, use the same low/high calories, high confidence, and item-level source fields. Never claim a meal was logged. Return only the requested JSON.\nThe scope router classified the newest request as ${
-    JSON.stringify(routedScope)
-  }. Preserve urgent_health if routed that way. You may tighten health or mixed to off_topic, but never downgrade urgent_health.${dateLine}${turn.privateContextBlock}\nCATALOG CANDIDATES: ${JSON.stringify(foods)}`;
+${chatMealGroundingReminder()} Return only the requested JSON.\n${
+    scopeRouterInstruction(routedScope, routerSource)
+  }${dateLine}${turn.privateContextBlock}\nCATALOG CANDIDATES: ${JSON.stringify(foods)}`;
 }
 
 const chatSchema = {
@@ -523,52 +568,58 @@ async function routeScope(
   const model = Deno.env.get("OPENAI_SCOPE_MODEL") ?? "gpt-5.6-sol";
   const started = Date.now();
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        store: false,
-        reasoning: { effort: "low" },
-        safety_identifier: await safetyID(userID),
-        input: [{
-          role: "user",
-          content: [{
-            type: "input_text",
-            text: scopePrompt(history, message),
-          }],
+    const { ok, payload } = await fetchOpenAIResponses(key, {
+      model,
+      store: false,
+      reasoning: { effort: "low" },
+      safety_identifier: await safetyID(userID),
+      input: [{
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: scopePrompt(history, message),
         }],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "leafy_chat_scope",
-            strict: true,
-            schema: scopeSchema,
-          },
+      }],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "leafy_chat_scope",
+          strict: true,
+          schema: scopeSchema,
         },
-      }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload?.error?.message ?? "Scope routing failed.");
+      },
+    }, openaiTimeoutMs.scope);
+    if (!ok) {
+      throw new Error(providerErrorMessage(payload) ?? "Scope routing failed.");
     }
-    const parsed = JSON.parse(outputText(payload));
+    const parsed = parseOpenAIJSONOutput(
+      payload,
+      "Scope routing returned an empty response.",
+      "Scope routing returned an unreadable response.",
+    );
+    const scope = parseScope(parsed.scope);
+    if (!scope) {
+      throw new Error("Scope routing returned an unknown label.");
+    }
+    const usage = openAIUsage(payload);
     return {
-      scope: normalizeScope(parsed.scope),
+      scope,
       source: "router" as const,
       model,
-      inputTokens: payload.usage?.input_tokens ?? null,
-      outputTokens: payload.usage?.output_tokens ?? null,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
       latency: Date.now() - started,
     };
   } catch (error) {
-    console.warn("Ask Leafy scope router failed open", error);
+    const fallback = fallbackScope(message, history);
+    console.warn(
+      "Ask Leafy scope router failed; using local fallback",
+      fallback,
+      error,
+    );
     return {
-      scope: "health" as ChatScope,
-      source: "failed" as const,
+      scope: fallback.scope,
+      source: fallback.source,
       model,
       inputTokens: null,
       outputTokens: null,
@@ -638,8 +689,8 @@ async function persistMealSuggestion(
     time_zone: timeZone,
     provider: "openai",
     model_id: model,
-    prompt_version: "leafy-chat-meal-v1",
-    schema_version: 2,
+    prompt_version: mealPromptVersion,
+    schema_version: mealSchemaVersion,
     provider_response_id: payload.id ?? null,
     estimated_calories: estimate.total_calories,
     calorie_low: estimate.calorie_low,
@@ -809,15 +860,6 @@ async function loadMealSuggestion(
   };
 }
 
-// deno-lint-ignore no-explicit-any
-function outputText(payload: any) {
-  const text = payload.output_text ??
-    payload.output?.flatMap((item: any) => item.content ?? []).find((
-      item: any,
-    ) => item.type === "output_text")?.text;
-  if (!text) throw new Error("Ask Leafy returned an empty response.");
-  return text;
-}
 function allowedSources(
   keys: unknown,
   context: Record<string, unknown>,
