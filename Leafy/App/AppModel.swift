@@ -1300,7 +1300,9 @@ final class AppCoordinator {
             saveState = .deleting
             let response = try await deleteAccountOnServer(appleAuthorizationCode: authorizationCode)
 
+            GIDSignIn.sharedInstance.signOut()
             await cache.clear()
+            await pendingOnboardingCache.clear()
             let warnAboutApple = AccountDeletion.shouldWarnAboutFailedAppleRevoke(
                 hadAppleIdentity: hadAppleIdentity,
                 response: response
