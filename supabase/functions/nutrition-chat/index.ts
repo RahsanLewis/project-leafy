@@ -12,6 +12,11 @@ import {
   scopePrompt,
   scopeSchema,
 } from "../_shared/chat-scope.ts";
+import {
+  applyNutritionChatTools,
+  assertPromptAndToolsInvariant,
+  nutritionChatModelTurn,
+} from "../_shared/nutrition-chat-privacy.ts";
 
 type Body = {
   action: "send" | "list_threads" | "load_thread" | "delete_thread";
@@ -175,38 +180,38 @@ Deno.serve(async (request) => {
     }
     const context = await personalContext(admin, user.id, body.local_date);
     const foods = await catalogMatches(admin, message);
+    const turn = nutritionChatModelTurn(context);
+    const prompt = systemPrompt(foods, routing.scope, turn, context.day);
     const model = Deno.env.get("OPENAI_CHAT_MODEL") ?? "gpt-5.6-sol";
-    const responseBody = {
-        model,
-        store: false,
-        reasoning: { effort: "low" },
-        safety_identifier: await safetyID(user.id),
-        tools: [{ type: "web_search" }],
-        tool_choice: "required",
-        include: ["web_search_call.action.sources"],
-        input: [
-          {
-            role: "system",
-            content: [{
-              type: "input_text",
-              text: systemPrompt(context, foods, routing.scope),
-            }],
-          },
-          ...history.map((row) => ({
-            role: row.role,
-            content: [{ type: "input_text", text: row.content }],
-          })),
-          { role: "user", content: [{ type: "input_text", text: message }] },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "leafy_nutrition_chat",
-            strict: true,
-            schema: chatSchema,
-          },
+    const responseBody = applyNutritionChatTools({
+      model,
+      store: false,
+      reasoning: { effort: "low" },
+      safety_identifier: await safetyID(user.id),
+      input: [
+        {
+          role: "system",
+          content: [{
+            type: "input_text",
+            text: prompt,
+          }],
         },
-      };
+        ...history.map((row) => ({
+          role: row.role,
+          content: [{ type: "input_text", text: row.content }],
+        })),
+        { role: "user", content: [{ type: "input_text", text: message }] },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "leafy_nutrition_chat",
+          strict: true,
+          schema: chatSchema,
+        },
+      },
+    }, turn);
+    assertPromptAndToolsInvariant({ prompt, turn, body: responseBody });
     let response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -216,8 +221,9 @@ Deno.serve(async (request) => {
       body: JSON.stringify(responseBody),
     });
     let payload = await response.json();
-    let usedWebSearch = response.ok;
-    if (!response.ok) {
+    const requestedWebSearch = Boolean(turn.tools?.length);
+    let usedWebSearch = requestedWebSearch && response.ok;
+    if (!response.ok && requestedWebSearch) {
       console.warn("Ask Leafy web search failed; returning an immediate model estimate", payload?.error?.message);
       const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } = responseBody;
       response = await fetch("https://api.openai.com/v1/responses", {
@@ -244,8 +250,12 @@ Deno.serve(async (request) => {
       shouldCount = countsTowardLimit("off_topic", offTopicCount);
     }
     const sources = [
-      ...allowedSources(parsed.source_keys, context, foods),
-      ...webSources(payload),
+      ...allowedSources(
+        parsed.source_keys,
+        turn.attachedPrivateContext ?? {},
+        foods,
+      ),
+      ...(usedWebSearch ? webSources(payload) : []),
     ].filter((source, index, all) =>
       all.findIndex((candidate) =>
         candidate.kind === source.kind && candidate.label === source.label &&
@@ -401,6 +411,7 @@ async function personalContext(admin: any, userID: string, localDate?: string) {
     (sum: number, row: { calories: number }) => sum + row.calories,
     0,
   );
+  const names = (entries.data ?? []).map((x: { name: string }) => x.name);
   const list = weights.data ?? [];
   const trend = list.length > 1
     ? Number(list[0].weight_kg) - Number(list[list.length - 1].weight_kg)
@@ -410,7 +421,8 @@ async function personalContext(admin: any, userID: string, localDate?: string) {
     plan: plan.data,
     goal: profile.data,
     calories_eaten: eaten,
-    foods_logged: (entries.data ?? []).map((x: { name: string }) => x.name),
+    foods_logged: names,
+    foods_logged_count: names.length,
     latest_weight_kg: list[0]?.weight_kg ?? null,
     thirty_day_weight_change_kg: trend,
   };
@@ -434,23 +446,25 @@ async function catalogMatches(admin: any, query: string) {
 }
 
 function systemPrompt(
-  context: unknown,
   foods: unknown[],
   routedScope: ChatScope,
+  turn: ReturnType<typeof nutritionChatModelTurn>,
+  localDate?: string,
 ) {
+  const dateLine = /^\d{4}-\d{2}-\d{2}$/.test(localDate ?? "")
+    ? `\nLOCAL DATE: ${localDate}`
+    : "";
   return `You are Ask Leafy, an adult general-health and nutrition assistant. Your scope includes food, nutrition, calories, weight, exercise, sleep, stress, mental wellness, symptoms, supplements, hydration, medications, health data, and general wellness education. Do not answer unrelated requests such as coding, finance, travel, entertainment, general writing, news, or homework. For mixed requests, answer only the health-related portion and briefly state that you stay focused on nutrition and health. Set scope to health, mixed, off_topic, or urgent_health based on the newest message. Treat potentially urgent physical or mental-health situations, severe symptoms, immediate danger, or self-harm as urgent_health. If the request is off_topic, use this exact answer: ${
     JSON.stringify(offTopicRedirect)
   } and leave all meal/log fields empty.
 
 Be practical, concise, nonjudgmental, and transparent about uncertainty. Never diagnose, treat disease, change medication, promote eating-disorder behaviors, or give unsafe rapid-weight-loss guidance. For urgent_health, clearly encourage appropriate urgent or emergency help and do not diagnose. For pregnancy, breastfeeding, eating-disorder recovery, clinician-directed diets, severe symptoms, or medication interactions, provide only broad safety information and recommend an appropriate clinician. Use the private Leafy context only when relevant. Catalog candidates may be approximate. Format simple answers as concise prose. For answers with multiple recommendations, you may use short Markdown bullets and limited bold emphasis. Do not use headings, tables, links, or block quotes.
 
-Use live web sources for every in-scope answer. For named restaurant or branded foods, search the exact item, size, market, and customization and prefer official restaurant/manufacturer sources, then USDA, then a verified Leafy catalog record, then reputable databases or retailers. Do not substitute a generic analogue when exact official nutrition is available.
+${turn.groundingInstructions}
 
 When the user describes food they consumed, return a reviewable itemized estimate immediately. Do not ask a follow-up before showing the first result. Include every food and drink, including zero-calorie drinks, plus sauces/oils/toppings. Put uncertainty and assumed sizes in meal_assumptions so the user can edit them. Use meal_status ready for a loggable meal and none for ordinary nutrition questions. For exact official values, use the same low/high calories, high confidence, and item-level source fields. Never claim a meal was logged. Return only the requested JSON.\nThe scope router classified the newest request as ${
     JSON.stringify(routedScope)
-  }. Preserve urgent_health if routed that way. You may tighten health or mixed to off_topic, but never downgrade urgent_health.\nPRIVATE CONTEXT: ${
-    JSON.stringify(context)
-  }\nCATALOG CANDIDATES: ${JSON.stringify(foods)}`;
+  }. Preserve urgent_health if routed that way. You may tighten health or mixed to off_topic, but never downgrade urgent_health.${dateLine}${turn.privateContextBlock}\nCATALOG CANDIDATES: ${JSON.stringify(foods)}`;
 }
 
 const chatSchema = {
@@ -808,8 +822,12 @@ function allowedSources(
   const requested = Array.isArray(keys) ? keys : [];
   const all: Record<string, { kind: string; label: string; url: null } | null> = {
     plan: context.plan ? { kind: "plan", label: "Your Leafy plan", url: null } : null,
-    today: { kind: "log", label: "Today’s food log", url: null },
-    weight: context.latest_weight_kg
+    today: (Array.isArray(context.foods_logged) && context.foods_logged.length) ||
+        (typeof context.calories_eaten === "number" && context.calories_eaten > 0)
+      ? { kind: "log", label: "Today’s food log", url: null }
+      : null,
+    weight: context.latest_weight_kg != null ||
+        context.thirty_day_weight_change_kg != null
       ? { kind: "weight", label: "Your weight trend", url: null }
       : null,
     catalog: foods.length
