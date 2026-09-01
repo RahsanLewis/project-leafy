@@ -33,41 +33,46 @@ enabled = true
 client_id = "com.beyondsolid.projectleafy"
 secret = ""
 
+# JWT-only live functions: gateway verification is defense in depth. Each
+# function still independently calls auth.getUser() and never trusts caller IDs.
 [functions.save-nutrition-plan]
-verify_jwt = false
+verify_jwt = true
 
 [functions.delete-account]
-verify_jwt = false
-
-[functions.manage-data-contribution]
-verify_jwt = false
+verify_jwt = true
 
 [functions.discover-food-product]
-verify_jwt = false
+verify_jwt = true
 
+[functions.estimate-meal]
+verify_jwt = true
+
+[functions.nutrition-chat]
+verify_jwt = true
+
+[functions.daily-nutrition]
+verify_jwt = true
+
+[functions.manage-food-entry]
+verify_jwt = true
+
+[functions.manage-legal-acceptance]
+verify_jwt = true
+
+# Intentional verify_jwt = false exceptions (documented in docs/catalog-contribution-security.md):
+# CATALOG_REVIEW_KEY without a user JWT (CLI / internal admin_retry).
 [functions.manage-catalog-contribution]
 verify_jwt = false
 
 [functions.review-catalog-contribution]
 verify_jwt = false
 
-[functions.estimate-meal]
+# Retired tombstones must return 410 to older clients that may not send a user JWT.
+[functions.manage-data-contribution]
 verify_jwt = false
 
 [functions.transcribe-meal-audio]
 verify_jwt = false
 
-[functions.nutrition-chat]
-verify_jwt = false
-
-[functions.daily-nutrition]
-verify_jwt = false
-
-[functions.manage-food-entry]
-verify_jwt = false
-
 [functions.weight-fluctuation-context]
-verify_jwt = false
-
-[functions.manage-legal-acceptance]
 verify_jwt = false

@@ -1,8 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { cors, json } from "../_shared/http.ts";
-import { calculateAndPersistPFQS } from "../_shared/pfqs/persistence.ts";
-import { normalizePFQSJurisdiction } from "../_shared/pfqs/scorer.ts";
-import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
+import {
+  configuredCatalogReviewKey,
+  userContributionQueueStatus,
+} from "../_shared/catalog-admin.ts";
 import { nutrientCodes, nutrientUnits } from "../_shared/nutrients.ts";
 import { applyNutritionFootnoteDeclarations } from "../_shared/package-label.ts";
 
@@ -231,8 +232,13 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({})) as Body;
     const action = body.action ?? "list";
     if (action === "admin_retry") {
-      const internalKey = Deno.env.get("CATALOG_REVIEW_KEY") ?? secret;
-      if (request.headers.get("x-leafy-admin-key") !== internalKey) {
+      const internalKey = configuredCatalogReviewKey(
+        Deno.env.get("CATALOG_REVIEW_KEY"),
+      );
+      if (
+        !internalKey ||
+        request.headers.get("x-leafy-admin-key") !== internalKey
+      ) {
         return json({ error: "Unauthorized" }, 401);
       }
       if (!body.contribution_id) {
@@ -755,27 +761,12 @@ async function runAutomation(
     }
 
     const fields = merged.fields;
-    const nutrients = merged.nutrients;
 
     const verifying = await admin.from("catalog_contribution_jobs").update({
       status: "verifying",
       updated_at: new Date().toISOString(),
     }).eq("contribution_id", contributionID);
     if (verifying.error) throw verifying.error;
-    const identityAgreement = verification.result.exact_gtin_match === true &&
-      verification.result.conflict_fields.length === 0 &&
-      namesAgree(
-        String(fields.product_name),
-        verification.result.product_name,
-      ) &&
-      (Boolean(fields.brand_not_shown) ||
-        namesAgree(String(fields.brand_name), verification.result.brand_name));
-    const trustedSource = ["manufacturer", "usda", "retailer", "database"]
-      .includes(verification.result.source_quality);
-    // A clear, internally consistent package label is itself authoritative. Online
-    // identity lookup improves provenance, but its absence must not force a complete
-    // label into the manual queue.
-    const autoPublish = validation.auto_approve === true;
 
     // A private nutrient snapshot can be logged before the shared product is published.
     const job = await admin.from("catalog_contribution_jobs").select(
@@ -805,34 +796,10 @@ async function runAutomation(
       if (savedLog.error) throw savedLog.error;
     }
 
-    let foodVersionID: string | null = null;
-    let status = "pending_review";
-    let reason = verification.result.summary ||
-      "Leafy could not verify this package with enough confidence to publish it automatically.";
-    if (autoPublish) {
-      const publishing = await admin.from("catalog_contribution_jobs").update({
-        status: "publishing",
-        updated_at: new Date().toISOString(),
-      }).eq("contribution_id", contributionID);
-      if (publishing.error) throw publishing.error;
-      const existing = await activeProduct(
-        admin,
-        String(contribution.gtin),
-        String(contribution.market_country),
-      );
-      foodVersionID = existing?.id ?? await publish(
-        admin,
-        contribution,
-        fields,
-        nutrients,
-        identityAgreement && trustedSource &&
-          ["manufacturer", "usda"].includes(verification.result.source_quality)
-          ? "verified"
-          : "community_confirmed",
-      );
-      status = "accepted";
-      reason = "Package details verified and added to Leafy.";
-    }
+    const foodVersionID: string | null = null;
+    const status = "pending_review";
+    const reason = verification.result.summary ||
+      "Package details captured for catalog administrator review.";
     const now = new Date().toISOString();
     const update = await admin.from("catalog_contributions").update({
       status,
@@ -842,7 +809,7 @@ async function runAutomation(
       verification_results: verification.result,
       accepted_food_version_id: foodVersionID,
       last_submitted_at: now,
-      reviewed_at: status === "accepted" ? now : null,
+      reviewed_at: null,
       review_reason: reason,
       updated_at: now,
     }).eq("id", contributionID);
@@ -1116,20 +1083,6 @@ function normalizeSourceKind(value: string) {
     : "other";
 }
 
-function namesAgree(left: string, right: string) {
-  const tokens = (value: string) =>
-    new Set(
-      value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((
-        item,
-      ) => item.length > 1),
-    );
-  const a = tokens(left);
-  const b = tokens(right);
-  if (!a.size || !b.size) return false;
-  const intersection = [...a].filter((item) => b.has(item)).length;
-  return intersection / Math.min(a.size, b.size) >= 0.6;
-}
-
 async function finishJob(
   admin: any,
   contributionID: string,
@@ -1194,27 +1147,8 @@ async function submit(admin: any, contribution: Row, body: Body) {
     );
     if (inserted.error) throw inserted.error;
   }
-  let status = validation.missing_fields.length
-    ? "needs_review"
-    : validation.auto_approve
-    ? "accepted"
-    : "pending_review";
-  let foodVersionID: string | null = null;
-  if (status === "accepted") {
-    const existing = await activeProduct(
-      admin,
-      String(contribution.gtin),
-      String(contribution.market_country),
-    );
-    if (existing) foodVersionID = existing.id;
-    else {foodVersionID = await publish(
-        admin,
-        contribution,
-        fields,
-        nutrients,
-        "unverified",
-      );}
-  }
+  const status = userContributionQueueStatus(validation.missing_fields.length);
+  const foodVersionID: string | null = null;
   const now = new Date().toISOString();
   const update = await admin.from("catalog_contributions").update({
     status,
@@ -1225,7 +1159,7 @@ async function submit(admin: any, contribution: Row, body: Body) {
     accepted_food_version_id: foodVersionID,
     submitted_at: contribution.submitted_at ?? now,
     last_submitted_at: now,
-    reviewed_at: status === "accepted" ? now : null,
+    reviewed_at: null,
     review_reason: validation.reason,
     updated_at: now,
   }).eq("id", contribution.id).select("*").single();
@@ -1245,150 +1179,6 @@ async function submit(admin: any, contribution: Row, body: Body) {
     food_version_id: foodVersionID,
     validation_results: validation,
   };
-}
-
-async function publish(
-  admin: any,
-  contribution: Row,
-  fields: Row,
-  nutrients: NutrientInput[],
-  verification: string,
-) {
-  const targetID = contribution.target_food_version_id
-    ? String(contribution.target_food_version_id)
-    : null;
-  let foodID: string;
-  if (targetID) {
-    const target = await admin.from("food_versions").select("food_id").eq("id", targetID).is("superseded_at", null).single();
-    if (target.error) throw target.error;
-    foodID = String(target.data.food_id);
-  } else {
-    const canonical = await admin.from("foods").insert({
-      canonical_name: fields.product_name,
-    }).select("id").single();
-    if (canonical.error) throw canonical.error;
-    foodID = String(canonical.data.id);
-  }
-  const version = await admin.from("food_versions").insert({
-    food_id: foodID,
-    source_system: "leafy",
-    source_record_id: String(contribution.id),
-    source_data_type: "community_label",
-    description: fields.product_name,
-    brand_name: fields.brand_not_shown ? null : fields.brand_name,
-    gtin: contribution.gtin,
-    market_country: contribution.market_country,
-    ingredients_text: fields.ingredients,
-    allergens: fields.allergens ?? [],
-    serving_size: fields.serving_amount,
-    serving_unit: fields.serving_unit,
-    servings_per_container: fields.servings_per_container || null,
-    metric_serving_size: fields.metric_serving_amount,
-    metric_serving_unit: fields.metric_serving_unit || null,
-    package_claims: fields.claims ?? [],
-    label_sections: fields.label_sections ?? {},
-    verification_status: targetID ? "rejected" : verification,
-    raw_source: {
-      contribution_id: contribution.id,
-      revision: contribution.revision,
-      label_sections: fields.label_sections ?? {},
-    },
-  }).select("id").single();
-  if (version.error) throw version.error;
-  const servingWrite = await admin.from("food_version_serving_nutrients")
-    .insert(nutrients.map((item) => ({
-      food_version_id: version.data.id,
-      nutrient_code: item.code,
-      amount_per_serving: item.amount_per_serving,
-      unit: item.unit,
-      percent_daily_value: item.percent_daily_value ?? null,
-      declaration_type: item.declaration_type ?? "quantified",
-      printed_text: item.printed_text ?? null,
-      evidence_section: item.evidence_section ?? "nutrition_facts",
-    })));
-  if (servingWrite.error) throw servingWrite.error;
-  if (Number(fields.serving_grams) > 0) {
-    const per100 = nutrients.map((item) => ({
-      food_version_id: version.data.id,
-      nutrient_code: item.code,
-      amount_per_100g: Number(
-        (item.amount_per_serving * 100 / Number(fields.serving_grams)).toFixed(
-          6,
-        ),
-      ),
-      derivation_method: "label",
-    }));
-    const inserted = await admin.from("food_version_nutrients").insert(per100);
-    if (inserted.error) throw inserted.error;
-    const portion = await admin.from("food_portions").insert({
-      food_version_id: version.data.id,
-      amount: 1,
-      unit: "serving",
-      description: fields.serving_description,
-      gram_weight: fields.serving_grams,
-      source: "leafy_label",
-    });
-    if (portion.error) throw portion.error;
-  }
-  const pfqsNutrients = nutrients.filter((item) => isPFQSNutrient(item.code));
-  const labelWrite = await admin.from("pfqs_label_nutrients").upsert(
-    pfqsNutrients.map((item) => ({
-      food_version_id: version.data.id,
-      nutrient_code: item.code,
-      amount_per_serving: item.amount_per_serving,
-      unit: item.unit,
-      explicitly_reported: true,
-      source_method: "label",
-      source_version:
-        `leafy-contribution:${contribution.id}:${contribution.revision}`,
-      confidence: item.confidence ?? 1,
-    })),
-    { onConflict: "food_version_id,nutrient_code" },
-  );
-  if (labelWrite.error) throw labelWrite.error;
-  await calculateAndPersistPFQS(admin, version.data.id, {
-    product_name: String(fields.product_name),
-    jurisdiction: normalizePFQSJurisdiction(String(contribution.market_country ?? "US")),
-    assessment_date: new Date().toISOString().slice(0, 10),
-    serving_size: {
-      amount: Number(fields.serving_amount),
-      unit: String(fields.serving_unit),
-      description: String(fields.serving_description ?? ""),
-    },
-    nutrition: Object.fromEntries(
-      pfqsNutrients.map((item) => [item.code, item.amount_per_serving]),
-    ) as PFQSNutrients,
-    explicitly_reported_nutrients: pfqsNutrients.map((item) =>
-      item.code as PFQSNutrientCode
-    ),
-    nutrient_evidence: Object.fromEntries(pfqsNutrients.map((item) => [item.code, {
-      source: "label", confidence: Number(item.confidence ?? 1),
-    }])),
-    ingredients_raw: String(fields.ingredients ?? ""),
-    verification_status: verification,
-    product_type: "food",
-  });
-  if (targetID) {
-    const activated = await admin.rpc("activate_food_version_replacement", {
-      p_previous_id: targetID,
-      p_replacement_id: version.data.id,
-      p_verification_status: verification,
-    });
-    if (activated.error) throw activated.error;
-  }
-  return String(version.data.id);
-}
-
-function isPFQSNutrient(value: string): value is PFQSNutrientCode {
-  return [
-    "energy_kcal",
-    "added_sugars_g",
-    "fiber_g",
-    "sodium_mg",
-    "saturated_fat_g",
-    "trans_fat_g",
-    "protein_g",
-  ].includes(value);
 }
 
 async function logContribution(
@@ -1554,8 +1344,8 @@ function validate(fields: Row, nutrients: NutrientInput[], extracted: Row) {
     : !plausible
     ? "One or more nutrient values needs review."
     : confidence < 0.9
-    ? "Label extraction confidence is below the automatic-publish threshold."
-    : "Passed automatic label review.";
+    ? "Label extraction confidence is below the catalog-review threshold."
+    : "Passed automatic label quality checks. Awaiting catalog administrator acceptance.";
   return {
     missing_fields: missing,
     evidence_complete: evidenceComplete,

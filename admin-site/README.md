@@ -10,7 +10,7 @@ Configure these variables through the hosting platform, not in source control:
 - `SUPABASE_ANON_KEY`
 - `ADMIN_API_URL`
 
-The dashboard uses Google OAuth through Supabase. Access also requires an active `catalog_admin` membership, enforced by the `review-catalog-contribution` Edge Function.
+The dashboard uses Google OAuth through Supabase. Access requires an active `catalog_admin` row in `admin_memberships` (grant with `scripts/manage-admin-membership.ts`) or an explicitly configured `CATALOG_BOOTSTRAP_ADMIN_EMAILS` allowlist. The review function never upserts membership from a hardcoded email.
 
 ## Local development
 

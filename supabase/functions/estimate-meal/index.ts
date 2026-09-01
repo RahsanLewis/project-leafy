@@ -5,8 +5,7 @@ import {
   normalizeMealOutput, systemPrompt, userPrompt,
 } from '../_shared/meal-estimate.ts'
 import {
-  amountsPer100g, deterministicFoodKey,
-  nutritionFactsCore, resolverVersion, reusableEstimate,
+  resolverVersion, reusableEstimate,
 } from '../_shared/food-resolution.ts'
 import { nutrientCodes } from '../_shared/nutrients.ts'
 
@@ -447,16 +446,8 @@ async function attachResolvedFoodsAndPromote(admin: any, userID: string, session
   if (error) throw error
   for (const item of items ?? []) {
     let versionID = item.food_version_id ? String(item.food_version_id) : null
-    if (!versionID && item.resolution_source === 'ai' && item.catalog_eligible && item.review_outcome === 'accepted') {
-      const { data: nutrients, error: nutrientError } = await admin.from('ai_meal_item_nutrients')
-        .select('nutrient_code,predicted_amount,confidence').eq('ai_meal_item_id', item.id)
-      if (nutrientError) throw nutrientError
-      if (reusableEstimate(Number(item.confidence), Number(item.predicted_grams), (nutrients ?? []).map((value: Record<string, unknown>) => ({
-        code: String(value.nutrient_code), amount: Number(value.predicted_amount), confidence: Number(value.confidence),
-      })))) {
-        versionID = await promoteAIEstimate(admin, item, nutrients ?? [])
-      }
-    }
+    // Confirmed AI estimates stay on the private food log. Shared food_versions
+    // are created only by catalog_admin acceptance or trusted-source ingest.
     if (!versionID) {
       await admin.from('food_catalog_feedback').insert({
         user_id: userID, ai_meal_item_id: item.id,
@@ -488,56 +479,6 @@ async function attachResolvedFoodsAndPromote(admin: any, userID: string, session
       corrected_fields: item.review_outcome === 'accepted' ? {} : { name: true, portion: true, calories: true },
     })
   }
-}
-
-// deno-lint-ignore no-explicit-any
-async function promoteAIEstimate(admin: any, item: Record<string, any>, nutrients: Record<string, any>[]) {
-  const name = String(item.predicted_name).trim()
-  const kind = /sandwich|pizza|soup|salad|cooked|grilled|baked|fried|scrambled|roasted/i.test(name) ? 'prepared' : 'generic'
-  const sourceRecordID = await sha256(deterministicFoodKey(name, kind))
-  const existing = await admin.from('food_versions').select('id').eq('source_system', 'leafy')
-    .eq('source_record_id', sourceRecordID).is('superseded_at', null).maybeSingle()
-  if (existing.error) throw existing.error
-  if (existing.data) return String(existing.data.id)
-  const food = await admin.from('foods').insert({ canonical_name: name }).select('id').single()
-  if (food.error) throw food.error
-  const values = amountsPer100g(
-    nutrients.map((value) => ({ code: String(value.nutrient_code), amount: Number(value.predicted_amount) })),
-    Number(item.predicted_calories), Number(item.predicted_grams),
-  )
-  const complete = nutritionFactsCore.every((code) => values.some((value) => value.nutrient_code === code))
-  const version = await admin.from('food_versions').insert({
-    food_id: food.data.id, source_system: 'leafy', source_record_id: sourceRecordID,
-    source_data_type: 'ai_estimate', description: name, market_country: 'US',
-    verification_status: 'unverified', food_kind: kind,
-    resolution_confidence: Number(item.confidence), nutrition_core_complete: complete,
-    resolver_version: resolverVersion,
-    raw_source: { resolver_version: resolverVersion, source: 'confirmed_ai_estimate' },
-  }).select('id').single()
-  if (version.error) {
-    const raced = await admin.from('food_versions').select('id').eq('source_system', 'leafy')
-      .eq('source_record_id', sourceRecordID).is('superseded_at', null).single()
-    if (raced.error) throw version.error
-    return String(raced.data.id)
-  }
-  const nutrientWrite = await admin.from('food_version_nutrients').insert(values.map((value) => ({
-    food_version_id: version.data.id, ...value, derivation_method: 'estimated',
-  })))
-  if (nutrientWrite.error) throw nutrientWrite.error
-  const portionWrite = await admin.from('food_portions').insert({
-    food_version_id: version.data.id, amount: 1, unit: 'serving',
-    description: String(item.predicted_portion ?? 'Serving').slice(0, 240),
-    gram_weight: Number(item.predicted_grams), source: resolverVersion,
-  })
-  if (portionWrite.error) throw portionWrite.error
-  const aliasWrite = await admin.from('food_aliases').insert({ food_id: food.data.id, alias: name, source: 'leafy_ai' })
-  if (aliasWrite.error) throw aliasWrite.error
-  return String(version.data.id)
-}
-
-async function sha256(value: string) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function extractOutputText(payload: Record<string, unknown>) {

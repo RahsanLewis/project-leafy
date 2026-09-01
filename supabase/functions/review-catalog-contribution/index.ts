@@ -1,4 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  catalogReviewKeyAuthorizes,
+  configuredBootstrapAdminEmails,
+  configuredCatalogReviewKey,
+  emailMatchesBootstrapAllowlist,
+} from "../_shared/catalog-admin.ts";
 import { calculateAndPersistPFQS } from "../_shared/pfqs/persistence.ts";
 import { normalizePFQSJurisdiction } from "../_shared/pfqs/scorer.ts";
 import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
@@ -358,7 +364,6 @@ Deno.serve(async (request) => {
         contribution,
         reviewer,
         url,
-        secret,
       );
       return respond({ contribution: await withEvidence(admin, retried) }, 202);
     }
@@ -485,8 +490,15 @@ function corsHeaders(origin: string) {
 }
 
 async function authorize(request: Request, admin: any): Promise<Reviewer> {
-  const reviewKey = Deno.env.get("CATALOG_REVIEW_KEY");
-  if (reviewKey && request.headers.get("x-leafy-admin-key") === reviewKey) {
+  const reviewKey = configuredCatalogReviewKey(
+    Deno.env.get("CATALOG_REVIEW_KEY"),
+  );
+  if (
+    catalogReviewKeyAuthorizes(
+      request.headers.get("x-leafy-admin-key"),
+      reviewKey,
+    )
+  ) {
     return { kind: "key", user_id: null, email: "review-key" };
   }
   const token = request.headers.get("authorization")?.replace(
@@ -499,22 +511,18 @@ async function authorize(request: Request, admin: any): Promise<Reviewer> {
     throw new Error("Unauthorized");
   }
   const user = userResult.data.user;
-  const bootstrapEmails = new Set(
-    (Deno.env.get("CATALOG_BOOTSTRAP_ADMIN_EMAILS") ?? "rahsan@beyondsolid.dev")
-      .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean),
+  const bootstrapAuthorized = emailMatchesBootstrapAllowlist(
+    user.email,
+    configuredBootstrapAdminEmails(
+      Deno.env.get("CATALOG_BOOTSTRAP_ADMIN_EMAILS"),
+    ),
   );
-  if (user.email && bootstrapEmails.has(user.email.toLowerCase())) {
-    const bootstrap = await admin.from("admin_memberships").upsert({
-      user_id: user.id,
-      role: "catalog_admin",
-      active: true,
-    }, { onConflict: "user_id" });
-    if (bootstrap.error) throw bootstrap.error;
-  }
   const membership = await admin.from("admin_memberships").select("role,active")
     .eq("user_id", user.id).eq("role", "catalog_admin").eq("active", true)
     .maybeSingle();
-  if (membership.error || !membership.data) throw new Error("Unauthorized");
+  if ((membership.error || !membership.data) && !bootstrapAuthorized) {
+    throw new Error("Unauthorized");
+  }
   return { kind: "admin", user_id: user.id, email: user.email ?? "unknown" };
 }
 
@@ -718,7 +726,6 @@ async function retryRecognition(
   contribution: Row,
   reviewer: Reviewer,
   url: string,
-  secret: string,
 ) {
   const now = new Date().toISOString();
   const job = await admin.from("catalog_contribution_jobs").upsert({
@@ -748,7 +755,10 @@ async function retryRecognition(
     "Recognition retried by catalog review.",
     reviewer,
   );
-  const key = Deno.env.get("CATALOG_REVIEW_KEY") ?? secret;
+  const key = configuredCatalogReviewKey(Deno.env.get("CATALOG_REVIEW_KEY"));
+  if (!key) {
+    throw new Error("Catalog review key is not configured.");
+  }
   EdgeRuntime.waitUntil(
     fetch(`${url}/functions/v1/manage-catalog-contribution`, {
       method: "POST",

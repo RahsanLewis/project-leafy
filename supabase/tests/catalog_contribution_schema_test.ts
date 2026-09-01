@@ -23,11 +23,14 @@ Deno.test('product label images remain private user-owned evidence', () => {
   assertStringIncludes(functionSource, 'storage.from("nutrition-media")')
 })
 
-Deno.test('automatic publication requires evidence, nutrition completeness, and calorie consistency', () => {
+Deno.test('label quality checks stay recorded but never auto-publish shared catalog rows', () => {
   assertStringIncludes(functionSource, 'confidence >= 0.9')
   assertStringIncludes(functionSource, 'calorieDifference <= Math.max(20, calories * 0.15)')
   assertStringIncludes(functionSource, "evidence.front_legible === true")
-  assertStringIncludes(functionSource, 'let status = validation.missing_fields.length')
+  assertStringIncludes(functionSource, 'userContributionQueueStatus')
+  if (functionSource.includes('async function publish(')) {
+    throw new Error('User contribution function must not publish into food_versions.')
+  }
 })
 
 Deno.test('incomplete photo extraction requests focused retakes instead of a blank review form', () => {
@@ -51,6 +54,5 @@ Deno.test('two-photo automation uses durable jobs and source provenance', () => 
 Deno.test('online sources verify identity but package values remain authoritative', () => {
   assertStringIncludes(functionSource, 'The package label outranks online estimates')
   assertStringIncludes(functionSource, 'const fields = normalizeFields(body.confirmed_fields')
-  assertStringIncludes(functionSource, 'let status = "pending_review"')
-  assertStringIncludes(functionSource, ': "community_confirmed"')
+  assertStringIncludes(functionSource, 'const status = "pending_review"')
 })
