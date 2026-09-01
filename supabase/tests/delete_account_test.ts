@@ -384,7 +384,12 @@ Deno.test('D-03/D-06: user rows cascade from auth.users; published food_versions
   const discovery = await Deno.readTextFile(
     new URL('../migrations/202608060003_product_discovery.sql', import.meta.url),
   )
-  const functionSource = await Deno.readTextFile(
+  // Admin publish path (review-catalog-contribution) inserts catalog food_versions.
+  // User manage-catalog-contribution must not auto-publish (LEAFY-009 write lockdown).
+  const reviewSource = await Deno.readTextFile(
+    new URL('../functions/review-catalog-contribution/index.ts', import.meta.url),
+  )
+  const manageSource = await Deno.readTextFile(
     new URL('../functions/manage-catalog-contribution/index.ts', import.meta.url),
   )
   assertStringIncludes(media, 'user_id uuid not null default auth.uid() references auth.users(id) on delete cascade')
@@ -392,7 +397,9 @@ Deno.test('D-03/D-06: user rows cascade from auth.users; published food_versions
   assertStringIncludes(discovery, 'user_id uuid not null default auth.uid() references auth.users(id) on delete cascade')
   assertStringIncludes(discovery, 'create table public.catalog_contributions')
   assertStringIncludes(discovery, 'accepted_food_version_id uuid references public.food_versions(id)')
-  assertStringIncludes(functionSource, 'source_system: "leafy"')
+  assertStringIncludes(reviewSource, 'from("food_versions").insert({')
+  assertStringIncludes(reviewSource, 'source_system: "leafy"')
+  assertStringIncludes(manageSource, 'source: "leafy_contribution"')
   const foodVersionsStart = media.indexOf('create table public.food_versions')
   const foodVersionsEnd = media.indexOf('create table public.', foodVersionsStart + 1)
   const foodVersionsTable = media.slice(foodVersionsStart, foodVersionsEnd)
