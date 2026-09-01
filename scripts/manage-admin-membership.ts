@@ -1,6 +1,8 @@
 #!/usr/bin/env -S deno run --allow-env --allow-net
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
+// Out-of-band catalog_admin grants. Do not bootstrap membership from JWT email.
+
 const [action, email] = Deno.args
 if (!['grant', 'revoke', 'list'].includes(action ?? '')) {
   console.error('Usage: manage-admin-membership.ts grant|revoke|list [email]')
