@@ -49,7 +49,9 @@ export function calculate(input: Input, now = new Date()) {
   const minimumCarbohydrateCalories = calories * 0.45
   if (calories - proteinCalories - fatCalories < minimumCarbohydrateCalories) fatCalories = Math.max(calories * 0.20, calories - proteinCalories - minimumCarbohydrateCalories)
   const carbohydrateCalories = calories - proteinCalories - fatCalories
-  const weeklyChange = Math.abs(tdee - calories) * 7 / 7700
+  const weeklyChange = input.goal === 'maintain'
+    ? 0
+    : Math.abs(tdee - calories) * 7 / 7700
   let estimatedDate: string | null = null
   if (input.goal !== 'maintain' && weeklyChange > 0) {
     const days = Math.ceil(Math.abs(input.target_weight_kg! - input.current_weight_kg) / weeklyChange * 7)
