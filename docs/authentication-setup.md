@@ -28,5 +28,6 @@ Before distributing a build:
    - Generate a Release build and confirm `GIDClientID`, `GIDServerClientID`, and the Google URL scheme are populated before uploading to TestFlight.
 6. Keep email confirmation enabled. Set minimum password length to 8. Do not add composition rules.
 7. Deploy migration `202608080002_auth_foundation.sql` and the updated `save-nutrition-plan` and `delete-account` functions.
+8. For account deletion, keep `APPLE_CLIENT_ID` and `APPLE_CLIENT_SECRET` configured on the `delete-account` function. The iOS client must send `apple_authorization_code` when the user has a Sign in with Apple identity. See `docs/account-deletion.md` for the request/response contract and when deletion proceeds vs fails.
 
 Never commit OAuth client secrets, the Supabase service role key, Resend API keys, or Apple private keys.
