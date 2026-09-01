@@ -1288,7 +1288,9 @@ final class AppCoordinator {
     func deleteAccount() async {
         await perform(.deleting) { try await service.deleteAccount() }
         guard errorMessage == nil else { return }
+        GIDSignIn.sharedInstance.signOut()
         await cache.clear()
+        await pendingOnboardingCache.clear()
         resetToOnboarding()
     }
 
