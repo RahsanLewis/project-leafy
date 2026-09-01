@@ -9,6 +9,8 @@ import {
   assertPrivateContextToolInvariant,
   assertPromptAndToolsInvariant,
   hasPrivateHealthFields,
+  NUTRITION_CHAT_ROUTER_PATHS,
+  nutritionChatAnswerTurn,
   nutritionChatGroundingInstructions,
   nutritionChatModelTurn,
   sanitizePrivateContext,
@@ -228,14 +230,66 @@ Deno.test("assembled prompt plus request body never mix PRIVATE CONTEXT with web
   }
 });
 
+Deno.test("private context + router failure/unverified/heuristic omits required web_search", () => {
+  const privateContext = {
+    plan: { calorie_target_kcal: 1800, protein_g: 140 },
+    goal: { goal: "lose", target_weight_kg: 70 },
+    latest_weight_kg: 82.4,
+    foods_logged: ["oatmeal"],
+    calories_eaten: 320,
+  };
+  const failurePaths = ["failed", "unverified", "heuristic"] as const;
+  for (const routerPath of failurePaths) {
+    const turn = nutritionChatAnswerTurn(privateContext, routerPath);
+    const body = applyNutritionChatTools({
+      model: "test",
+      tools: [{ type: "web_search" }],
+      tool_choice: "required",
+      include: ["web_search_call.action.sources"],
+    }, turn);
+    assertEquals(turn.includePrivateContext, true, routerPath);
+    assertEquals(turn.tools, undefined, routerPath);
+    assertEquals(turn.tool_choice, undefined, routerPath);
+    assertFalse("tools" in body, routerPath);
+    assertFalse("tool_choice" in body, routerPath);
+    assertFalse(JSON.stringify(body).includes("web_search"), routerPath);
+    assertFalse(body.tool_choice === "required", routerPath);
+    assert(turn.privateContextBlock.includes("PRIVATE CONTEXT:"), routerPath);
+    assertFalse(turn.groundingInstructions.includes("Use live web sources"), routerPath);
+  }
+});
+
+Deno.test("every router path keeps the private-context / web_search invariant", () => {
+  for (const routerPath of NUTRITION_CHAT_ROUTER_PATHS) {
+    for (const { name, context } of [...privateCases, ...emptyCases]) {
+      const turn = nutritionChatAnswerTurn(context, routerPath);
+      const prompt =
+        `You are Ask Leafy.\n${turn.groundingInstructions}${turn.privateContextBlock}\nCATALOG CANDIDATES: []`;
+      const body = applyNutritionChatTools({
+        model: "test",
+        tools: [{ type: "web_search" }],
+        tool_choice: "required",
+      }, turn);
+      assertPromptAndToolsInvariant({ prompt, turn, body });
+      if (turn.includePrivateContext) {
+        assertEquals(body.tools, undefined, `${routerPath} ${name}`);
+        assertEquals(body.tool_choice, undefined, `${routerPath} ${name}`);
+      }
+    }
+  }
+});
+
 Deno.test("nutrition-chat wires the helper and does not hardcode required web_search", async () => {
   const source = await Deno.readTextFile(
     new URL("../functions/nutrition-chat/index.ts", import.meta.url),
   );
   assert(source.includes('from "../_shared/nutrition-chat-privacy.ts"'));
-  assert(source.includes("nutritionChatModelTurn"));
+  assert(source.includes("nutritionChatAnswerTurn"));
   assert(source.includes("applyNutritionChatTools"));
   assert(source.includes("assertPromptAndToolsInvariant"));
+  assert(source.includes("nutritionChatAnswerTurn(context, routing.source)"));
+  assert(source.includes('source: "failed"'));
+  assert(source.includes('source: "router"'));
   assertFalse(/tool_choice:\s*"required"/.test(source));
   assertFalse(/tools:\s*\[\s*\{\s*type:\s*"web_search"\s*\}\s*\]/.test(source));
   assert(
