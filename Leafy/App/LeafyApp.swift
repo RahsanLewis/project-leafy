@@ -53,6 +53,14 @@ import SwiftUI
                 CoreDataUseAcknowledgmentView()
                     .environment(model)
             }
+            .alert("Account deleted", isPresented: Binding(
+                get: { model.accountDeletionNotice != nil },
+                set: { if !$0 { model.accountDeletionNotice = nil } }
+            )) {
+                Button("OK") { model.accountDeletionNotice = nil }
+            } message: {
+                Text(model.accountDeletionNotice ?? "")
+            }
             .onOpenURL { url in
                 if !GIDSignIn.sharedInstance.handle(url) {
                     Task { await model.handleIncomingURL(url) }

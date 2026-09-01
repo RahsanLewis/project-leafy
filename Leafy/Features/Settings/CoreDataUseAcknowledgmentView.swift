@@ -36,7 +36,7 @@ struct CoreDataUseAcknowledgmentView: View {
                     }
                         .font(LeafyTypography.headline)
 
-                    if let error = app.coreDataAcknowledgmentError {
+                    if let error = app.errorMessage ?? app.coreDataAcknowledgmentError {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .font(LeafyTypography.subheadline)
                             .foregroundStyle(.orange)
@@ -69,13 +69,18 @@ struct CoreDataUseAcknowledgmentView: View {
         .sheet(isPresented: $showDeleteConfirmation) {
             LeafyConfirmationSheet(
                 title: "Permanently delete your Leafy account?",
-                message: "This permanently removes your profile, plans, food logs, and weight history.",
+                message: coreDataDeletionMessage,
                 confirmTitle: "Delete account",
                 isDestructive: true,
                 confirmIdentifier: "confirmCoreDataAccountDeletionButton",
                 sheetIdentifier: "coreDataAccountDeletionConfirmationSheet"
             ) {
                 Task { await app.deleteAccount() }
+            }
+        }
+        .overlay {
+            if app.saveState == .deleting {
+                ProgressView("Deleting account…").padding().background(.regularMaterial, in: .rect(cornerRadius: LeafyRadius.control))
             }
         }
         .accessibilityIdentifier("coreDataUseAcknowledgment")
@@ -91,5 +96,13 @@ struct CoreDataUseAcknowledgmentView: View {
         if app.isCoreDataAcknowledgmentLoading { return "Saving…" }
         if app.coreDataAcknowledgmentError != nil { return "Try again" }
         return "Accept and continue"
+    }
+
+    private var coreDataDeletionMessage: String {
+        var message = "This permanently removes your profile, plans, food logs, and weight history."
+        if app.account?.hasAppleIdentity == true {
+            message += " Next, confirm with Sign in with Apple."
+        }
+        return message
     }
 }

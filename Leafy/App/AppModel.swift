@@ -61,6 +61,7 @@ final class AppCoordinator {
     var dailyErrorMessage: String?
     var errorMessage: String?
     var statusMessage: String?
+    var accountDeletionNotice: String?
     var saveState: SaveState = .idle
     var email = ""
     var password = ""
@@ -1286,10 +1287,62 @@ final class AppCoordinator {
     }
 
     func deleteAccount() async {
-        await perform(.deleting) { try await service.deleteAccount() }
-        guard errorMessage == nil else { return }
-        await cache.clear()
-        resetToOnboarding()
+        errorMessage = nil
+        accountDeletionNotice = nil
+        let hadAppleIdentity = account?.hasAppleIdentity == true
+
+        do {
+            var authorizationCode: String?
+            if hadAppleIdentity {
+                authorizationCode = try await AppleAuthorizationCodeRequest.authorizationCode()
+            }
+
+            saveState = .deleting
+            let response = try await deleteAccountOnServer(appleAuthorizationCode: authorizationCode)
+
+            await cache.clear()
+            let warnAboutApple = AccountDeletion.shouldWarnAboutFailedAppleRevoke(
+                hadAppleIdentity: hadAppleIdentity,
+                response: response
+            )
+            resetToOnboarding()
+            if warnAboutApple {
+                accountDeletionNotice = AccountDeletion.appleRevokeFailedNotice
+            }
+        } catch AppleAuthorizationCodeError.canceled {
+            saveState = .idle
+        } catch {
+            saveState = .idle
+            errorMessage = deleteAccountFailureMessage(for: error)
+        }
+        if saveState == .deleting { saveState = .idle }
+    }
+
+    private func deleteAccountOnServer(appleAuthorizationCode: String?) async throws -> DeleteAccountResponse {
+        do {
+            return try await service.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
+        } catch {
+            guard isAppleAuthorizationCodeRequired(error) else { throw error }
+            saveState = .idle
+            let retryCode = try await AppleAuthorizationCodeRequest.authorizationCode()
+            saveState = .deleting
+            return try await service.deleteAccount(appleAuthorizationCode: retryCode)
+        }
+    }
+
+    private func isAppleAuthorizationCodeRequired(_ error: Error) -> Bool {
+        (error as? PlanService.ServiceError)?.httpStatusCode == 409
+    }
+
+    private func deleteAccountFailureMessage(for error: Error) -> String {
+        let status = (error as? PlanService.ServiceError)?.httpStatusCode
+        let serverMessage: String
+        if let appleError = error as? AppleAuthorizationCodeError {
+            serverMessage = appleError.errorDescription ?? ""
+        } else {
+            serverMessage = userFacingMessage(for: error)
+        }
+        return AccountDeletion.notDeletedMessage(statusCode: status, serverMessage: serverMessage)
     }
 
     private func resetToOnboarding() {

@@ -105,7 +105,12 @@ struct AccountCenterView: View {
     private func confirmationMessage(for confirmation: Confirmation) -> String {
         switch confirmation {
         case .signOutAll: "Every device using this account will need to sign in again."
-        case .delete: "This permanently removes your profile, plans, food logs, weight history, and product contributions."
+        case .delete:
+            var message = "This permanently removes your profile, plans, food logs, weight history, and product contributions."
+            if app.account?.hasAppleIdentity == true {
+                message += " Next, confirm with Sign in with Apple."
+            }
+            return message
         }
     }
 
