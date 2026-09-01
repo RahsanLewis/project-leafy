@@ -142,3 +142,24 @@ export function effectiveChatScope(
   if (source === "unverified") return response;
   return routed;
 }
+
+/**
+ * Off-topic redirect and assistant persistence follow *effective* scope, not
+ * the answering model's raw label. If the router or heuristic already marked
+ * urgent_health, a mislabeled `off_topic` answer must not replace the visible
+ * reply with the canned redirect or store an assistant downgrade.
+ */
+export function resolveAssistantTurn(
+  effectiveScope: ChatScope,
+  responseScope: ChatScope,
+): { enforceRedirect: boolean; assistantScope: ChatScope } {
+  const enforceRedirect = effectiveScope === "off_topic";
+  return {
+    enforceRedirect,
+    assistantScope: effectiveScope === "urgent_health"
+      ? "urgent_health"
+      : enforceRedirect
+      ? "off_topic"
+      : responseScope,
+  };
+}

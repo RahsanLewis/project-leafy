@@ -16,6 +16,7 @@ import {
   looksLikeUrgentHealth,
   offTopicRedirect,
   parseScope,
+  resolveAssistantTurn,
   scopePrompt,
   scopeRouterInstruction,
   scopeSchema,
@@ -287,11 +288,14 @@ Deno.serve(async (request) => {
     const parsedResponseScope = parseScope(parsed.scope);
     const responseScope: ChatScope = parsedResponseScope ??
       (looksLikeUrgentHealth(message, history) ? "urgent_health" : "health");
-    const enforceRedirect = responseScope === "off_topic";
     const effectiveScope = effectiveChatScope(
       routing.scope,
       responseScope,
       routing.source,
+    );
+    const { enforceRedirect, assistantScope } = resolveAssistantTurn(
+      effectiveScope,
+      responseScope,
     );
     if (enforceRedirect) {
       offTopicCount = await recentOffTopicCount(admin, user.id, since);
@@ -360,7 +364,7 @@ Deno.serve(async (request) => {
         ? offTopicRedirect
         : String(parsed.answer).slice(0, 8000),
       sources: enforceRedirect ? [] : sources,
-      scope_classification: responseScope,
+      scope_classification: assistantScope,
       counts_toward_limit: false,
       suggested_log_description: enforceRedirect || mealSessionID
         ? null

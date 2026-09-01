@@ -7,6 +7,7 @@ import {
   normalizeScope,
   offTopicRedirect,
   parseScope,
+  resolveAssistantTurn,
   scopePrompt,
   scopeRouterInstruction,
 } from "../functions/_shared/chat-scope.ts";
@@ -200,3 +201,32 @@ Deno.test("effective scope never drops urgent_health and lets unverified answers
   assertEquals(effectiveChatScope("mixed", "health", "router"), "mixed");
   assertEquals(effectiveChatScope("health", "mixed", "unverified"), "mixed");
 });
+
+Deno.test("urgent effective scope blocks off-topic redirect even if the answer model mislabels", () => {
+  const answer = "Call emergency services. I can't help with coding.";
+  for (const source of ["router", "heuristic"] as const) {
+    const effective = effectiveChatScope("urgent_health", "off_topic", source);
+    const turn = resolveAssistantTurn(effective, "off_topic");
+    assertEquals(effective, "urgent_health");
+    assertEquals(turn.enforceRedirect, false);
+    assertEquals(turn.assistantScope, "urgent_health");
+    assertEquals(
+      turn.enforceRedirect ? offTopicRedirect : answer,
+      answer,
+    );
+  }
+
+  const elevated = effectiveChatScope("health", "urgent_health", "unverified");
+  const elevatedTurn = resolveAssistantTurn(elevated, "urgent_health");
+  assertEquals(elevated, "urgent_health");
+  assertEquals(elevatedTurn.enforceRedirect, false);
+  assertEquals(elevatedTurn.assistantScope, "urgent_health");
+
+  const genuine = resolveAssistantTurn(
+    effectiveChatScope("health", "off_topic", "unverified"),
+    "off_topic",
+  );
+  assertEquals(genuine.enforceRedirect, true);
+  assertEquals(genuine.assistantScope, "off_topic");
+});
+
