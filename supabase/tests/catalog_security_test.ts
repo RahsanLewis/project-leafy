@@ -105,6 +105,8 @@ Deno.test('F-05 gateway JWT stays off only for catalog review key and retired to
     'nutrition-chat',
     'daily-nutrition',
     'manage-food-entry',
+    'manage-weight-entry',
+    'manage-daily-checkin',
     'manage-legal-acceptance',
   ]) {
     const block = config.split(`[functions.${name}]`)[1]?.split('[functions.')[0] ?? ''
