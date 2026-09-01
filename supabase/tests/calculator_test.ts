@@ -1,4 +1,4 @@
-import { assertEquals, assert } from 'jsr:@std/assert@1'
+import { assertEquals, assert, assertAlmostEquals } from 'jsr:@std/assert@1'
 import { calculate } from '../functions/_shared/calculator.ts'
 
 Deno.test('male steady loss matches the Swift fixture', () => {
@@ -14,4 +14,14 @@ Deno.test('male steady loss matches the Swift fixture', () => {
   assertEquals(result.fat_g, 83)
   assertEquals(result.carbohydrate_g, 306)
   assert(result.estimated_goal_date)
+})
+
+Deno.test('maintain has no date and zero weekly change', () => {
+  const result = calculate({
+    birth_date: '1986-01-01', calculation_sex: 'female', height_cm: 165,
+    current_weight_kg: 65, activity_level: 'light',
+    goal: 'maintain', pace: 'steady', unit_system: 'imperial',
+  }, new Date('2026-07-29T12:00:00Z'))
+  assertAlmostEquals(result.projected_weekly_change_kg, 0, 0.0001)
+  assertEquals(result.estimated_goal_date, null)
 })
