@@ -1,5 +1,8 @@
 import { assert, assertEquals, assertThrows } from 'jsr:@std/assert'
-import { normalizeMealOutput, systemPrompt, userPrompt } from '../functions/_shared/meal-estimate.ts'
+import {
+  chatMealGroundingReminder, mealPromptVersion, mealSchemaVersion,
+  normalizeMealOutput, systemPrompt, userPrompt,
+} from '../functions/_shared/meal-estimate.ts'
 
 Deno.test('normalizes item calories and calculates totals from items', () => {
   const result = normalizeMealOutput({
@@ -65,4 +68,16 @@ Deno.test('grounded prompt is answer first and includes zero calorie drinks', ()
   assert(prompt.includes('never block the first result'))
   assert(prompt.includes('including zero-calorie drinks'))
   assert(prompt.includes('restaurant or manufacturer'))
+})
+
+Deno.test('chat meal grounding stays aligned with meal v3 versions and semantics', () => {
+  assertEquals(mealPromptVersion, 'leafy-meal-grounded-v3')
+  assertEquals(mealSchemaVersion, 3)
+  const reminder = chatMealGroundingReminder()
+  assert(reminder.includes(mealPromptVersion))
+  assert(reminder.includes('schema 3'))
+  assert(reminder.includes('including zero-calorie drinks'))
+  assert(reminder.includes('nutrition_basis'))
+  assert(reminder.includes('Never present estimates as laboratory'))
+  assert(reminder.includes('Do not ask a follow-up before showing the first result'))
 })

@@ -8,6 +8,10 @@ import {
   resolverVersion, reusableEstimate,
 } from '../_shared/food-resolution.ts'
 import { nutrientCodes } from '../_shared/nutrients.ts'
+import {
+  fetchOpenAIResponses, openAIUsage, openAIUserMessage, openaiTimeoutMs,
+  parseOpenAIJSONOutput, providerErrorMessage,
+} from '../_shared/openai.ts'
 
 type Body = {
   action: 'analyze' | 'answer' | 'confirm' | 'discard' | 'delete_entry'
@@ -135,9 +139,9 @@ Deno.serve(async (request) => {
     return json(result)
   } catch (error) {
     console.error('estimate-meal failed', error)
-    const message = error instanceof Error ? error.message : 'Unable to estimate that meal.'
-    const status = message === 'Unauthorized' ? 401 : 400
-    return json({ error: message }, status)
+    const mapped = openAIUserMessage(error, 'meal')
+    const status = mapped === 'Unauthorized' ? 401 : 400
+    return json({ error: mapped }, status)
   }
 })
 
@@ -202,26 +206,34 @@ async function runAnalysis(admin: any, userID: string, sessionInput: Record<stri
       ],
       text: { format: { type: 'json_schema', name: 'leafy_meal_estimate', strict: true, schema: mealEstimateSchema } },
     }
-  let response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  })
-  let payload = await response.json()
-  let usedWebSearch = response.ok
-  if (!response.ok) {
-    console.warn('Grounded meal resolution failed; falling back to an immediate estimate', payload?.error?.message)
-    const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } = requestBody
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(fallbackBody),
-    })
-    payload = await response.json()
-    usedWebSearch = false
+  let usedWebSearch = true
+  let payload: Record<string, unknown>
+  try {
+    const first = await fetchOpenAIResponses(key, requestBody, openaiTimeoutMs.meal)
+    payload = first.payload
+    usedWebSearch = first.ok
+    if (!first.ok) {
+      console.warn('Grounded meal resolution failed; falling back to an immediate estimate', providerErrorMessage(first.payload))
+      const { tools: _tools, tool_choice: _choice, include: _include, ...fallbackBody } = requestBody
+      const fallback = await fetchOpenAIResponses(key, fallbackBody, openaiTimeoutMs.meal)
+      payload = fallback.payload
+      usedWebSearch = false
+      if (!fallback.ok) {
+        console.warn('Meal estimate request failed', providerErrorMessage(fallback.payload))
+        throw new Error('Unable to estimate that meal. Try again.')
+      }
+    }
+  } catch (error) {
+    throw new Error(openAIUserMessage(error, 'meal'))
   }
-  if (!response.ok) throw new Error(payload?.error?.message ?? 'The AI service could not analyze this meal.')
-  const outputText = extractOutputText(payload)
-  const estimate = normalizeMealOutput(JSON.parse(outputText), true)
+  const parsed = parseOpenAIJSONOutput(
+    payload,
+    'Meal estimate returned an empty response. Try again.',
+    'Meal estimate returned an unreadable response. Try again.',
+  )
+  const estimate = normalizeMealOutput(parsed, true)
   const grounded = usedWebSearch ? estimate : downgradeUngroundedEstimate(estimate)
+  const usage = openAIUsage(payload)
   return persistEstimate(admin, session, {
     ...grounded,
     items: grounded.items.map((item) => ({
@@ -229,8 +241,8 @@ async function runAnalysis(admin: any, userID: string, sessionInput: Record<stri
       catalog_eligible: reusableEstimate(item.confidence, item.estimated_grams, item.nutrients),
     })),
   }, null, {
-    provider: 'openai', modelID: model, providerResponseID: payload.id ?? null,
-    inputTokens: payload.usage?.input_tokens ?? null, outputTokens: payload.usage?.output_tokens ?? null,
+    provider: 'openai', modelID: model, providerResponseID: typeof payload.id === 'string' ? payload.id : null,
+    inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
     latencyMS: Date.now() - started,
   })
 }
@@ -479,16 +491,6 @@ async function attachResolvedFoodsAndPromote(admin: any, userID: string, session
       corrected_fields: item.review_outcome === 'accepted' ? {} : { name: true, portion: true, calories: true },
     })
   }
-}
-
-function extractOutputText(payload: Record<string, unknown>) {
-  if (typeof payload.output_text === 'string') return payload.output_text
-  const output = Array.isArray(payload.output) ? payload.output : []
-  for (const item of output as Record<string, unknown>[]) {
-    const content = Array.isArray(item.content) ? item.content : []
-    for (const part of content as Record<string, unknown>[]) if (part.type === 'output_text' && typeof part.text === 'string') return part.text
-  }
-  throw new Error('The AI service returned no meal estimate.')
 }
 
 async function safetyID(userID: string) {
