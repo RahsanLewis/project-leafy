@@ -42,15 +42,17 @@ struct DashboardView: View {
         }) {
             LogFoodView(initialAIDescription: app.pendingMealDescription)
         }
-        .sheet(isPresented: $app.showProductScanner) {
+        .sheet(isPresented: $app.showProductScanner, onDismiss: {
+            app.productDiscoverySheetDidDismiss()
+        }) {
             NavigationStack {
                 ProductDiscoveryView(
                     intent: .analyze,
-                    onLogged: { app.showProductScanner = false }
+                    onLogged: { app.dismissProductDiscovery() }
                 )
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { app.showProductScanner = false }
+                        Button("Done") { app.dismissProductDiscovery() }
                     }
                 }
             }

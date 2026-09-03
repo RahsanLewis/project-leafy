@@ -1,6 +1,7 @@
 import Foundation
 import GoogleSignIn
 import Observation
+import os
 
 @MainActor @Observable
 final class AppCoordinator {
@@ -9,6 +10,7 @@ final class AppCoordinator {
     enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
     private enum MorningCheckInLoggingHandoff { case idle, awaitingLogger, logging }
     private enum ProductScannerCameraHandoff { case none, search, scan, cancel }
+    private static let scannerLog = Logger(subsystem: "Leafy", category: "scan-into-today")
 
     var route: Route = .launching
     var draft = OnboardingDraft()
@@ -55,6 +57,7 @@ final class AppCoordinator {
     var pendingProductBarcode: String?
     var pendingMealDescription = ""
     private var productScannerCameraHandoff: ProductScannerCameraHandoff = .none
+    private var pendingSearchAfterDiscoveryAppear = false
     private var mealEstimateSessionID: UUID?
     private var mealPhotoObjectPath: String?
     private var mealEstimateLogDate = Calendar.current.startOfDay(for: .now)
@@ -898,7 +901,9 @@ final class AppCoordinator {
     }
 
     func presentProductScanner() {
+        Self.scannerLog.debug("presentProductScanner: camera=true sheet=false focus=false")
         focusProductDiscoverySearch = false
+        pendingSearchAfterDiscoveryAppear = false
         pendingProductBarcode = nil
         productScannerCameraHandoff = .none
         showProductScanner = false
@@ -906,12 +911,15 @@ final class AppCoordinator {
     }
 
     func dismissProductScannerCameraForSearch() {
+        Self.scannerLog.debug("Search Instead: camera=false handoff=search sheet=\(self.showProductScanner, privacy: .public)")
         productScannerCameraHandoff = .search
         showProductScannerCamera = false
     }
 
     func cancelProductScanner() {
+        Self.scannerLog.debug("cancelProductScanner: camera=false sheet=false (no discovery)")
         productScannerCameraHandoff = .cancel
+        pendingSearchAfterDiscoveryAppear = false
         showProductScannerCamera = false
         showProductScanner = false
         focusProductDiscoverySearch = false
@@ -919,6 +927,7 @@ final class AppCoordinator {
     }
 
     func completeProductScannerScan(_ code: String) {
+        Self.scannerLog.debug("scan complete: camera=false handoff=scan")
         pendingProductBarcode = code
         productScannerCameraHandoff = .scan
         showProductScannerCamera = false
@@ -927,23 +936,57 @@ final class AppCoordinator {
     func productScannerCameraDidDismiss() {
         let handoff = productScannerCameraHandoff
         productScannerCameraHandoff = .none
+        Self.scannerLog.debug("camera onDismiss handoff=\(String(describing: handoff), privacy: .public) camera=\(self.showProductScannerCamera, privacy: .public) sheet=\(self.showProductScanner, privacy: .public)")
         switch handoff {
         case .search:
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !showProductScannerCamera else { return }
-                focusProductDiscoverySearch = true
+                await Task.yield()
+                guard !showProductScannerCamera else {
+                    Self.scannerLog.debug("search handoff aborted: camera still up")
+                    return
+                }
+                pendingSearchAfterDiscoveryAppear = true
                 showProductScanner = true
+                Self.scannerLog.debug("search handoff: sheet=true focus=false (search after appear)")
             }
         case .scan:
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !showProductScannerCamera else { return }
+                await Task.yield()
+                guard !showProductScannerCamera else {
+                    Self.scannerLog.debug("scan handoff aborted: camera still up")
+                    return
+                }
                 showProductScanner = true
+                Self.scannerLog.debug("scan handoff: sheet=true")
             }
         case .cancel, .none:
-            break
+            Self.scannerLog.debug("camera onDismiss: no discovery present")
         }
+    }
+
+    func productDiscoverySheetDidAppear() {
+        Self.scannerLog.debug("discovery onAppear sheet=\(self.showProductScanner, privacy: .public) pendingSearch=\(self.pendingSearchAfterDiscoveryAppear, privacy: .public)")
+        guard pendingSearchAfterDiscoveryAppear else { return }
+        pendingSearchAfterDiscoveryAppear = false
+        Task { @MainActor in
+            await Task.yield()
+            guard showProductScanner, !showProductScannerCamera else { return }
+            focusProductDiscoverySearch = true
+            Self.scannerLog.debug("discovery on-screen: focus=true")
+        }
+    }
+
+    func dismissProductDiscovery() {
+        Self.scannerLog.debug("dismissProductDiscovery: sheet=false")
+        showProductScanner = false
+        focusProductDiscoverySearch = false
+        pendingSearchAfterDiscoveryAppear = false
+    }
+
+    func productDiscoverySheetDidDismiss() {
+        Self.scannerLog.debug("discovery sheet onDismiss sheet=\(self.showProductScanner, privacy: .public) camera=\(self.showProductScannerCamera, privacy: .public) focus=\(self.focusProductDiscoverySearch, privacy: .public)")
+        pendingSearchAfterDiscoveryAppear = false
+        focusProductDiscoverySearch = false
     }
 
     func beginLoggingYesterdayFromMorningCheckIn() {
