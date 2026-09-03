@@ -173,6 +173,19 @@ actor PlanService {
     }
 
     func savePlan(_ input: NutritionPlanInput, accessToken: String? = nil, recordLegalAcceptance: Bool = false) async throws -> NutritionPlan {
+        let data = try Self.encodeSavePlanPayload(input, recordLegalAcceptance: recordLegalAcceptance)
+        return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
+    }
+
+    /// Builds the save-nutrition-plan body. Rejects a missing birth date before
+    /// JSON encode so Optional Codable cannot emit `birth_date: null`.
+    nonisolated static func encodeSavePlanPayload(
+        _ input: NutritionPlanInput,
+        recordLegalAcceptance: Bool = false
+    ) throws -> Data {
+        guard input.birthDate != nil else { throw PlanValidationError.invalidAge }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .formatted(dayFormatter)
         let inputData = try encoder.encode(input)
         var payload = (try JSONSerialization.jsonObject(with: inputData) as? [String: Any]) ?? [:]
         if recordLegalAcceptance {
@@ -187,8 +200,7 @@ actor PlanService {
                 ]
             ]
         }
-        let data = try JSONSerialization.data(withJSONObject: payload)
-        return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
+        return try JSONSerialization.data(withJSONObject: payload)
     }
 
     func coreDataUseStatus(version: Int) async throws -> CoreDataUseStatus {
@@ -219,7 +231,7 @@ actor PlanService {
         guard let plan = try decoder.decode([NutritionPlan].self, from: planData).first,
               let profile = try JSONDecoder().decode([ProfileDTO].self, from: profileData).first
         else { return nil }
-        return (plan, try profile.input())
+        return (plan, profile.input())
     }
 
     func fetchFoodEntries(on date: Date, calendar: Calendar = .current) async throws -> [FoodEntry] {
@@ -784,7 +796,7 @@ private struct ConsumptionNutrientEnvelope: Decodable {
     enum CodingKeys: String, CodingKey { case consumptionItemNutrients = "consumption_item_nutrients" }
 }
 private struct ProfileDTO: Decodable {
-    let birthDate: String
+    let birthDate: LocalDate
     let calculationSex: CalculationSex
     let heightCM: Double
     let currentWeightKG: Double
@@ -798,33 +810,11 @@ private struct ProfileDTO: Decodable {
         case currentWeightKG = "current_weight_kg", targetWeightKG = "target_weight_kg"
         case activityLevel = "activity_level", goal, pace, unitSystem = "unit_system"
     }
-    func input() throws -> NutritionPlanInput {
-        guard let date = PlanService.dayFormatter.date(from: birthDate) else {
-            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid birth date"))
-        }
-        return NutritionPlanInput(birthDate: date, calculationSex: calculationSex, heightCM: heightCM, currentWeightKG: currentWeightKG, targetWeightKG: targetWeightKG, activityLevel: activityLevel, goal: goal, pace: pace, unitSystem: unitSystem)
+    func input() -> NutritionPlanInput {
+        NutritionPlanInput(
+            birthDate: birthDate, calculationSex: calculationSex, heightCM: heightCM,
+            currentWeightKG: currentWeightKG, targetWeightKG: targetWeightKG,
+            activityLevel: activityLevel, goal: goal, pace: pace, unitSystem: unitSystem
+        )
     }
-}
-
-actor PlanCache {
-    struct State: Codable { let plan: NutritionPlan; let input: NutritionPlanInput }
-    private let url: URL
-    init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        url = base.appending(path: "leafy-current-plan.json")
-    }
-    func load() -> State? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(State.self, from: data)
-    }
-    func save(_ plan: NutritionPlan, input: NutritionPlanInput) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(State(plan: plan, input: input))
-        try data.write(to: url, options: [.atomic, .completeFileProtection])
-        var values = URLResourceValues(); values.isExcludedFromBackup = true
-        var mutableURL = url; try? mutableURL.setResourceValues(values)
-    }
-    func clear() { try? FileManager.default.removeItem(at: url) }
 }

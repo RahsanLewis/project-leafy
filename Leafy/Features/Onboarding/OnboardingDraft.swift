@@ -58,7 +58,11 @@ struct ImperialHeightSelection: Equatable, Sendable {
     var isPregnantOrBreastfeeding: Bool?
     var isInEatingDisorderRecovery: Bool?
     var followsClinicianDirectedDiet: Bool?
-    var birthDate = Calendar.current.date(byAdding: .year, value: -30, to: .now)!
+    var birthDate = LocalDate.yearsBeforeNow(30)
+    /// Fresh onboarding treats the DatePicker default as the starting selection.
+    /// Recovered pending state with no migrated/user YMD sets this to `false`
+    /// so Continue cannot bless `yearsBeforeNow(30)` as a real birthday.
+    var birthDateChosen = true
     var calculationSex: CalculationSex = .female
     var heightCM = 168.0
     var currentWeightKG = 70.0
@@ -106,10 +110,16 @@ struct ImperialHeightSelection: Equatable, Sendable {
 
     var input: NutritionPlanInput {
         NutritionPlanInput(
-            birthDate: birthDate, calculationSex: calculationSex,
+            birthDate: birthDateChosen ? birthDate : nil,
+            calculationSex: calculationSex,
             heightCM: heightCM, currentWeightKG: currentWeightKG,
             targetWeightKG: goal == .maintain ? nil : targetWeightKG,
             activityLevel: activityLevel, goal: goal, pace: pace, unitSystem: unitSystem
         )
+    }
+
+    func selectBirthDate(_ date: LocalDate) {
+        birthDate = date
+        birthDateChosen = true
     }
 }

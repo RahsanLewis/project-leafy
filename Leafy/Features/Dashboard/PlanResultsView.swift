@@ -143,7 +143,7 @@ struct PlanResultsView: View {
                         Text("Estimated goal")
                             .font(LeafyTypography.caption)
                             .foregroundStyle(.secondary)
-                        Text(date.formatted(date: .long, time: .omitted))
+                        Text(date.formatted(date: .long))
                             .font(LeafyTypography.headline)
                         Text("A projection, not a deadline.")
                             .font(LeafyTypography.caption)

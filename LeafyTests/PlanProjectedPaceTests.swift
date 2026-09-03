@@ -8,12 +8,6 @@ import XCTest
 /// the plan's own goal cannot be confirmed. Goal is never inferred from target
 /// presence or absence. Date uses the same `showsProjectedPace` gate as pace.
 final class PlanProjectedPaceTests: XCTestCase {
-    private var calendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar
-    }
-
     // MARK: - Required pace-gate cases
 
     func testSnapshotMaintainDraftMaintainOmitsPace() {
@@ -24,8 +18,8 @@ final class PlanProjectedPaceTests: XCTestCase {
         XCTAssertNil(plan.projectedPaceLabel(draftGoal: draft.goal, unitSystem: .metric))
     }
 
-    func testSnapshotMaintainDraftLoseOmitsPaceAndDate() {
-        let date = Date(timeIntervalSince1970: 1_800_000_000)
+    func testSnapshotMaintainDraftLoseOmitsPaceAndDate() throws {
+        let date = try LocalDate(year: 2027, month: 1, day: 15)
         let plan = makePlan(
             snapshotGoal: .maintain,
             targetWeightKG: nil,
@@ -101,15 +95,16 @@ final class PlanProjectedPaceTests: XCTestCase {
           "input": \(snapshotJSON(goal: "lose", target: 80))
         }
         """
-        let state = try planDecoder().decode(PlanCache.State.self, from: Data(cached.utf8))
+        struct Cached: Decodable { let plan: NutritionPlan; let input: NutritionPlanInput }
+        let state = try planDecoder().decode(Cached.self, from: Data(cached.utf8))
         XCTAssertNil(state.plan.inputSnapshot)
         XCTAssertEqual(state.input.goal, .lose)
         XCTAssertFalse(state.plan.showsProjectedPace(draftGoal: state.input.goal))
         XCTAssertNil(state.plan.displayedEstimatedGoalDate(draftGoal: state.input.goal))
     }
 
-    func testSnapshotLoseDraftGainOmitsPaceAndDate() {
-        let date = Date(timeIntervalSince1970: 1_800_000_000)
+    func testSnapshotLoseDraftGainOmitsPaceAndDate() throws {
+        let date = try LocalDate(year: 2027, month: 1, day: 15)
         let plan = makePlan(
             snapshotGoal: .lose,
             targetWeightKG: 80,
@@ -129,8 +124,8 @@ final class PlanProjectedPaceTests: XCTestCase {
         )
     }
 
-    func testSnapshotLoseDraftLoseShowsStoredPaceAndDate() {
-        let date = Date(timeIntervalSince1970: 1_800_000_000)
+    func testSnapshotLoseDraftLoseShowsStoredPaceAndDate() throws {
+        let date = try LocalDate(year: 2027, month: 1, day: 15)
         let plan = makePlan(
             snapshotGoal: .lose,
             targetWeightKG: 80,
@@ -222,7 +217,7 @@ final class PlanProjectedPaceTests: XCTestCase {
         unitSystem: UnitSystem = .metric
     ) -> NutritionPlanInput {
         NutritionPlanInput(
-            birthDate: calendar.date(from: DateComponents(year: 1996, month: 7, day: 1))!,
+            birthDate: try! LocalDate(year: 1996, month: 7, day: 1),
             calculationSex: .female,
             heightCM: 165,
             currentWeightKG: 65,
@@ -238,7 +233,7 @@ final class PlanProjectedPaceTests: XCTestCase {
         snapshotGoal: WeightGoal,
         targetWeightKG: Double?,
         weeklyChange: Double,
-        estimatedGoalDate: Date? = nil
+        estimatedGoalDate: LocalDate? = nil
     ) -> NutritionPlan {
         NutritionPlan(
             id: UUID(),
@@ -308,19 +303,7 @@ final class PlanProjectedPaceTests: XCTestCase {
 
     private func planDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let value = try decoder.singleValueContainer().decode(String.self)
-            if let date = PlanService.dayFormatter.date(from: value) { return date }
-            let iso = ISO8601DateFormatter()
-            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = iso.date(from: value) { return date }
-            iso.formatOptions = [.withInternetDateTime]
-            if let date = iso.date(from: value) { return date }
-            throw DecodingError.dataCorruptedError(
-                in: try decoder.singleValueContainer(),
-                debugDescription: "Invalid date: \(value)"
-            )
-        }
+        decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
 }
