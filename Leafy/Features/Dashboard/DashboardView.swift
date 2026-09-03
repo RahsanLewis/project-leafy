@@ -26,12 +26,6 @@ struct DashboardView: View {
             .tag(DashboardTab.ai)
 
             NavigationStack {
-                ProductDiscoveryView(intent: .analyze)
-            }
-            .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
-            .tag(DashboardTab.scan)
-
-            NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gearshape.fill") }
@@ -48,7 +42,22 @@ struct DashboardView: View {
         }) {
             LogFoodView(initialAIDescription: app.pendingMealDescription)
         }
+        .sheet(isPresented: $app.showProductScanner) {
+            NavigationStack {
+                ProductDiscoveryView(
+                    intent: .analyze,
+                    startsWithScanner: true,
+                    onScannerCancelled: { app.showProductScanner = false },
+                    onLogged: { app.showProductScanner = false }
+                )
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { app.showProductScanner = false }
+                    }
+                }
+            }
+        }
     }
 }
 
-private enum DashboardTab: Hashable { case today, progress, ai, scan, settings }
+private enum DashboardTab: Hashable { case today, progress, ai, settings }

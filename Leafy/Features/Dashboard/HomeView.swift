@@ -5,6 +5,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var editorEntry: FoodEntry?
     @State private var nutritionEntry: FoodEntry?
     @State private var dayValueOpacity = 1.0
@@ -74,18 +75,12 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
 
-                HStack {
-                    Spacer(minLength: 0)
-                    Button {
-                        app.presentMealLogger()
-                    } label: {
-                        Label("Log Food", systemImage: "plus")
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(spacing: LeafySpacing.small) { todayFoodActions }
+                    } else {
+                        HStack(spacing: LeafySpacing.small) { todayFoodActions }
                     }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .frame(maxWidth: 230)
-                    .clipShape(Capsule())
-                    .accessibilityIdentifier("logFoodButton")
-                    Spacer(minLength: 0)
                 }
                 .listRowInsets(.init(
                     top: LeafySpacing.large,
@@ -200,6 +195,24 @@ struct HomeView: View {
                 await app.loadMorningCheckIn(presentWhenNeeded: true)
             }
         }
+    }
+
+    @ViewBuilder private var todayFoodActions: some View {
+        Button {
+            app.presentMealLogger()
+        } label: {
+            Label("Log Food", systemImage: "plus")
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("logFoodButton")
+
+        Button {
+            app.presentProductScanner()
+        } label: {
+            Label("Scan Barcode", systemImage: "barcode.viewfinder")
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityIdentifier("analyzeBarcodeButton")
     }
 
     private func changeDay(by days: Int) {
