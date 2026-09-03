@@ -901,7 +901,7 @@ final class AppCoordinator {
     }
 
     func presentProductScanner() {
-        Self.scannerLog.debug("presentProductScanner: camera=true sheet=false focus=false")
+        print("[scan-into-today] presentProductScanner: camera=true sheet=false focus=false")
         focusProductDiscoverySearch = false
         pendingSearchAfterDiscoveryAppear = false
         pendingProductBarcode = nil
@@ -911,13 +911,13 @@ final class AppCoordinator {
     }
 
     func dismissProductScannerCameraForSearch() {
-        Self.scannerLog.debug("Search Instead: camera=false handoff=search sheet=\(self.showProductScanner, privacy: .public)")
+        print("[scan-into-today] Search Instead: camera=false handoff=search sheet=\(self.showProductScanner)")
         productScannerCameraHandoff = .search
         showProductScannerCamera = false
     }
 
     func cancelProductScanner() {
-        Self.scannerLog.debug("cancelProductScanner: camera=false sheet=false (no discovery)")
+        print("[scan-into-today] cancelProductScanner: camera=false sheet=false (no discovery)")
         productScannerCameraHandoff = .cancel
         pendingSearchAfterDiscoveryAppear = false
         showProductScannerCamera = false
@@ -927,7 +927,7 @@ final class AppCoordinator {
     }
 
     func completeProductScannerScan(_ code: String) {
-        Self.scannerLog.debug("scan complete: camera=false handoff=scan")
+        print("[scan-into-today] scan complete: camera=false handoff=scan")
         pendingProductBarcode = code
         productScannerCameraHandoff = .scan
         showProductScannerCamera = false
@@ -936,7 +936,7 @@ final class AppCoordinator {
     func productScannerCameraDidDismiss() {
         let handoff = productScannerCameraHandoff
         productScannerCameraHandoff = .none
-        Self.scannerLog.debug("camera onDismiss handoff=\(String(describing: handoff), privacy: .public) camera=\(self.showProductScannerCamera, privacy: .public) sheet=\(self.showProductScanner, privacy: .public)")
+        print("[scan-into-today] camera onDismiss handoff=\(String(describing: handoff)) camera=\(self.showProductScannerCamera) sheet=\(self.showProductScanner)")
         switch handoff {
         case .search, .scan:
             DispatchQueue.main.async { [weak self] in
@@ -946,24 +946,24 @@ final class AppCoordinator {
                 }
             }
         case .cancel, .none:
-            Self.scannerLog.debug("camera onDismiss: no discovery present")
+            print("[scan-into-today] camera onDismiss: no discovery present")
         }
     }
 
     private func presentDiscoveryAfterCamera(handoff: ProductScannerCameraHandoff) {
         guard !showProductScannerCamera else {
-            Self.scannerLog.debug("handoff aborted: camera still up")
+            print("[scan-into-today] handoff aborted: camera still up")
             return
         }
         if handoff == .search {
             pendingSearchAfterDiscoveryAppear = true
         }
         showProductScanner = true
-        Self.scannerLog.debug("handoff \(String(describing: handoff), privacy: .public): sheet=true focus=false")
+        print("[scan-into-today] handoff \(String(describing: handoff)): sheet=true focus=false")
     }
 
     func productDiscoverySheetDidAppear() {
-        Self.scannerLog.debug("discovery onAppear sheet=\(self.showProductScanner, privacy: .public) pendingSearch=\(self.pendingSearchAfterDiscoveryAppear, privacy: .public)")
+        print("[scan-into-today] discovery onAppear sheet=\(self.showProductScanner) pendingSearch=\(self.pendingSearchAfterDiscoveryAppear)")
         guard pendingSearchAfterDiscoveryAppear else { return }
         pendingSearchAfterDiscoveryAppear = false
         DispatchQueue.main.async { [weak self] in
@@ -977,18 +977,18 @@ final class AppCoordinator {
     private func focusDiscoverySearchIfSheetStillPresented() {
         guard showProductScanner, !showProductScannerCamera else { return }
         focusProductDiscoverySearch = true
-        Self.scannerLog.debug("discovery on-screen: focus=true")
+        print("[scan-into-today] discovery on-screen: focus=true")
     }
 
     func dismissProductDiscovery() {
-        Self.scannerLog.debug("dismissProductDiscovery: sheet=false")
+        print("[scan-into-today] dismissProductDiscovery: sheet=false")
         showProductScanner = false
         focusProductDiscoverySearch = false
         pendingSearchAfterDiscoveryAppear = false
     }
 
     func productDiscoverySheetDidDismiss() {
-        Self.scannerLog.debug("discovery sheet onDismiss sheet=\(self.showProductScanner, privacy: .public) camera=\(self.showProductScannerCamera, privacy: .public) focus=\(self.focusProductDiscoverySearch, privacy: .public)")
+        print("[scan-into-today] discovery sheet onDismiss sheet=\(self.showProductScanner) camera=\(self.showProductScannerCamera) focus=\(self.focusProductDiscoverySearch)")
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = false
     }
