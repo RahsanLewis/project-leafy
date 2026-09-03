@@ -325,19 +325,6 @@ export async function deleteAuthenticatedAccount(input: {
   let appleRevokeError: AppleRevokeErrorCode | null = null
   const errors: string[] = []
 
-  if (plan.action === 'attempt') {
-    const revoke = input.revokeApple ?? revokeAppleToken
-    try {
-      const result = await revoke(plan.code, input.appleConfig)
-      appleRevoked = result.revoked
-      appleRevokeError = result.error
-    } catch {
-      appleRevoked = false
-      appleRevokeError = 'token_exchange_failed'
-    }
-    if (!appleRevoked && appleRevokeError) errors.push(appleFailureMessage(appleRevokeError))
-  }
-
   let paths: string[]
   try {
     paths = await collectPathsToPurge(input.admin, input.storage, userId)
@@ -359,6 +346,21 @@ export async function deleteAuthenticatedAccount(input: {
       apple_revoked: appleRevoked,
       apple_revoke_error: appleRevokeError,
     })
+  }
+
+  // Purge + local auth deletion can fail and must abort before any irreversible external
+  // Apple credential revoke happens.
+  if (plan.action === 'attempt') {
+    const revoke = input.revokeApple ?? revokeAppleToken
+    try {
+      const result = await revoke(plan.code, input.appleConfig)
+      appleRevoked = result.revoked
+      appleRevokeError = result.error
+    } catch {
+      appleRevoked = false
+      appleRevokeError = 'token_exchange_failed'
+    }
+    if (!appleRevoked && appleRevokeError) errors.push(appleFailureMessage(appleRevokeError))
   }
 
   const response: DeleteAccountSuccess = {
