@@ -1,5 +1,25 @@
-import { assertEquals, assert, assertAlmostEquals, assertThrows } from 'jsr:@std/assert@1'
+import { assertEquals, assert, assertAlmostEquals } from 'jsr:@std/assert@1'
 import { calculate } from '../functions/_shared/calculator.ts'
+
+function assertRejectsExactErrorMessage(
+  fn: () => unknown,
+  expectedMessage: string,
+  label: string,
+) {
+  let didThrow = false
+  let err: unknown = undefined
+
+  try {
+    fn()
+  } catch (e) {
+    didThrow = true
+    err = e
+  }
+
+  assert(didThrow, `${label}: expected to throw`)
+  assert(err instanceof Error, `${label}: expected thrown value to be an Error`)
+  assertEquals((err as Error).message, expectedMessage)
+}
 
 Deno.test('male steady loss matches the Swift fixture', () => {
   const result = calculate({
@@ -145,6 +165,7 @@ Deno.test('msj-amdr-v1 calculator: boundary + floor + acceptance matrix (table-d
         carbohydrate_g: 212,
         fat_g: 58,
         projected_weekly_change_kg: { mode: 'almost', value: 0.3418181818181818, errorBound: 1e-9 },
+        estimated_goal_date: '2027-02-19',
       },
     },
     {
@@ -162,6 +183,7 @@ Deno.test('msj-amdr-v1 calculator: boundary + floor + acceptance matrix (table-d
         carbohydrate_g: 139,
         fat_g: 40,
         projected_weekly_change_kg: { mode: 'almost', value: 0.1687784090909091, errorBound: 1e-9 },
+        estimated_goal_date: '2026-08-19',
       },
     },
     {
@@ -319,6 +341,51 @@ Deno.test('msj-amdr-v1 calculator: boundary + floor + acceptance matrix (table-d
         fat_g: 145,
       },
     },
+    // G. very_active multiplier coverage (1.725)
+    {
+      label: 'G8 very_active maintain',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 180,
+        current_weight_kg: 80, activity_level: 'very_active',
+        goal: 'maintain', pace: 'steady', unit_system: 'metric',
+      },
+      expected: {
+        bmr_kcal: 1750,
+        tdee_kcal: 3019,
+        calorie_target_kcal: 3020,
+        protein_g: 96,
+        carbohydrate_g: 433,
+        fat_g: 101,
+        projected_weekly_change_kg: { mode: 'exact', value: 0 },
+        estimated_goal_date: null,
+      },
+    },
+    // NOTE: 1472 * 1.725 = 2539.2, but tdee_kcal is 2538 and that is CORRECT.
+    // bmr_kcal and tdee_kcal round independently from raw values:
+    // rawBMR = 1471.5 -> 1472, rawTDEE = 1471.5 * 1.725 = 2538.3375 -> 2538.
+    // Do not derive tdee from the rounded bmr.
+    {
+      label: 'G9 very_active lose steady',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'female', height_cm: 170,
+        current_weight_kg: 75, target_weight_kg: 68, activity_level: 'very_active',
+        goal: 'lose', pace: 'steady', unit_system: 'metric',
+      },
+      expected: {
+        bmr_kcal: 1472,
+        tdee_kcal: 2538,
+        calorie_target_kcal: 2160,
+        protein_g: 109,
+        carbohydrate_g: 269,
+        fat_g: 72,
+        projected_weekly_change_kg: {
+          mode: 'almost',
+          value: 0.3439431818181819,
+          errorBound: 1e-9,
+        },
+        estimated_goal_date: '2026-12-19',
+      },
+    },
   ]
 
   for (const tc of successCases) {
@@ -352,7 +419,7 @@ Deno.test('msj-amdr-v1 calculator: boundary + floor + acceptance matrix (table-d
   }
 })
 
-Deno.test('msj-amdr-v1 calculator: rejection cases (assertThrows + exact messages)', () => {
+Deno.test('msj-amdr-v1 calculator: rejection cases (exact error messages)', () => {
   const rejectionCases: Array<{
     label: string
     input: Parameters<typeof calculate>[0]
@@ -397,6 +464,24 @@ Deno.test('msj-amdr-v1 calculator: rejection cases (assertThrows + exact message
       },
       message: 'Weight is outside the supported range.',
     },
+    {
+      label: 'height 231 rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 231,
+        current_weight_kg: 120, activity_level: 'sedentary',
+        goal: 'maintain', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'Height is outside the supported range.',
+    },
+    {
+      label: 'weight 351 rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 190,
+        current_weight_kg: 351, activity_level: 'sedentary',
+        goal: 'maintain', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'Weight is outside the supported range.',
+    },
 
     // 20-21. BMI floor for lose
     {
@@ -416,6 +501,59 @@ Deno.test('msj-amdr-v1 calculator: rejection cases (assertThrows + exact message
         goal: 'lose', pace: 'steady', unit_system: 'metric',
       },
       message: 'Leafy cannot create a weight-loss plan below a BMI of 18.5.',
+    },
+
+    // 22-24. Target weight validation (out-of-range / zero)
+    // NOTE: Backend intentionally collapses missing-target and out-of-range-target into one message:
+    //   (!target || target < 35 || target > 350)
+    // so `0` is caught by the falsy check.
+    // Swift distinguishes these, but that divergence is under product review — pin current backend behavior.
+    {
+      label: 'target 20 lose rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 180,
+        current_weight_kg: 90, target_weight_kg: 20, activity_level: 'moderate',
+        goal: 'lose', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'A valid target weight is required.',
+    },
+    {
+      label: 'target 400 gain rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 180,
+        current_weight_kg: 90, target_weight_kg: 400, activity_level: 'moderate',
+        goal: 'gain', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'A valid target weight is required.',
+    },
+    {
+      label: 'target 0 lose rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 180,
+        current_weight_kg: 90, target_weight_kg: 0, activity_level: 'moderate',
+        goal: 'lose', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'A valid target weight is required.',
+    },
+
+    // Target weight equals current weight (conflicts)
+    {
+      label: 'lose target == current rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 180,
+        current_weight_kg: 90, target_weight_kg: 90, activity_level: 'moderate',
+        goal: 'lose', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'Target weight conflicts with the selected goal.',
+    },
+    {
+      label: 'gain target == current rejected',
+      input: {
+        birth_date: '1990-01-01', calculation_sex: 'male', height_cm: 180,
+        current_weight_kg: 90, target_weight_kg: 90, activity_level: 'moderate',
+        goal: 'gain', pace: 'steady', unit_system: 'metric',
+      },
+      message: 'Target weight conflicts with the selected goal.',
     },
 
     // 22-24. Goal/target conflicts and missing target
@@ -460,10 +598,10 @@ Deno.test('msj-amdr-v1 calculator: rejection cases (assertThrows + exact message
   ]
 
   for (const tc of rejectionCases) {
-    assertThrows(
+    assertRejectsExactErrorMessage(
       () => calculate(tc.input, now),
-      Error,
       tc.message,
+      tc.label,
     )
   }
 })
