@@ -938,42 +938,46 @@ final class AppCoordinator {
         productScannerCameraHandoff = .none
         Self.scannerLog.debug("camera onDismiss handoff=\(String(describing: handoff), privacy: .public) camera=\(self.showProductScannerCamera, privacy: .public) sheet=\(self.showProductScanner, privacy: .public)")
         switch handoff {
-        case .search:
-            Task { @MainActor in
-                await Task.yield()
-                guard !showProductScannerCamera else {
-                    Self.scannerLog.debug("search handoff aborted: camera still up")
-                    return
+        case .search, .scan:
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.presentDiscoveryAfterCamera(handoff: handoff)
                 }
-                pendingSearchAfterDiscoveryAppear = true
-                showProductScanner = true
-                Self.scannerLog.debug("search handoff: sheet=true focus=false (search after appear)")
-            }
-        case .scan:
-            Task { @MainActor in
-                await Task.yield()
-                guard !showProductScannerCamera else {
-                    Self.scannerLog.debug("scan handoff aborted: camera still up")
-                    return
-                }
-                showProductScanner = true
-                Self.scannerLog.debug("scan handoff: sheet=true")
             }
         case .cancel, .none:
             Self.scannerLog.debug("camera onDismiss: no discovery present")
         }
     }
 
+    private func presentDiscoveryAfterCamera(handoff: ProductScannerCameraHandoff) {
+        guard !showProductScannerCamera else {
+            Self.scannerLog.debug("handoff aborted: camera still up")
+            return
+        }
+        if handoff == .search {
+            pendingSearchAfterDiscoveryAppear = true
+        }
+        showProductScanner = true
+        Self.scannerLog.debug("handoff \(String(describing: handoff), privacy: .public): sheet=true focus=false")
+    }
+
     func productDiscoverySheetDidAppear() {
         Self.scannerLog.debug("discovery onAppear sheet=\(self.showProductScanner, privacy: .public) pendingSearch=\(self.pendingSearchAfterDiscoveryAppear, privacy: .public)")
         guard pendingSearchAfterDiscoveryAppear else { return }
         pendingSearchAfterDiscoveryAppear = false
-        Task { @MainActor in
-            await Task.yield()
-            guard showProductScanner, !showProductScannerCamera else { return }
-            focusProductDiscoverySearch = true
-            Self.scannerLog.debug("discovery on-screen: focus=true")
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.focusDiscoverySearchIfSheetStillPresented()
+            }
         }
+    }
+
+    private func focusDiscoverySearchIfSheetStillPresented() {
+        guard showProductScanner, !showProductScannerCamera else { return }
+        focusProductDiscoverySearch = true
+        Self.scannerLog.debug("discovery on-screen: focus=true")
     }
 
     func dismissProductDiscovery() {
