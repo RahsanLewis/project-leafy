@@ -376,6 +376,8 @@ Deno.test('D-011: storage purge failure prevents Apple revoke and leaves the aut
   assertEquals(payload.apple_revoke_error, null)
 })
 
+// D-012 proves the auth user survives and revoke is skipped. It does not prove
+// media is intact — purgeOwnedStorage already ran, so media is already gone.
 Deno.test('D-012: auth delete failure prevents Apple revoke and maps apple_revoked false', async () => {
   const deleted: string[] = []
   let revokeCalls = 0

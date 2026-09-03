@@ -341,6 +341,10 @@ export async function deleteAuthenticatedAccount(input: {
   try {
     await input.admin.deleteAuthUser(userId)
   } catch {
+    // LEAFY-023: purgeOwnedStorage has already completed (objects already removed).
+    // The auth user still exists. Apple revoke has not run (it is after this throw).
+    // Operators must recover via support, not by asking the user to retry delete —
+    // retry will not restore media and is the wrong runbook.
     throw new DeleteAccountError('Unable to delete account.', 500, 'user_delete_failed', {
       apple_identity: appleIdentity,
       apple_revoked: appleRevoked,
