@@ -333,6 +333,90 @@ Deno.test('D-05: storage purge failure does not delete the auth user', async () 
   assertEquals(deleted, [])
 })
 
+Deno.test('D-011: storage purge failure prevents Apple revoke and leaves the auth user alive', async () => {
+  const deleted: string[] = []
+  let revokeCalls = 0
+  const error = await assertRejects(
+    () =>
+      deleteAuthenticatedAccount({
+        user: user({ identities: [{ provider: 'apple' }] }),
+        body: { apple_authorization_code: 'one-time-code' },
+        admin: adminGateway({ media: [`${userId}/ai-meals/x.jpg`], deleted }),
+        storage: {
+          async list() {
+            return { data: [], error: null }
+          },
+          async remove() {
+            return { error: { message: 'remove failed' } }
+          },
+        },
+        appleConfig: { clientID: 'id', clientSecret: 'secret' },
+        revokeApple: async () => {
+          revokeCalls += 1
+          return { revoked: true, error: null }
+        },
+      }),
+    DeleteAccountError,
+  )
+  assertEquals(error.code, 'storage_purge_failed')
+  assertEquals(deleted, [])
+  assertEquals(revokeCalls, 0)
+
+  // The HTTP failure mapping must never claim Apple credential revocation succeeded
+  // when purge failed before any revoke attempt.
+  const payload = failureBody(error, {
+    ok: false,
+    error: 'Unable to delete account',
+    error_code: 'invalid_request',
+    apple_revoked: false,
+    apple_revoke_error: null,
+    errors: ['Unable to delete account'],
+  })
+  assertEquals(payload.apple_revoked, false)
+  assertEquals(payload.apple_revoke_error, null)
+})
+
+Deno.test('D-012: auth delete failure prevents Apple revoke and maps apple_revoked false', async () => {
+  const deleted: string[] = []
+  let revokeCalls = 0
+
+  const admin = adminGateway({ media: [`${userId}/ai-meals/x.jpg`], deleted })
+  admin.deleteAuthUser = async () => {
+    throw new Error('delete failed')
+  }
+
+  const error = await assertRejects(
+    () =>
+      deleteAuthenticatedAccount({
+        user: user({ identities: [{ provider: 'apple' }] }),
+        body: { apple_authorization_code: 'one-time-code' },
+        admin,
+        storage: memoryStorage({}),
+        appleConfig: { clientID: 'id', clientSecret: 'secret' },
+        revokeApple: async () => {
+          revokeCalls += 1
+          return { revoked: true, error: null }
+        },
+      }),
+    DeleteAccountError,
+  )
+
+  assertEquals(error.code, 'user_delete_failed')
+  assertEquals(deleted, [])
+  assertEquals(revokeCalls, 0)
+
+  const payload = failureBody(error, {
+    ok: false,
+    error: 'Unable to delete account',
+    error_code: 'invalid_request',
+    apple_revoked: false,
+    apple_revoke_error: null,
+    errors: ['Unable to delete account'],
+  })
+  assertEquals(payload.apple_revoked, false)
+  assertEquals(payload.apple_revoke_error, null)
+})
+
 Deno.test('authorization code must be a non-empty string when provided', () => {
   assertEquals(readAppleAuthorizationCode({}), null)
   assertEquals(readAppleAuthorizationCode({ apple_authorization_code: '  abc  ' }), 'abc')
