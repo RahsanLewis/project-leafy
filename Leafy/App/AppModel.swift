@@ -902,7 +902,6 @@ final class AppCoordinator {
 
     func presentProductScanner() {
         let id = activeProductFlow?.id ?? UUID()
-        print("[scan-into-today] presentProductScanner: camera=true (id=\(id))")
         focusProductDiscoverySearch = false
         pendingSearchAfterDiscoveryAppear = false
         pendingProductBarcode = nil
@@ -911,14 +910,12 @@ final class AppCoordinator {
 
     func dismissProductScannerCameraForSearch() {
         let id = activeProductFlow?.id ?? UUID()
-        print("[scan-into-today] Search Instead: switching to discovery (id=\(id))")
         pendingSearchAfterDiscoveryAppear = true
         focusProductDiscoverySearch = false
         activeProductFlow = ActiveProductFlow(id: id, mode: .discovery)
     }
 
     func cancelProductScanner() {
-        print("[scan-into-today] cancelProductScanner: flow=nil (back to Today)")
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = false
         pendingProductBarcode = nil
@@ -927,7 +924,6 @@ final class AppCoordinator {
 
     func completeProductScannerScan(_ code: String) {
         let id = activeProductFlow?.id ?? UUID()
-        print("[scan-into-today] scan complete: switching to discovery (id=\(id))")
         pendingProductBarcode = code
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = false
@@ -935,7 +931,6 @@ final class AppCoordinator {
     }
 
     func productDiscoveryFlowDidAppear() {
-        print("[scan-into-today] discovery onAppear pendingSearch=\(pendingSearchAfterDiscoveryAppear)")
         guard pendingSearchAfterDiscoveryAppear else { return }
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = true
