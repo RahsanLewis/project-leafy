@@ -1,7 +1,6 @@
 import Foundation
 import GoogleSignIn
 import Observation
-import os
 
 @MainActor @Observable
 final class AppCoordinator {
@@ -9,7 +8,6 @@ final class AppCoordinator {
     enum SaveState: Equatable { case idle, creatingAccount, awaitingConfirmation, resendingConfirmation, authenticating, saving, deleting }
     enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
     private enum MorningCheckInLoggingHandoff { case idle, awaitingLogger, logging }
-    private static let scannerLog = Logger(subsystem: "Leafy", category: "scan-into-today")
     enum ProductFlowMode: Equatable { case camera, discovery }
     struct ActiveProductFlow: Identifiable, Equatable {
         let id: UUID
@@ -904,7 +902,6 @@ final class AppCoordinator {
 
     func presentProductScanner() {
         let id = activeProductFlow?.id ?? UUID()
-        print("[scan-into-today] presentProductScanner: camera=true (id=\(id))")
         focusProductDiscoverySearch = false
         pendingSearchAfterDiscoveryAppear = false
         pendingProductBarcode = nil
@@ -913,14 +910,12 @@ final class AppCoordinator {
 
     func dismissProductScannerCameraForSearch() {
         let id = activeProductFlow?.id ?? UUID()
-        print("[scan-into-today] Search Instead: switching to discovery (id=\(id))")
         pendingSearchAfterDiscoveryAppear = true
         focusProductDiscoverySearch = false
         activeProductFlow = ActiveProductFlow(id: id, mode: .discovery)
     }
 
     func cancelProductScanner() {
-        print("[scan-into-today] cancelProductScanner: flow=nil (back to Today)")
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = false
         pendingProductBarcode = nil
@@ -929,7 +924,6 @@ final class AppCoordinator {
 
     func completeProductScannerScan(_ code: String) {
         let id = activeProductFlow?.id ?? UUID()
-        print("[scan-into-today] scan complete: switching to discovery (id=\(id))")
         pendingProductBarcode = code
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = false
@@ -937,7 +931,6 @@ final class AppCoordinator {
     }
 
     func productDiscoveryFlowDidAppear() {
-        print("[scan-into-today] discovery onAppear pendingSearch=\(pendingSearchAfterDiscoveryAppear)")
         guard pendingSearchAfterDiscoveryAppear else { return }
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = true
@@ -1404,7 +1397,12 @@ final class AppCoordinator {
         productSearchResults = []; productHistory = []; productErrorMessage = nil
         clearMealEstimateState()
         morningCheckIn = nil; planAdjustmentNotice = nil; showMorningCheckIn = false
+        activeProductFlow = nil
+        focusProductDiscoverySearch = false
+        pendingProductBarcode = nil
+        pendingSearchAfterDiscoveryAppear = false
         showCoreDataAcknowledgment = false; coreDataAcknowledgmentError = nil
+        showLogFood = false
         isAuthenticated = false
         account = nil; authFlowState = .signedOut
         draft = OnboardingDraft(); route = .onboarding
