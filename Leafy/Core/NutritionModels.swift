@@ -150,6 +150,12 @@ struct NutritionPlan: Codable, Equatable, Sendable, Identifiable {
             : String(format: "%.2f", amount)
         return "\(number) \(unitSystem == .imperial ? "lb" : "kg") per week"
     }
+
+    /// Same gate as pace: a lose plan's date must not render against a gain draft.
+    func displayedEstimatedGoalDate(draftGoal: WeightGoal) -> Date? {
+        guard showsProjectedPace(draftGoal: draftGoal) else { return nil }
+        return estimatedGoalDate
+    }
 }
 
 enum PlanValidationError: LocalizedError, Equatable {

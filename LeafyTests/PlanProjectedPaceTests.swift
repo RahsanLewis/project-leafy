@@ -23,12 +23,20 @@ final class PlanProjectedPaceTests: XCTestCase {
         XCTAssertNil(plan.projectedPaceLabel(draftGoal: draft.goal, unitSystem: .metric))
     }
 
-    func testSnapshotMaintainDraftLoseOmitsPace() {
-        let plan = makePlan(snapshotGoal: .maintain, targetWeightKG: nil, weeklyChange: 0)
+    func testSnapshotMaintainDraftLoseOmitsPaceAndDate() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let plan = makePlan(
+            snapshotGoal: .maintain,
+            targetWeightKG: nil,
+            weeklyChange: 0,
+            estimatedGoalDate: date
+        )
         let draft = makeInput(goal: .lose, targetWeightKG: 80)
 
         XCTAssertFalse(plan.showsProjectedPace(draftGoal: draft.goal))
         XCTAssertNil(plan.projectedPaceLabel(draftGoal: draft.goal, unitSystem: .metric))
+        XCTAssertEqual(plan.estimatedGoalDate, date)
+        XCTAssertNil(plan.displayedEstimatedGoalDate(draftGoal: draft.goal))
     }
 
     func testSnapshotMaintainWithResidualWeeklyChangeDraftLoseOmitsPace() {
@@ -64,8 +72,13 @@ final class PlanProjectedPaceTests: XCTestCase {
         XCTAssertEqual(plan.projectedWeeklyChangeKG, weeklyChange, accuracy: 0.0000001)
     }
 
-    func testCachedPlanWithoutInputSnapshotDoesNotCrashAndOmitsPace() throws {
-        let json = planJSON(snapshot: nil, weeklyChange: 0.50, omitSnapshotKey: true)
+    func testCachedPlanWithoutInputSnapshotDoesNotCrashAndOmitsPaceAndDate() throws {
+        let json = planJSON(
+            snapshot: nil,
+            weeklyChange: 0.50,
+            omitSnapshotKey: true,
+            estimatedGoalDate: "2026-12-19"
+        )
         let plan = try decodePlan(json)
 
         XCTAssertNil(plan.inputSnapshot, "pre-upgrade cache has no input_snapshot key")
@@ -75,10 +88,15 @@ final class PlanProjectedPaceTests: XCTestCase {
             "fallback: missing snapshot suppresses pace; do not use the live draft goal"
         )
         XCTAssertNil(plan.projectedPaceLabel(draftGoal: .lose, unitSystem: .metric))
+        XCTAssertNotNil(plan.estimatedGoalDate)
+        XCTAssertNil(
+            plan.displayedEstimatedGoalDate(draftGoal: .lose),
+            "fallback: missing snapshot also suppresses estimated goal date"
+        )
 
         let cached = """
         {
-          "plan": \(planJSON(snapshot: nil, weeklyChange: 0.50, omitSnapshotKey: true)),
+          "plan": \(planJSON(snapshot: nil, weeklyChange: 0.50, omitSnapshotKey: true, estimatedGoalDate: "2026-12-19")),
           "input": \(snapshotJSON(goal: "lose", target: 80))
         }
         """
@@ -86,6 +104,58 @@ final class PlanProjectedPaceTests: XCTestCase {
         XCTAssertNil(state.plan.inputSnapshot)
         XCTAssertEqual(state.input.goal, .lose)
         XCTAssertFalse(state.plan.showsProjectedPace(draftGoal: state.input.goal))
+        XCTAssertNil(state.plan.displayedEstimatedGoalDate(draftGoal: state.input.goal))
+    }
+
+    func testSnapshotLoseDraftGainOmitsPaceAndDate() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let plan = makePlan(
+            snapshotGoal: .lose,
+            targetWeightKG: 80,
+            weeklyChange: 0.50,
+            estimatedGoalDate: date
+        )
+        let draft = makeInput(goal: .gain, targetWeightKG: 75)
+
+        XCTAssertEqual(plan.snapshotGoal, .lose)
+        XCTAssertEqual(draft.goal, .gain)
+        XCTAssertFalse(plan.showsProjectedPace(draftGoal: draft.goal))
+        XCTAssertNil(plan.projectedPaceLabel(draftGoal: draft.goal, unitSystem: .metric))
+        XCTAssertEqual(plan.estimatedGoalDate, date)
+        XCTAssertNil(
+            plan.displayedEstimatedGoalDate(draftGoal: draft.goal),
+            "a lose plan's estimated date must not render against a gain draft"
+        )
+    }
+
+    func testSnapshotLoseDraftLoseShowsStoredPaceAndDate() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let plan = makePlan(
+            snapshotGoal: .lose,
+            targetWeightKG: 80,
+            weeklyChange: 0.50,
+            estimatedGoalDate: date
+        )
+        let draft = makeInput(goal: .lose, targetWeightKG: 80)
+
+        XCTAssertTrue(plan.showsProjectedPace(draftGoal: draft.goal))
+        XCTAssertEqual(
+            plan.projectedPaceLabel(draftGoal: draft.goal, unitSystem: .metric),
+            "0.50 kg per week"
+        )
+        XCTAssertEqual(plan.displayedEstimatedGoalDate(draftGoal: draft.goal), date)
+    }
+
+    func testSnapshotGainDraftGainShowsStoredPace() {
+        let plan = makePlan(snapshotGoal: .gain, targetWeightKG: 75, weeklyChange: 0.25)
+        let draft = makeInput(goal: .gain, targetWeightKG: 75)
+
+        XCTAssertEqual(plan.snapshotGoal, .gain)
+        XCTAssertTrue(plan.showsProjectedPace(draftGoal: draft.goal))
+        XCTAssertEqual(
+            plan.projectedPaceLabel(draftGoal: draft.goal, unitSystem: .metric),
+            "0.25 kg per week"
+        )
     }
 
     // MARK: - N-02 pairing mismatches (legal on nutrition_plans.input_snapshot)
@@ -166,7 +236,8 @@ final class PlanProjectedPaceTests: XCTestCase {
     private func makePlan(
         snapshotGoal: WeightGoal,
         targetWeightKG: Double?,
-        weeklyChange: Double
+        weeklyChange: Double,
+        estimatedGoalDate: Date? = nil
     ) -> NutritionPlan {
         NutritionPlan(
             id: UUID(),
@@ -179,7 +250,7 @@ final class PlanProjectedPaceTests: XCTestCase {
             carbohydrateG: 220,
             fatG: 70,
             projectedWeeklyChangeKG: weeklyChange,
-            estimatedGoalDate: nil,
+            estimatedGoalDate: estimatedGoalDate,
             createdAt: Date(timeIntervalSince1970: 1_753_790_400),
             inputSnapshot: makeInput(goal: snapshotGoal, targetWeightKG: targetWeightKG)
         )
@@ -206,8 +277,10 @@ final class PlanProjectedPaceTests: XCTestCase {
         snapshot: String?,
         weeklyChange: Double,
         omitSnapshotKey: Bool = false,
-        createdAt: String = "2026-07-29T12:00:00Z"
+        createdAt: String = "2026-07-29T12:00:00Z",
+        estimatedGoalDate: String? = nil
     ) -> String {
+        let dateField = estimatedGoalDate.map { "\"\($0)\"" } ?? "null"
         var fields = """
           "id": "11111111-1111-1111-1111-111111111111",
           "revision": 1,
@@ -219,7 +292,7 @@ final class PlanProjectedPaceTests: XCTestCase {
           "carbohydrate_g": 220,
           "fat_g": 70,
           "projected_weekly_change_kg": \(weeklyChange),
-          "estimated_goal_date": null,
+          "estimated_goal_date": \(dateField),
           "created_at": "\(createdAt)"
         """
         if !omitSnapshotKey {

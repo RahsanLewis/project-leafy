@@ -138,7 +138,7 @@ struct PlanResultsView: View {
                         goalDatum("Projected pace", value: pace)
                     }
                 }
-                if let date = plan.estimatedGoalDate {
+                if let date = plan.displayedEstimatedGoalDate(draftGoal: input.goal) {
                     VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
                         Text("Estimated goal")
                             .font(LeafyTypography.caption)
