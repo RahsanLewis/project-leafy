@@ -838,6 +838,7 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Weight history"].exists)
     }
 
+    @MainActor
     func attachUITestScreenshot(_ app: XCUIApplication, named name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -845,6 +846,7 @@ final class LeafyUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
     func waitForNonExistence(
         of element: XCUIElement,
         timeout: TimeInterval,
