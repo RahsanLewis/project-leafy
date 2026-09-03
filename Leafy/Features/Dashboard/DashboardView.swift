@@ -50,11 +50,6 @@ struct DashboardView: View {
                     onScannerCancelled: { app.showProductScanner = false },
                     onLogged: { app.showProductScanner = false }
                 )
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { app.showProductScanner = false }
-                    }
-                }
             }
         }
     }

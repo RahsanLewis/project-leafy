@@ -19,7 +19,6 @@ struct ProductDiscoveryView: View {
     @State private var showingContribution = false
     @State private var openContributionAfterUnknownProduct = false
     @State private var reopenScannerAfterUnknownProduct = false
-    @State private var preserveDiscoveryAfterScannerDismissal = false
     @State private var scannerStatus: BarcodeScannerStatus = .requestingPermission
     @Environment(\.openURL) private var openURL
 
@@ -42,31 +41,26 @@ struct ProductDiscoveryView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if isSearchPresented || !query.isEmpty { searchContent }
-                else { scanLanding }
+        Group {
+            if showingScanner {
+                scannerContent
+            } else {
+                discoveryContent
             }
-            .padding(.horizontal, LeafyTheme.pageInset)
-            .padding(.bottom, LeafySpacing.xxLarge)
         }
-        .scrollDismissesKeyboard(.interactively)
-        .background(LeafyTheme.canvas)
-        .navigationTitle(embedded ? "Log Food" : "Scan")
-        .searchable(text: $query, isPresented: $isSearchPresented, prompt: "Product, brand, or barcode")
         .toolbar {
-            if intent == .log && !embedded {
+            if showingScanner {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { cancelScanner() }
+                }
+            } else if intent == .log && !embedded {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            } else if onScannerCancelled != nil {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onScannerCancelled?() }
+                }
             }
         }
-        .task(id: query) {
-            guard query.count >= 2 else { return }
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            await app.searchProducts(query)
-        }
-        .task { await app.loadProductHistory() }
-        .sheet(isPresented: $showingScanner, onDismiss: finishScannerSheet) { scannerSheet }
         .sheet(isPresented: $showingUnknownProduct, onDismiss: finishUnknownProductSheet) {
             if let unknownBarcode {
                 UnknownProductSheet(
@@ -104,6 +98,28 @@ struct ProductDiscoveryView: View {
                 )
             }
         }
+    }
+
+    private var discoveryContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if isSearchPresented || !query.isEmpty { searchContent }
+                else { scanLanding }
+            }
+            .padding(.horizontal, LeafyTheme.pageInset)
+            .padding(.bottom, LeafySpacing.xxLarge)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .background(LeafyTheme.canvas)
+        .navigationTitle(embedded ? "Log Food" : "Scan")
+        .searchable(text: $query, isPresented: $isSearchPresented, prompt: "Product, brand, or barcode")
+        .task(id: query) {
+            guard query.count >= 2 else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await app.searchProducts(query)
+        }
+        .task { await app.loadProductHistory() }
     }
 
     private var scanLanding: some View {
@@ -219,40 +235,32 @@ struct ProductDiscoveryView: View {
         .frame(maxWidth: 420, alignment: .leading)
     }
 
-    private var scannerSheet: some View {
-        NavigationStack {
-            BarcodeScannerView(onCode: handleScannedCode, onStatusChange: { scannerStatus = $0 })
-                .ignoresSafeArea(edges: .bottom)
-                .navigationTitle("Scan barcode")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showingScanner = false }
-                    }
-                }
-                .safeAreaInset(edge: .bottom) {
-                    VStack(spacing: LeafySpacing.xSmall) {
-                        if scannerStatus == .denied {
-                            Button("Open Settings") {
-                                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                                openURL(url)
-                            }
-                            .font(LeafyTypography.subheadlineSemibold)
-                            .foregroundStyle(.white)
-                            .frame(minHeight: 44)
-                        }
-                        Button("Search Instead") {
-                            preserveDiscoveryAfterScannerDismissal = true
-                            showingScanner = false
-                            presentSearch()
+    private var scannerContent: some View {
+        BarcodeScannerView(onCode: handleScannedCode, onStatusChange: { scannerStatus = $0 })
+            .ignoresSafeArea(edges: .bottom)
+            .navigationTitle("Scan barcode")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: LeafySpacing.xSmall) {
+                    if scannerStatus == .denied {
+                        Button("Open Settings") {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            openURL(url)
                         }
                         .font(LeafyTypography.subheadlineSemibold)
                         .foregroundStyle(.white)
                         .frame(minHeight: 44)
                     }
-                    .padding(.horizontal, LeafyTheme.pageInset)
+                    Button("Search Instead") {
+                        showingScanner = false
+                        presentSearch()
+                    }
+                    .font(LeafyTypography.subheadlineSemibold)
+                    .foregroundStyle(.white)
+                    .frame(minHeight: 44)
                 }
-        }
+                .padding(.horizontal, LeafyTheme.pageInset)
+            }
     }
 
     private func sectionTitle(_ title: String) -> some View {
@@ -262,11 +270,10 @@ struct ProductDiscoveryView: View {
     }
 
     private func presentSearch() {
-        Task { @MainActor in isSearchPresented = true }
+        isSearchPresented = true
     }
 
     private func handleScannedCode(_ code: String) {
-        preserveDiscoveryAfterScannerDismissal = true
         showingScanner = false
         Task {
             if let product = await app.lookupProduct(barcode: code) { await open(product) }
@@ -277,12 +284,9 @@ struct ProductDiscoveryView: View {
         }
     }
 
-    private func finishScannerSheet() {
-        if preserveDiscoveryAfterScannerDismissal {
-            preserveDiscoveryAfterScannerDismissal = false
-        } else {
-            onScannerCancelled?()
-        }
+    private func cancelScanner() {
+        showingScanner = false
+        onScannerCancelled?()
     }
 
     private func finishUnknownProductSheet() {
