@@ -9,7 +9,9 @@ final class PlanServiceSavePlanTests: XCTestCase {
 
         let raw = try JSONEncoder().encode(input)
         let rawObject = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
-        XCTAssertTrue(rawObject["birth_date"] is NSNull)
+        if let birthDate = rawObject["birth_date"] {
+            XCTAssertTrue(birthDate is NSNull, "nil birthDate must not encode a civil birth_date string")
+        }
 
         do {
             _ = try await service.savePlan(input)
