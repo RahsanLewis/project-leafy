@@ -930,16 +930,14 @@ final class AppCoordinator {
         switch handoff {
         case .search:
             Task { @MainActor in
-                await Task.yield()
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await Task.sleep(for: .milliseconds(400))
                 guard !showProductScannerCamera else { return }
                 focusProductDiscoverySearch = true
                 showProductScanner = true
             }
         case .scan:
             Task { @MainActor in
-                await Task.yield()
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await Task.sleep(for: .milliseconds(400))
                 guard !showProductScannerCamera else { return }
                 showProductScanner = true
             }
