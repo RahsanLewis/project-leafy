@@ -6,6 +6,8 @@ struct ProductDiscoveryView: View {
     @Environment(\.dismiss) private var dismiss
     let intent: ProductDiscoveryIntent
     let embedded: Bool
+    let allowsLoggingFromAnalysis: Bool
+    let onScannerCancelled: (() -> Void)?
     let onLogged: (() -> Void)?
     @Binding private var hasUnsavedDraft: Bool
     @State private var query = ""
@@ -17,21 +19,38 @@ struct ProductDiscoveryView: View {
     @State private var showingContribution = false
     @State private var openContributionAfterUnknownProduct = false
     @State private var reopenScannerAfterUnknownProduct = false
+    @State private var preserveDiscoveryAfterScannerDismissal = false
     @State private var scannerStatus: BarcodeScannerStatus = .requestingPermission
     @Environment(\.openURL) private var openURL
 
-    init(intent: ProductDiscoveryIntent, embedded: Bool = false, onLogged: (() -> Void)? = nil, hasUnsavedDraft: Binding<Bool> = .constant(false)) {
+    init(
+        intent: ProductDiscoveryIntent,
+        embedded: Bool = false,
+        startsWithScanner: Bool = false,
+        allowsLoggingFromAnalysis: Bool = true,
+        onScannerCancelled: (() -> Void)? = nil,
+        onLogged: (() -> Void)? = nil,
+        hasUnsavedDraft: Binding<Bool> = .constant(false)
+    ) {
         self.intent = intent
         self.embedded = embedded
+        self.allowsLoggingFromAnalysis = allowsLoggingFromAnalysis
+        self.onScannerCancelled = onScannerCancelled
         self.onLogged = onLogged
+        _showingScanner = State(initialValue: startsWithScanner)
         _hasUnsavedDraft = hasUnsavedDraft
     }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if isSearchPresented || !query.isEmpty { searchContent }
-                else { scanLanding }
+                if isSearchPresented || !query.isEmpty {
+                    searchContent
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("productDiscoverySearchContent")
+                } else {
+                    scanLanding
+                }
             }
             .padding(.horizontal, LeafyTheme.pageInset)
             .padding(.bottom, LeafySpacing.xxLarge)
@@ -40,6 +59,17 @@ struct ProductDiscoveryView: View {
         .background(LeafyTheme.canvas)
         .navigationTitle(embedded ? "Log Food" : "Scan")
         .searchable(text: $query, isPresented: $isSearchPresented, prompt: "Product, brand, or barcode")
+        .onAppear { app.productDiscoveryFlowDidAppear() }
+        .onChange(of: app.focusProductDiscoverySearch) { _, focus in
+            guard focus else { return }
+            isSearchPresented = true
+            app.focusProductDiscoverySearch = false
+        }
+        .task(id: app.pendingProductBarcode) {
+            guard let code = app.pendingProductBarcode else { return }
+            app.pendingProductBarcode = nil
+            handleScannedCode(code)
+        }
         .toolbar {
             if intent == .log && !embedded {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -52,7 +82,7 @@ struct ProductDiscoveryView: View {
             await app.searchProducts(query)
         }
         .task { await app.loadProductHistory() }
-        .sheet(isPresented: $showingScanner) { scannerSheet }
+        .sheet(isPresented: $showingScanner, onDismiss: finishScannerSheet) { scannerSheet }
         .sheet(isPresented: $showingUnknownProduct, onDismiss: finishUnknownProductSheet) {
             if let unknownBarcode {
                 UnknownProductSheet(
@@ -72,11 +102,22 @@ struct ProductDiscoveryView: View {
             }
         }
         .navigationDestination(item: $detail) { product in
-            ProductDetailView(product: product, intent: intent, logDate: app.selectedLogDate) { completeLog() }
+            ProductDetailView(
+                product: product,
+                intent: intent,
+                allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
+                logDate: app.selectedLogDate
+            ) { completeLog() }
         }
         .navigationDestination(isPresented: $showingContribution) {
             if let unknownBarcode {
-                CatalogContributionView(barcode: unknownBarcode, intent: intent, onCompleted: { completeLog() }, hasUnsavedDraft: $hasUnsavedDraft)
+                CatalogContributionView(
+                    barcode: unknownBarcode,
+                    intent: intent,
+                    allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
+                    onCompleted: { completeLog() },
+                    hasUnsavedDraft: $hasUnsavedDraft
+                )
             }
         }
     }
@@ -201,7 +242,9 @@ struct ProductDiscoveryView: View {
                 .navigationTitle("Scan barcode")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showingScanner = false } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingScanner = false }
+                    }
                 }
                 .safeAreaInset(edge: .bottom) {
                     VStack(spacing: LeafySpacing.xSmall) {
@@ -215,6 +258,7 @@ struct ProductDiscoveryView: View {
                             .frame(minHeight: 44)
                         }
                         Button("Search Instead") {
+                            preserveDiscoveryAfterScannerDismissal = true
                             showingScanner = false
                             presentSearch()
                         }
@@ -238,6 +282,7 @@ struct ProductDiscoveryView: View {
     }
 
     private func handleScannedCode(_ code: String) {
+        preserveDiscoveryAfterScannerDismissal = true
         showingScanner = false
         Task {
             if let product = await app.lookupProduct(barcode: code) { await open(product) }
@@ -245,6 +290,14 @@ struct ProductDiscoveryView: View {
                 unknownBarcode = code
                 showingUnknownProduct = true
             }
+        }
+    }
+
+    private func finishScannerSheet() {
+        if preserveDiscoveryAfterScannerDismissal {
+            preserveDiscoveryAfterScannerDismissal = false
+        } else {
+            onScannerCancelled?()
         }
     }
 

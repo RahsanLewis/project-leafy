@@ -4,11 +4,12 @@ import UIKit
 struct ProductDetailView: View {
     @Environment(AppModel.self) private var app
     let product: ProductDetail
-    let intent: ProductDiscoveryIntent
+    let allowsLoggingFromAnalysis: Bool
     let impactContext: FoodImpactContext
     private let referenceServingGrams: Double
     private let analyzedGrams: Double
     let onLogged: () -> Void
+    @State private var activeIntent: ProductDiscoveryIntent
     @State private var servingCountText = "1"
     @State private var consumedAt = Date()
     @State private var mealType: MealType = .unspecified
@@ -20,17 +21,19 @@ struct ProductDetailView: View {
     init(
         product: ProductDetail,
         intent: ProductDiscoveryIntent,
+        allowsLoggingFromAnalysis: Bool = false,
         impactContext: FoodImpactContext = .prospective,
         logDate: Date = .now,
         initialGrams: Double? = nil,
         onLogged: @escaping () -> Void
     ) {
         self.product = product
-        self.intent = intent
+        self.allowsLoggingFromAnalysis = allowsLoggingFromAnalysis
         self.impactContext = impactContext
         self.onLogged = onLogged
         self.referenceServingGrams = max(product.defaultGrams, 1)
         self.analyzedGrams = max(initialGrams ?? product.defaultGrams, 1)
+        _activeIntent = State(initialValue: intent)
         _consumedAt = State(initialValue: Self.logDate(logDate, usingTimeFrom: .now))
     }
 
@@ -46,7 +49,7 @@ struct ProductDetailView: View {
                     showsMacros: false
                 )
 
-                if intent == .log {
+                if activeIntent == .log {
                     loggingControls
                 }
 
@@ -111,14 +114,14 @@ struct ProductDetailView: View {
             }
             .padding(.horizontal, LeafyTheme.pageInset)
             .padding(.top, LeafySpacing.medium)
-            .padding(.bottom, intent == .log ? 112 : LeafySpacing.xxLarge)
+            .padding(.bottom, showsBottomAction ? 112 : LeafySpacing.xxLarge)
         }
         .scrollDismissesKeyboard(.interactively)
         .background(LeafyTheme.canvas)
         .navigationTitle("Food details")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            if intent == .log {
+            if activeIntent == .log {
                 Button(app.isFoodMutationInProgress ? "Adding…" : "Add to Food Log") {
                     Task {
                         if await app.logProduct(product, grams: effectiveGrams, consumedAt: consumedAt, mealType: mealType) {
@@ -130,10 +133,17 @@ struct ProductDetailView: View {
                 .disabled(app.isFoodMutationInProgress || validServingCount == nil)
                 .opacity(validServingCount == nil ? 0.45 : 1)
                 .leafyDetachedBottomControl()
+            } else if allowsLoggingFromAnalysis {
+                Button("Log This Food") {
+                    withAnimation(LeafyMotion.content) { activeIntent = .log }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .leafyDetachedBottomControl()
+                .accessibilityIdentifier("logAnalyzedProductButton")
             }
         }
         .alert("Couldn’t load product", isPresented: Binding(
-            get: { intent != .log && app.productErrorMessage != nil },
+            get: { activeIntent != .log && app.productErrorMessage != nil },
             set: { if !$0 { app.productErrorMessage = nil } }
         )) {
             Button("OK") { app.productErrorMessage = nil }
@@ -142,7 +152,8 @@ struct ProductDetailView: View {
             if let barcode = product.barcode {
                 CatalogContributionView(
                     barcode: barcode,
-                    intent: intent,
+                    intent: activeIntent,
+                    allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
                     onCompleted: {},
                     refreshExisting: true
                 )
@@ -151,9 +162,12 @@ struct ProductDetailView: View {
     }
 
     private var heroSubtitle: String? {
-        let details = intent == .log ? [product.brand] : [product.brand, analyzedServingLabel]
+        let details = activeIntent == .log ? [product.brand] : [product.brand, analyzedServingLabel]
         let subtitle = details.compactMap { $0 }.joined(separator: " · ")
         return subtitle.isEmpty ? nil : subtitle
+    }
+    private var showsBottomAction: Bool {
+        activeIntent == .log || allowsLoggingFromAnalysis
     }
     private var hasIngredientInformation: Bool {
         !(product.ingredients?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) || !product.allergens.isEmpty
@@ -229,10 +243,10 @@ struct ProductDetailView: View {
         product.portions.first { abs($0.gramWeight - grams) < 0.01 }
     }
     private var validServingCount: Double? {
-        intent == .log ? ProductServingQuantity.count(from: servingCountText) : 1
+        activeIntent == .log ? ProductServingQuantity.count(from: servingCountText) : 1
     }
     private var effectiveGrams: Double {
-        guard intent == .log else { return analyzedGrams }
+        guard activeIntent == .log else { return analyzedGrams }
         guard let validServingCount else { return 0 }
         return ProductServingQuantity.grams(servings: validServingCount, servingGrams: referenceServingGrams)
     }
@@ -314,7 +328,7 @@ struct ProductDetailView: View {
         Binding(
             get: { min(max(effectiveGrams / referenceServingGrams, 0.25), 3) },
             set: { scale in
-                guard intent == .log else { return }
+                guard activeIntent == .log else { return }
                 servingCountText = ProductServingQuantity.formatted(scale)
             }
         )

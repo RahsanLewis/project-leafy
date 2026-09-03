@@ -26,12 +26,6 @@ struct DashboardView: View {
             .tag(DashboardTab.ai)
 
             NavigationStack {
-                ProductDiscoveryView(intent: .analyze)
-            }
-            .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
-            .tag(DashboardTab.scan)
-
-            NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gearshape.fill") }
@@ -48,7 +42,65 @@ struct DashboardView: View {
         }) {
             LogFoodView(initialAIDescription: app.pendingMealDescription)
         }
+        .fullScreenCover(item: $app.activeProductFlow) { flow in
+            switch flow.mode {
+            case .camera:
+                TodayProductScannerCover()
+            case .discovery:
+                NavigationStack {
+                    ProductDiscoveryView(
+                        intent: .analyze,
+                        onLogged: { app.cancelProductScanner() }
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { app.cancelProductScanner() }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-private enum DashboardTab: Hashable { case today, progress, ai, scan, settings }
+private struct TodayProductScannerCover: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
+    @State private var scannerStatus: BarcodeScannerStatus = .requestingPermission
+
+    var body: some View {
+        NavigationStack {
+            BarcodeScannerView(onCode: { app.completeProductScannerScan($0) }, onStatusChange: { scannerStatus = $0 })
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle("Scan barcode")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { app.cancelProductScanner() }
+                    }
+                }
+                .safeAreaInset(edge: .bottom) {
+                    VStack(spacing: LeafySpacing.xSmall) {
+                        if scannerStatus == .denied {
+                            Button("Open Settings") {
+                                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                                openURL(url)
+                            }
+                            .font(LeafyTypography.subheadlineSemibold)
+                            .foregroundStyle(.white)
+                            .frame(minHeight: 44)
+                        }
+                        Button("Search Instead") {
+                            app.dismissProductScannerCameraForSearch()
+                        }
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(.white)
+                        .frame(minHeight: 44)
+                    }
+                    .padding(.horizontal, LeafyTheme.pageInset)
+                }
+        }
+    }
+}
+
+private enum DashboardTab: Hashable { case today, progress, ai, settings }

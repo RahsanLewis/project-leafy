@@ -8,6 +8,11 @@ final class AppCoordinator {
     enum SaveState: Equatable { case idle, creatingAccount, awaitingConfirmation, resendingConfirmation, authenticating, saving, deleting }
     enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
     private enum MorningCheckInLoggingHandoff { case idle, awaitingLogger, logging }
+    enum ProductFlowMode: Equatable { case camera, discovery }
+    struct ActiveProductFlow: Identifiable, Equatable {
+        let id: UUID
+        var mode: ProductFlowMode
+    }
 
     var route: Route = .launching
     var draft = OnboardingDraft()
@@ -48,7 +53,11 @@ final class AppCoordinator {
     var pendingChatClientMessageID: UUID?
     var pendingChatText: String?
     var showLogFood = false
+    var focusProductDiscoverySearch = false
+    var activeProductFlow: ActiveProductFlow?
+    var pendingProductBarcode: String?
     var pendingMealDescription = ""
+    private var pendingSearchAfterDiscoveryAppear = false
     private var mealEstimateSessionID: UUID?
     private var mealPhotoObjectPath: String?
     private var mealEstimateLogDate = Calendar.current.startOfDay(for: .now)
@@ -891,6 +900,39 @@ final class AppCoordinator {
         showLogFood = true
     }
 
+    func presentProductScanner() {
+        focusProductDiscoverySearch = false
+        pendingSearchAfterDiscoveryAppear = false
+        pendingProductBarcode = nil
+        activeProductFlow = ActiveProductFlow(id: UUID(), mode: .camera)
+    }
+
+    func dismissProductScannerCameraForSearch() {
+        pendingSearchAfterDiscoveryAppear = true
+        focusProductDiscoverySearch = false
+        activeProductFlow = ActiveProductFlow(id: UUID(), mode: .discovery)
+    }
+
+    func cancelProductScanner() {
+        pendingSearchAfterDiscoveryAppear = false
+        focusProductDiscoverySearch = false
+        pendingProductBarcode = nil
+        activeProductFlow = nil
+    }
+
+    func completeProductScannerScan(_ code: String) {
+        pendingProductBarcode = code
+        pendingSearchAfterDiscoveryAppear = false
+        focusProductDiscoverySearch = false
+        activeProductFlow = ActiveProductFlow(id: UUID(), mode: .discovery)
+    }
+
+    func productDiscoveryFlowDidAppear() {
+        guard pendingSearchAfterDiscoveryAppear else { return }
+        pendingSearchAfterDiscoveryAppear = false
+        focusProductDiscoverySearch = true
+    }
+
     func beginLoggingYesterdayFromMorningCheckIn() {
         guard let morningCheckIn, morningCheckInLoggingHandoff == .idle else { return }
         logDateBeforeMorningCheckInHandoff = selectedLogDate
@@ -1352,7 +1394,12 @@ final class AppCoordinator {
         productSearchResults = []; productHistory = []; productErrorMessage = nil
         clearMealEstimateState()
         morningCheckIn = nil; planAdjustmentNotice = nil; showMorningCheckIn = false
+        activeProductFlow = nil
+        focusProductDiscoverySearch = false
+        pendingProductBarcode = nil
+        pendingSearchAfterDiscoveryAppear = false
         showCoreDataAcknowledgment = false; coreDataAcknowledgmentError = nil
+        showLogFood = false
         isAuthenticated = false
         account = nil; authFlowState = .signedOut
         draft = OnboardingDraft(); route = .onboarding
