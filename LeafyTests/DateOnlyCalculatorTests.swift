@@ -122,6 +122,17 @@ final class DateOnlyCalculatorTests: XCTestCase {
         XCTAssertEqual(first, second)
     }
 
+    func testOnboardingAgeLabelUsesUTCCivilTodayLikeCalculator() throws {
+        let birth = try civil(2008, 7, 29)
+        let labelAge = birth.ageInYears(asOf: LocalDate.utcCivilDate(from: afterUTC))
+        XCTAssertEqual(labelAge, 18)
+        XCTAssertNoThrow(try NutritionCalculator.calculate(input: maintainFemale(birth), now: afterUTC))
+
+        let localToday = try XCTUnwrap(LocalDate(localCivilFrom: afterUTC, timeZone: newYork))
+        XCTAssertEqual(localToday, try civil(2026, 7, 28))
+        XCTAssertEqual(birth.ageInYears(asOf: localToday), 17)
+    }
+
     private func assertCalculate(
         birth: LocalDate,
         now: Date,

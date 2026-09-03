@@ -412,9 +412,7 @@ struct OnboardingView: View {
     }
 
     private func age(for birthday: LocalDate) -> Int {
-        let today = LocalDate(localCivilFrom: .now, timeZone: .current)
-            ?? LocalDate.utcCivilDate(from: .now)
-        return birthday.ageInYears(asOf: today)
+        birthday.ageInYears(asOf: LocalDate.utcCivilDate(from: .now))
     }
 
     private func paceText(_ pace: GoalPace) -> String {
