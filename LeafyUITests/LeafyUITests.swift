@@ -380,9 +380,19 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
         app.buttons["Search Instead"].tap()
 
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["close"].waitForExistence(timeout: 2))
-        app.buttons["close"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+
+        let keyboardAppeared = app.keyboards.firstMatch.waitForExistence(timeout: 3)
+        if !keyboardAppeared {
+            // Hardware keyboard: prove focus by typing (keyboard may not appear).
+            field.tap()
+            let startValue = field.value as? String ?? ""
+            field.typeText("a")
+            XCTAssertNotEqual(field.value as? String ?? "", startValue)
+        }
+
+        app.buttons["Cancel"].tap()
         XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
         app.navigationBars["Scan"].buttons["Done"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
