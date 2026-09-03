@@ -22,3 +22,116 @@ jobs:
       - run: brew install xcodegen
       - run: xcodegen generate
       - run: xcodebuild -project Leafy.xcodeproj -scheme Leafy -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+  ios-ui-tests:
+    # LEAFY-027: soft-fail until the five pre-existing XCUITest failures are fixed or
+    # explicitly quarantined. Do not treat a green workflow as "UI suite green".
+    # Remove continue-on-error when LEAFY-027 closes; then this job becomes a real gate.
+    continue-on-error: true
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: List available simulators and scheme destinations
+        run: |
+          xcrun simctl list devicetypes
+          xcodebuild -showdestinations -project Leafy.xcodeproj -scheme Leafy
+      - name: Select a concrete iPhone simulator destination
+        run: |
+          python3 <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          out = subprocess.check_output(
+              ["xcodebuild", "-showdestinations", "-project", "Leafy.xcodeproj", "-scheme", "Leafy"],
+              stderr=subprocess.STDOUT,
+              text=True,
+          )
+          print(out)
+
+          destinations = []
+          for match in re.finditer(r"\{([^}]+)\}", out):
+              fields = {}
+              for part in match.group(1).split(","):
+                  if ":" not in part:
+                      continue
+                  key, value = part.split(":", 1)
+                  fields[key.strip()] = value.strip()
+              dest_id = fields.get("id", "")
+              if (
+                  fields.get("platform") == "iOS Simulator"
+                  and fields.get("name")
+                  and dest_id
+                  and "placeholder" not in dest_id
+              ):
+                  destinations.append(fields)
+
+          preference = ("iPhone 16", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 15", "iPhone 15 Pro")
+          chosen = None
+          for name in preference:
+              chosen = next((item for item in destinations if item["name"] == name), None)
+              if chosen:
+                  break
+          if chosen is None:
+              chosen = next((item for item in destinations if item["name"].startswith("iPhone")), None)
+          if chosen is None:
+              sys.exit("No concrete iPhone iOS Simulator destination was available")
+
+          destination = f"platform=iOS Simulator,id={chosen['id']}"
+          print(f"Using destination: {destination} ({chosen['name']}, OS={chosen.get('OS', 'unknown')})")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
+              handle.write(f"IOS_TEST_DESTINATION={destination}\n")
+          PY
+      - name: Run LeafyUITests
+        run: >
+          xcodebuild test
+          -project Leafy.xcodeproj
+          -scheme Leafy
+          -only-testing:LeafyUITests
+          -destination "$IOS_TEST_DESTINATION"
+          CODE_SIGNING_ALLOWED=NO
+          -resultBundlePath LeafyUITests.xcresult
+      - name: Extract UI test screenshot attachments
+        if: always()
+        run: |
+          mkdir -p ui-test-screenshots
+          xcrun xcresulttool export attachments \
+            --path LeafyUITests.xcresult \
+            --output-path ui-test-screenshots \
+            2>&1 | tee ui-test-screenshots/extract.log
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+
+          root = Path("ui-test-screenshots")
+          log = (root / "extract.log").read_text(errors="replace")
+          renamed = 0
+          for file_id, suggested in re.findall(
+              r'File: ([^,]+), suggested name: "([^"]+)"',
+              log,
+          ):
+              src = root / file_id.strip()
+              if not src.exists():
+                  continue
+              name = Path(suggested).name
+              dest = root / name
+              if dest.exists() and dest != src:
+                  dest = root / f"{src.stem}-{name}"
+              src.rename(dest)
+              renamed += 1
+          print(f"Renamed {renamed} exported attachments to suggested names")
+          pngs = sorted(p.name for p in root.glob("*.png"))
+          print("PNG files:\n" + "\n".join(pngs) if pngs else "No PNG files were exported")
+          PY
+      - name: Upload UI test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leafy-uitest-results
+          path: |
+            LeafyUITests.xcresult
+            ui-test-screenshots/
