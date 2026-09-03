@@ -44,8 +44,13 @@ struct ProductDiscoveryView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if isSearchPresented || !query.isEmpty { searchContent }
-                else { scanLanding }
+                if isSearchPresented || !query.isEmpty {
+                    searchContent
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("productDiscoverySearchContent")
+                } else {
+                    scanLanding
+                }
             }
             .padding(.horizontal, LeafyTheme.pageInset)
             .padding(.bottom, LeafySpacing.xxLarge)
