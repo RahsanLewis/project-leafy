@@ -173,6 +173,19 @@ actor PlanService {
     }
 
     func savePlan(_ input: NutritionPlanInput, accessToken: String? = nil, recordLegalAcceptance: Bool = false) async throws -> NutritionPlan {
+        let data = try Self.encodeSavePlanPayload(input, recordLegalAcceptance: recordLegalAcceptance)
+        return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
+    }
+
+    /// Builds the save-nutrition-plan body. Rejects a missing birth date before
+    /// JSON encode so Optional Codable cannot emit `birth_date: null`.
+    nonisolated static func encodeSavePlanPayload(
+        _ input: NutritionPlanInput,
+        recordLegalAcceptance: Bool = false
+    ) throws -> Data {
+        guard input.birthDate != nil else { throw PlanValidationError.invalidAge }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .formatted(dayFormatter)
         let inputData = try encoder.encode(input)
         var payload = (try JSONSerialization.jsonObject(with: inputData) as? [String: Any]) ?? [:]
         if recordLegalAcceptance {
@@ -187,8 +200,7 @@ actor PlanService {
                 ]
             ]
         }
-        let data = try JSONSerialization.data(withJSONObject: payload)
-        return try await request(function: "save-nutrition-plan", body: data, accessToken: accessToken, response: NutritionPlan.self)
+        return try JSONSerialization.data(withJSONObject: payload)
     }
 
     func coreDataUseStatus(version: Int) async throws -> CoreDataUseStatus {
