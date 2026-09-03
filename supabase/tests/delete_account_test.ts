@@ -372,9 +372,11 @@ Deno.test('D-011: storage purge failure prevents Apple revoke and leaves the aut
     apple_revoke_error: null,
     errors: ['Unable to delete account'],
   })
+  assertEquals(typeof payload.apple_identity, 'boolean')
+  assertEquals(payload.apple_identity, true)
   assertEquals(payload.apple_revoked, false)
   assertEquals(payload.apple_revoke_error, null)
-})
+}))
 
 Deno.test('D-012: auth delete failure prevents Apple revoke and maps apple_revoked false', async () => {
   const deleted: string[] = []
