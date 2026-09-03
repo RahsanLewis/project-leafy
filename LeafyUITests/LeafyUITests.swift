@@ -375,7 +375,7 @@ final class LeafyUITests: XCTestCase {
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
         app.launch()
 
-        attachUITestScreenshot(app, named: "01-today-before-tap")
+        attachUITestScreenshot(app, named: "today-before-tap")
 
         XCTAssertTrue(app.tabBars.buttons["Scan"].waitForExistence(timeout: 3))
         app.tabBars.buttons["Scan"].tap()
@@ -385,7 +385,7 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["scanBarcodeButton"].waitForExistence(timeout: 3))
         app.buttons["scanBarcodeButton"].tap()
         XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
-        attachUITestScreenshot(app, named: "03-camera-open")
+        attachUITestScreenshot(app, named: "camera-open")
 
         XCTAssertTrue(app.buttons["Search Instead"].waitForExistence(timeout: 3))
         app.buttons["Search Instead"].tap()
@@ -412,9 +412,13 @@ final class LeafyUITests: XCTestCase {
             timeout: 5,
             "camera cover still on screen after Search Instead"
         )
+        XCTAssertFalse(
+            app.navigationBars["Scan barcode"].exists,
+            "camera cover still on screen after Search Instead"
+        )
 
-        attachUITestScreenshot(app, named: "04-after-search-instead")
-        attachUITestScreenshot(app, named: "05-search-active")
+        attachUITestScreenshot(app, named: "after-search-instead")
+        attachUITestScreenshot(app, named: "search-active")
 
         _ = app.keyboards.firstMatch.exists
 
@@ -433,7 +437,45 @@ final class LeafyUITests: XCTestCase {
 
         app.tabBars.buttons["Today"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
-        attachUITestScreenshot(app, named: "07-back-on-today")
+        attachUITestScreenshot(app, named: "back-on-today")
+    }
+
+    @MainActor
+    func testCancellingTodayCameraDoesNotPresentDiscoveryPreview() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+        attachUITestScreenshot(app, named: "today-before-tap")
+
+        let todayScan = app.buttons["analyzeBarcodeButton"]
+        try XCTSkipUnless(
+            todayScan.waitForExistence(timeout: 3),
+            "Today Scan Barcode shortcut is not on this branch. Flow 2 (Cancel returns to Today with no discovery) requires LEAFY-014's analyzeBarcodeButton. No barcode-injection launch argument exists to simulate it."
+        )
+
+        todayScan.tap()
+        XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
+        attachUITestScreenshot(app, named: "camera-open")
+        XCTAssertTrue(app.navigationBars["Scan barcode"].buttons["Cancel"].waitForExistence(timeout: 3))
+        app.navigationBars["Scan barcode"].buttons["Cancel"].tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3),
+            "Today calorie card did not return after cancelling the camera"
+        )
+        XCTAssertFalse(
+            app.navigationBars["Scan"].exists,
+            "discovery screen appeared after cancelling the camera"
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["productDiscoverySearchContent"].exists)
+        waitForNonExistence(
+            of: app.navigationBars["Scan barcode"],
+            timeout: 5,
+            "camera cover still on screen after cancelling the camera"
+        )
+        attachUITestScreenshot(app, named: "after-camera-cancel")
     }
 
     @MainActor
@@ -540,6 +582,12 @@ final class LeafyUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
         app.navigationBars["Scan barcode"].buttons["Cancel"].tap()
         XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
+        waitForNonExistence(
+            of: app.navigationBars["Scan barcode"],
+            timeout: 5,
+            "camera cover still on screen after cancelling the camera"
+        )
+        attachUITestScreenshot(app, named: "after-scan-tab-camera-cancel")
 
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))

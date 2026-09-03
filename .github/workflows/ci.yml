@@ -97,7 +97,32 @@ jobs:
           mkdir -p ui-test-screenshots
           xcrun xcresulttool export attachments \
             --path LeafyUITests.xcresult \
-            --output-path ui-test-screenshots
+            --output-path ui-test-screenshots \
+            2>&1 | tee ui-test-screenshots/extract.log
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+
+          root = Path("ui-test-screenshots")
+          log = (root / "extract.log").read_text(errors="replace")
+          renamed = 0
+          for file_id, suggested in re.findall(
+              r'File: ([^,]+), suggested name: "([^"]+)"',
+              log,
+          ):
+              src = root / file_id.strip()
+              if not src.exists():
+                  continue
+              name = Path(suggested).name
+              dest = root / name
+              if dest.exists() and dest != src:
+                  dest = root / f"{src.stem}-{name}"
+              src.rename(dest)
+              renamed += 1
+          print(f"Renamed {renamed} exported attachments to suggested names")
+          pngs = sorted(p.name for p in root.glob("*.png"))
+          print("PNG files:\n" + "\n".join(pngs) if pngs else "No PNG files were exported")
+          PY
       - name: Upload UI test results
         if: always()
         uses: actions/upload-artifact@v4
