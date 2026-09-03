@@ -42,25 +42,23 @@ struct DashboardView: View {
         }) {
             LogFoodView(initialAIDescription: app.pendingMealDescription)
         }
-        .sheet(isPresented: $app.showProductScanner, onDismiss: {
-            app.productDiscoverySheetDidDismiss()
-        }) {
-            NavigationStack {
-                ProductDiscoveryView(
-                    intent: .analyze,
-                    onLogged: { app.dismissProductDiscovery() }
-                )
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { app.dismissProductDiscovery() }
+        .fullScreenCover(item: $app.activeProductFlow) { flow in
+            switch flow.mode {
+            case .camera:
+                TodayProductScannerCover()
+            case .discovery:
+                NavigationStack {
+                    ProductDiscoveryView(
+                        intent: .analyze,
+                        onLogged: { app.cancelProductScanner() }
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { app.cancelProductScanner() }
+                        }
                     }
                 }
             }
-        }
-        .fullScreenCover(isPresented: $app.showProductScannerCamera, onDismiss: {
-            app.productScannerCameraDidDismiss()
-        }) {
-            TodayProductScannerCover()
         }
     }
 }

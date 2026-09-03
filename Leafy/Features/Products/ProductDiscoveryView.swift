@@ -54,7 +54,7 @@ struct ProductDiscoveryView: View {
         .background(LeafyTheme.canvas)
         .navigationTitle(embedded ? "Log Food" : "Scan")
         .searchable(text: $query, isPresented: $isSearchPresented, prompt: "Product, brand, or barcode")
-        .onAppear { app.productDiscoverySheetDidAppear() }
+        .onAppear { app.productDiscoveryFlowDidAppear() }
         .onChange(of: app.focusProductDiscoverySearch) { _, focus in
             guard focus else { return }
             isSearchPresented = true
