@@ -62,7 +62,8 @@ enum NutritionCalculator {
             carbohydrateG: Int((carbohydrateCalories / 4).rounded()),
             fatG: Int((fatCalories / 9).rounded()),
             projectedWeeklyChangeKG: weeklyChange,
-            estimatedGoalDate: estimatedDate, createdAt: now
+            estimatedGoalDate: estimatedDate, createdAt: now,
+            inputSnapshot: input
         )
     }
 }
