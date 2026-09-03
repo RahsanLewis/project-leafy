@@ -158,7 +158,7 @@ export async function listStoragePrefix(storage: StorageGateway, userId: string)
     const directory = queue.shift()!
     directories += 1
     if (directories > MAX_LISTED_DIRECTORIES) {
-      throw new DeleteAccountError('Unable to list account media for deletion.', 500, 'storage_purge_failed')
+      throw new DeleteAccountError('Unable to list account media for deletion.', 500, 'storage_purge_failed', {})
     }
 
     let offset = 0
@@ -166,7 +166,7 @@ export async function listStoragePrefix(storage: StorageGateway, userId: string)
       const { data, error } = await storage.list(directory, { limit: LIST_PAGE, offset })
       if (error) {
         if (isMissingPrefixError(error) && offset === 0) break
-        throw new DeleteAccountError('Unable to list account media for deletion.', 500, 'storage_purge_failed')
+        throw new DeleteAccountError('Unable to list account media for deletion.', 500, 'storage_purge_failed', {})
       }
       const items = data ?? []
       if (!items.length) break
@@ -178,7 +178,7 @@ export async function listStoragePrefix(storage: StorageGateway, userId: string)
         if (item.id) {
           files.push(child)
           if (files.length > MAX_LISTED_PATHS) {
-            throw new DeleteAccountError('Unable to list account media for deletion.', 500, 'storage_purge_failed')
+            throw new DeleteAccountError('Unable to list account media for deletion.', 500, 'storage_purge_failed', {})
           }
         } else {
           queue.push(child)
@@ -205,7 +205,7 @@ export async function collectPathsToPurge(admin: AdminGateway, storage: StorageG
 export async function purgeOwnedStorage(storage: StorageGateway, paths: string[]) {
   for (const chunk of chunkPaths(paths)) {
     const { error } = await storage.remove(chunk)
-    if (error) throw new DeleteAccountError('Unable to delete account media.', 500, 'storage_purge_failed')
+    if (error) throw new DeleteAccountError('Unable to delete account media.', 500, 'storage_purge_failed', {})
   }
 }
 
@@ -330,7 +330,12 @@ export async function deleteAuthenticatedAccount(input: {
     paths = await collectPathsToPurge(input.admin, input.storage, userId)
     await purgeOwnedStorage(input.storage, paths)
   } catch (error) {
-    if (error instanceof DeleteAccountError) throw error
+    if (error instanceof DeleteAccountError) {
+      throw new DeleteAccountError(error.message, error.status, error.code, {
+        ...error.details,
+        apple_identity: appleIdentity,
+      })
+    }
     throw new DeleteAccountError('Unable to delete account media.', 500, 'storage_purge_failed', {
       apple_identity: appleIdentity,
       apple_revoked: appleRevoked,

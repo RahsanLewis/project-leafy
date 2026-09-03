@@ -5,6 +5,7 @@ import {
   NUTRITION_MEDIA_BUCKET,
   deleteAuthenticatedAccount,
   failureBody,
+  hasAppleIdentity,
   type AdminGateway,
   type AppleConfig,
   type AuthUserLike,
@@ -74,6 +75,7 @@ Deno.serve(async (request) => {
     }, 405)
   }
 
+  let appleIdentity = false
   try {
     const authorization = request.headers.get('Authorization') ?? ''
     const url = Deno.env.get('SUPABASE_URL')!
@@ -92,6 +94,7 @@ Deno.serve(async (request) => {
       }, 401)
     }
 
+    appleIdentity = hasAppleIdentity(user as AuthUserLike)
     const body = await request.json().catch(() => ({})) as DeleteAccountBody
     const admin = createClient(url, secret)
     const result = await deleteAuthenticatedAccount({
@@ -108,6 +111,7 @@ Deno.serve(async (request) => {
       ok: false,
       error: 'Unable to delete account',
       error_code: 'invalid_request',
+      apple_identity: appleIdentity,
       apple_revoked: false,
       apple_revoke_error: null,
       errors: ['Unable to delete account'],
