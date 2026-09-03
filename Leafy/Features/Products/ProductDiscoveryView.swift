@@ -41,62 +41,87 @@ struct ProductDiscoveryView: View {
     }
 
     var body: some View {
-        Group {
-            if showingScanner {
-                scannerContent
-            } else {
-                discoveryContent
+        withDestinations
+    }
+
+    private var withDestinations: some View {
+        withUnknownSheet
+            .navigationDestination(item: $detail, destination: productDetailDestination)
+            .navigationDestination(isPresented: $showingContribution) {
+                contributionDestination
+            }
+    }
+
+    private var withUnknownSheet: some View {
+        withToolbar
+            .sheet(isPresented: $showingUnknownProduct, onDismiss: finishUnknownProductSheet) {
+                unknownProductSheet
+            }
+    }
+
+    private var withToolbar: some View {
+        scannerOrDiscovery.toolbar { leadingToolbar }
+    }
+
+    @ViewBuilder private var scannerOrDiscovery: some View {
+        if showingScanner {
+            scannerContent
+        } else {
+            discoveryContent
+        }
+    }
+
+    @ToolbarContentBuilder private var leadingToolbar: some ToolbarContent {
+        if showingScanner {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { cancelScanner() }
+            }
+        } else if intent == .log && !embedded {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        } else if onScannerCancelled != nil {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { onScannerCancelled?() }
             }
         }
-        .toolbar {
-            if showingScanner {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { cancelScanner() }
+    }
+
+    @ViewBuilder private var unknownProductSheet: some View {
+        if let unknownBarcode {
+            UnknownProductSheet(
+                barcode: unknownBarcode,
+                addProduct: {
+                    openContributionAfterUnknownProduct = true
+                    showingUnknownProduct = false
+                },
+                scanAnother: {
+                    reopenScannerAfterUnknownProduct = true
+                    showingUnknownProduct = false
                 }
-            } else if intent == .log && !embedded {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            } else if onScannerCancelled != nil {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { onScannerCancelled?() }
-                }
-            }
+            )
+            .presentationDetents([.height(390)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(LeafyTheme.canvas)
         }
-        .sheet(isPresented: $showingUnknownProduct, onDismiss: finishUnknownProductSheet) {
-            if let unknownBarcode {
-                UnknownProductSheet(
-                    barcode: unknownBarcode,
-                    addProduct: {
-                        openContributionAfterUnknownProduct = true
-                        showingUnknownProduct = false
-                    },
-                    scanAnother: {
-                        reopenScannerAfterUnknownProduct = true
-                        showingUnknownProduct = false
-                    }
-                )
-                .presentationDetents([.height(390)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(LeafyTheme.canvas)
-            }
-        }
-        .navigationDestination(item: $detail) { product in
-            ProductDetailView(
-                product: product,
+    }
+
+    private func productDetailDestination(_ product: ProductDetail) -> ProductDetailView {
+        ProductDetailView(
+            product: product,
+            intent: intent,
+            allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
+            logDate: app.selectedLogDate
+        ) { completeLog() }
+    }
+
+    @ViewBuilder private var contributionDestination: some View {
+        if let unknownBarcode {
+            CatalogContributionView(
+                barcode: unknownBarcode,
                 intent: intent,
                 allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
-                logDate: app.selectedLogDate
-            ) { completeLog() }
-        }
-        .navigationDestination(isPresented: $showingContribution) {
-            if let unknownBarcode {
-                CatalogContributionView(
-                    barcode: unknownBarcode,
-                    intent: intent,
-                    allowsLoggingFromAnalysis: allowsLoggingFromAnalysis,
-                    onCompleted: { completeLog() },
-                    hasUnsavedDraft: $hasUnsavedDraft
-                )
-            }
+                onCompleted: { completeLog() },
+                hasUnsavedDraft: $hasUnsavedDraft
+            )
         }
     }
 
