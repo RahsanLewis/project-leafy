@@ -901,12 +901,7 @@ final class AppCoordinator {
         focusProductDiscoverySearch = false
         pendingProductBarcode = nil
         productScannerCameraHandoff = .none
-        showProductScannerCamera = false
-        showProductScanner = true
-    }
-
-    func presentProductScannerCameraIfNeeded() {
-        guard showProductScanner else { return }
+        showProductScanner = false
         showProductScannerCamera = true
     }
 
@@ -932,8 +927,15 @@ final class AppCoordinator {
     func productScannerCameraDidDismiss() {
         let handoff = productScannerCameraHandoff
         productScannerCameraHandoff = .none
-        guard showProductScanner, handoff == .search else { return }
-        focusProductDiscoverySearch = true
+        switch handoff {
+        case .search:
+            focusProductDiscoverySearch = true
+            showProductScanner = true
+        case .scan:
+            showProductScanner = true
+        case .cancel, .none:
+            break
+        }
     }
 
     func beginLoggingYesterdayFromMorningCheckIn() {
