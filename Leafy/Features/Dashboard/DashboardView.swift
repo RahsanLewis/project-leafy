@@ -55,11 +55,11 @@ struct DashboardView: View {
                 }
             }
             .onAppear { app.presentProductScannerCameraIfNeeded() }
-            .fullScreenCover(isPresented: $app.showProductScannerCamera, onDismiss: {
-                app.productScannerCameraDidDismiss()
-            }) {
-                TodayProductScannerCover()
-            }
+        }
+        .fullScreenCover(isPresented: $app.showProductScannerCamera, onDismiss: {
+            app.productScannerCameraDidDismiss()
+        }) {
+            TodayProductScannerCover()
         }
     }
 }
