@@ -10,6 +10,12 @@ import {
 const reviewSource = await Deno.readTextFile(
   new URL('../functions/review-catalog-contribution/index.ts', import.meta.url),
 )
+const reviewRetrySource = await Deno.readTextFile(
+  new URL(
+    '../functions/review-catalog-contribution/retry-recognition.ts',
+    import.meta.url,
+  ),
+)
 const manageSource = await Deno.readTextFile(
   new URL('../functions/manage-catalog-contribution/index.ts', import.meta.url),
 )
@@ -92,7 +98,12 @@ Deno.test('F-07 catalog review key fails closed and never falls back to the serv
   assertEquals(catalogReviewKeyAuthorizes('other', 'secret'), false)
   assert(!reviewSource.includes('CATALOG_REVIEW_KEY") ?? secret'))
   assert(!manageSource.includes('CATALOG_REVIEW_KEY") ?? secret'))
-  assertStringIncludes(reviewSource, 'Catalog review key is not configured.')
+  assert(!reviewRetrySource.includes('CATALOG_REVIEW_KEY") ?? secret'))
+  assertStringIncludes(
+    reviewRetrySource,
+    'Catalog review key is not configured.',
+  )
+  assertStringIncludes(reviewRetrySource, 'configuredCatalogReviewKey')
   assertStringIncludes(manageSource, 'configuredCatalogReviewKey')
 })
 

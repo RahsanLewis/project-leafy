@@ -11,6 +11,7 @@ import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
 import { PFQS_INGREDIENT_DATABASE_VERSION } from "../_shared/pfqs/types.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
 import { nutrientUnits as sharedNutrientUnits } from "../_shared/nutrients.ts";
+import { retryRecognition } from "./retry-recognition.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -364,6 +365,10 @@ Deno.serve(async (request) => {
         contribution,
         reviewer,
         url,
+        {
+          addEvent,
+          waitUntil: (promise) => EdgeRuntime.waitUntil(promise),
+        },
       );
       return respond({ contribution: await withEvidence(admin, retried) }, 202);
     }
@@ -717,64 +722,6 @@ async function saveReview(
       to_revision: nextRevision,
       remaining_issues: issues,
     },
-  );
-  return update.data;
-}
-
-async function retryRecognition(
-  admin: any,
-  contribution: Row,
-  reviewer: Reviewer,
-  url: string,
-) {
-  const now = new Date().toISOString();
-  const job = await admin.from("catalog_contribution_jobs").upsert({
-    contribution_id: contribution.id,
-    user_id: contribution.user_id,
-    status: "queued",
-    attempts: 0,
-    next_attempt_at: now,
-    last_error: null,
-    started_at: null,
-    completed_at: null,
-    updated_at: now,
-  }, { onConflict: "contribution_id" });
-  if (job.error) throw job.error;
-  const update = await admin.from("catalog_contributions").update({
-    status: "processing",
-    review_reason: null,
-    updated_at: now,
-  }).eq("id", contribution.id).eq("revision", contribution.revision).select("*")
-    .single();
-  if (update.error) throw update.error;
-  await addEvent(
-    admin,
-    contribution.id,
-    String(contribution.status),
-    "processing",
-    "Recognition retried by catalog review.",
-    reviewer,
-  );
-  const key = configuredCatalogReviewKey(Deno.env.get("CATALOG_REVIEW_KEY"));
-  if (!key) {
-    throw new Error("Catalog review key is not configured.");
-  }
-  EdgeRuntime.waitUntil(
-    fetch(`${url}/functions/v1/manage-catalog-contribution`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-leafy-admin-key": key },
-      body: JSON.stringify({
-        action: "admin_retry",
-        contribution_id: contribution.id,
-      }),
-    }).then(async (response) => {
-      if (!response.ok) {
-        throw new Error(
-          (await response.json().catch(() => ({})))?.error ??
-            "Recognition retry failed.",
-        );
-      }
-    }).catch((error) => console.error("admin catalog retry failed", error)),
   );
   return update.data;
 }
