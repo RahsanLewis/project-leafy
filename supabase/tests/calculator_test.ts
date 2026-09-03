@@ -360,6 +360,10 @@ Deno.test('msj-amdr-v1 calculator: boundary + floor + acceptance matrix (table-d
         estimated_goal_date: null,
       },
     },
+    // NOTE: 1472 * 1.725 = 2539.2, but tdee_kcal is 2538 and that is CORRECT.
+    // bmr_kcal and tdee_kcal round independently from raw values:
+    // rawBMR = 1471.5 -> 1472, rawTDEE = 1471.5 * 1.725 = 2538.3375 -> 2538.
+    // Do not derive tdee from the rounded bmr.
     {
       label: 'G9 very_active lose steady',
       input: {
