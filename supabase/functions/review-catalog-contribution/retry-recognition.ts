@@ -29,6 +29,18 @@ export async function retryRecognition(
   }
 
   const now = new Date().toISOString();
+  // Claim the contribution first. The revision guard must fail closed before
+  // any job row is written, otherwise a concurrent edit leaves a queued job
+  // with no worker and no status event.
+  const update = await admin.from("catalog_contributions").update({
+    status: "processing",
+    review_reason: null,
+    updated_at: now,
+  }).eq("id", contribution.id).eq("revision", contribution.revision).select(
+    "*",
+  ).single();
+  if (update.error) throw update.error;
+
   const job = await admin.from("catalog_contribution_jobs").upsert({
     contribution_id: contribution.id,
     user_id: contribution.user_id,
@@ -41,15 +53,6 @@ export async function retryRecognition(
     updated_at: now,
   }, { onConflict: "contribution_id" });
   if (job.error) throw job.error;
-
-  const update = await admin.from("catalog_contributions").update({
-    status: "processing",
-    review_reason: null,
-    updated_at: now,
-  }).eq("id", contribution.id).eq("revision", contribution.revision).select(
-    "*",
-  ).single();
-  if (update.error) throw update.error;
 
   await options.addEvent(
     admin,
