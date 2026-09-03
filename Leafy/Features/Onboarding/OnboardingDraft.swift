@@ -58,7 +58,7 @@ struct ImperialHeightSelection: Equatable, Sendable {
     var isPregnantOrBreastfeeding: Bool?
     var isInEatingDisorderRecovery: Bool?
     var followsClinicianDirectedDiet: Bool?
-    var birthDate = Calendar.current.date(byAdding: .year, value: -30, to: .now)!
+    var birthDate = LocalDate.yearsBeforeNow(30)
     var calculationSex: CalculationSex = .female
     var heightCM = 168.0
     var currentWeightKG = 70.0

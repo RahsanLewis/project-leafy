@@ -105,7 +105,7 @@ struct PlanEditView: View {
 
                 DisclosureGroup("Profile details", isExpanded: $showingProfile) {
                     VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                        DatePicker("Date of birth", selection: binding(\.birthDate, fallback: input.birthDate), in: birthDateRange, displayedComponents: .date)
+                        DatePicker("Date of birth", selection: binding(\.birthDate, fallback: input.birthDate).datePickerSelection, in: birthDateRange, displayedComponents: .date)
                         Picker("Calculation sex", selection: binding(\.calculationSex, fallback: input.calculationSex)) {
                             ForEach(CalculationSex.allCases) { Text($0.title).tag($0) }
                         }

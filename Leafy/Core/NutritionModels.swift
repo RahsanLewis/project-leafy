@@ -75,7 +75,7 @@ enum UnitSystem: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 struct NutritionPlanInput: Codable, Equatable, Sendable {
-    var birthDate: Date
+    var birthDate: LocalDate
     var calculationSex: CalculationSex
     var heightCM: Double
     var currentWeightKG: Double
@@ -108,7 +108,7 @@ struct NutritionPlan: Codable, Equatable, Sendable, Identifiable {
     var carbohydrateG: Int
     var fatG: Int
     var projectedWeeklyChangeKG: Double
-    var estimatedGoalDate: Date?
+    var estimatedGoalDate: LocalDate?
     var createdAt: Date
     /// Goal and inputs the plan was computed from. Optional so PlanCache
     /// records written before this field still decode.
@@ -152,7 +152,7 @@ struct NutritionPlan: Codable, Equatable, Sendable, Identifiable {
     }
 
     /// Same gate as pace: a lose plan's date must not render against a gain draft.
-    func displayedEstimatedGoalDate(draftGoal: WeightGoal) -> Date? {
+    func displayedEstimatedGoalDate(draftGoal: WeightGoal) -> LocalDate? {
         guard showsProjectedPace(draftGoal: draftGoal) else { return nil }
         return estimatedGoalDate
     }

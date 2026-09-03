@@ -238,7 +238,7 @@ struct OnboardingView: View {
         let latest = calendar.date(byAdding: .year, value: -18, to: .now) ?? .now
         let earliest = calendar.date(byAdding: .year, value: -120, to: .now) ?? .distantPast
         return VStack(spacing: LeafySpacing.medium) {
-            DatePicker("Date of birth", selection: $draft.birthDate, in: earliest...latest, displayedComponents: .date)
+            DatePicker("Date of birth", selection: $draft.birthDate.datePickerSelection, in: earliest...latest, displayedComponents: .date)
                 .datePickerStyle(.wheel)
                 .labelsHidden()
             Text("Age \(age(for: draft.birthDate))")
@@ -376,6 +376,10 @@ struct OnboardingView: View {
         let steps = visibleQuestionSteps
         guard let index = steps.firstIndex(of: app.draft.step) else { return }
         if app.draft.step == .currentWeight { normalizeTargetIfNeeded() }
+        if app.draft.step == .birthDate {
+            app.confirmOnboardingBirthDate()
+            Task { await app.persistPendingOnboarding() }
+        }
         if index == steps.count - 1 {
             guard app.calculatePreview() else { return }
             move(to: .results)
@@ -404,8 +408,10 @@ struct OnboardingView: View {
         }
     }
 
-    private func age(for birthday: Date) -> Int {
-        Calendar.current.dateComponents([.year], from: birthday, to: .now).year ?? 0
+    private func age(for birthday: LocalDate) -> Int {
+        let today = LocalDate(localCivilFrom: .now, timeZone: .current)
+            ?? LocalDate.utcCivilDate(from: .now)
+        return birthday.ageInYears(asOf: today)
     }
 
     private func paceText(_ pace: GoalPace) -> String {

@@ -86,6 +86,7 @@ final class AppCoordinator {
     var coreDataAcknowledgmentError: String?
     var authFlowState: AuthFlowState = .signedOut
     var showPasswordRecovery = false
+    var requiresBirthDateConfirmation = false
     let pendingOnboardingCache = PendingOnboardingCache()
     private var authObserverTask: Task<Void, Never>?
     private var lastPromptedCheckInDay: Date?
@@ -130,17 +131,23 @@ final class AppCoordinator {
             isAuthenticated = false
             if let pending = await pendingOnboardingCache.load() {
                 apply(pending.input)
-                if let stepID = pending.stepID, let step = OnboardingDraft.Step(rawValue: stepID) {
-                    draft.step = step
-                } else if let legacyStep = pending.stepRawValue {
-                    draft.step = OnboardingDraft.Step.legacy(legacyStep, draft: draft)
-                } else {
-                    draft.step = .results
-                }
                 termsAccepted = pending.termsAccepted
                 privacyAccepted = pending.privacyAccepted
                 coreDataAccepted = pending.coreDataAccepted
-                _ = calculatePreview()
+                requiresBirthDateConfirmation = pending.requiresBirthDateConfirmation
+                if pending.requiresBirthDateConfirmation {
+                    draft.step = .birthDate
+                    preview = nil
+                } else if let stepID = pending.stepID, let step = OnboardingDraft.Step(rawValue: stepID) {
+                    draft.step = step
+                    _ = calculatePreview()
+                } else if let legacyStep = pending.stepRawValue {
+                    draft.step = OnboardingDraft.Step.legacy(legacyStep, draft: draft)
+                    _ = calculatePreview()
+                } else {
+                    draft.step = .results
+                    _ = calculatePreview()
+                }
             }
             route = .onboarding
             return
@@ -172,6 +179,10 @@ final class AppCoordinator {
     }
 
     func calculatePreview() -> Bool {
+        guard !requiresBirthDateConfirmation else {
+            preview = nil
+            return false
+        }
         do {
             preview = try NutritionCalculator.calculate(input: draft.input)
             errorMessage = nil
@@ -180,6 +191,10 @@ final class AppCoordinator {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    func confirmOnboardingBirthDate() {
+        requiresBirthDateConfirmation = false
     }
 
     func createAccount() async {
@@ -265,10 +280,15 @@ final class AppCoordinator {
     }
 
     func saveAuthenticatedDraft(accessToken: String? = nil, recordLegalAcceptance: Bool = false) async throws {
+        guard !requiresBirthDateConfirmation else {
+            draft.step = .birthDate
+            throw PlanValidationError.invalidAge
+        }
         saveState = .saving
         let plan = try await service.savePlan(draft.input, accessToken: accessToken, recordLegalAcceptance: recordLegalAcceptance)
         try await cache.save(plan, input: draft.input)
         currentPlan = plan
+        requiresBirthDateConfirmation = false
         isAuthenticated = true
         authFlowState = .authenticated
         account = try? await service.account()
@@ -1318,7 +1338,8 @@ final class AppCoordinator {
             stepID: draft.step.rawValue,
             termsAccepted: termsAccepted,
             privacyAccepted: privacyAccepted,
-            coreDataAccepted: coreDataAccepted
+            coreDataAccepted: coreDataAccepted,
+            requiresBirthDateConfirmation: requiresBirthDateConfirmation
         ))
     }
 
@@ -1402,7 +1423,7 @@ final class AppCoordinator {
         showLogFood = false
         isAuthenticated = false
         account = nil; authFlowState = .signedOut
-        draft = OnboardingDraft(); route = .onboarding
+        draft = OnboardingDraft(); requiresBirthDateConfirmation = false; route = .onboarding
     }
 
     private func loadAuthenticatedAccount(accessToken: String) async throws {
@@ -1420,6 +1441,7 @@ final class AppCoordinator {
             foodEntries = []
             dailyPlan = nil
             draft = OnboardingDraft()
+            requiresBirthDateConfirmation = false
             statusMessage = "You’re signed in. Let’s create your first plan."
             route = .onboarding
             return
