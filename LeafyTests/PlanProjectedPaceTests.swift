@@ -4,8 +4,9 @@ import XCTest
 /// LEAFY-016: Projected pace is gated on the saved plan's snapshot goal, not the live draft.
 ///
 /// Fallback when `input_snapshot` is absent (pre-upgrade PlanCache): decode succeeds
-/// with `inputSnapshot == nil`, and pace is omitted because the plan's own goal
-/// cannot be confirmed. Goal is never inferred from target presence or absence.
+/// with `inputSnapshot == nil`, and pace and estimated date are omitted because
+/// the plan's own goal cannot be confirmed. Goal is never inferred from target
+/// presence or absence. Date uses the same `showsProjectedPace` gate as pace.
 final class PlanProjectedPaceTests: XCTestCase {
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
