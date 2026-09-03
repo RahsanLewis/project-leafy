@@ -8,6 +8,7 @@ final class AppCoordinator {
     enum SaveState: Equatable { case idle, creatingAccount, awaitingConfirmation, resendingConfirmation, authenticating, saving, deleting }
     enum MealEstimateActivity: Equatable { case idle, analyzing, refining, saving }
     private enum MorningCheckInLoggingHandoff { case idle, awaitingLogger, logging }
+    private enum ProductScannerCameraHandoff { case none, search, scan, cancel }
 
     var route: Route = .launching
     var draft = OnboardingDraft()
@@ -49,7 +50,11 @@ final class AppCoordinator {
     var pendingChatText: String?
     var showLogFood = false
     var showProductScanner = false
+    var showProductScannerCamera = false
+    var focusProductDiscoverySearch = false
+    var pendingProductBarcode: String?
     var pendingMealDescription = ""
+    private var productScannerCameraHandoff: ProductScannerCameraHandoff = .none
     private var mealEstimateSessionID: UUID?
     private var mealPhotoObjectPath: String?
     private var mealEstimateLogDate = Calendar.current.startOfDay(for: .now)
@@ -893,7 +898,42 @@ final class AppCoordinator {
     }
 
     func presentProductScanner() {
+        focusProductDiscoverySearch = false
+        pendingProductBarcode = nil
+        productScannerCameraHandoff = .none
+        showProductScannerCamera = false
         showProductScanner = true
+    }
+
+    func presentProductScannerCameraIfNeeded() {
+        guard showProductScanner else { return }
+        showProductScannerCamera = true
+    }
+
+    func dismissProductScannerCameraForSearch() {
+        productScannerCameraHandoff = .search
+        showProductScannerCamera = false
+    }
+
+    func cancelProductScanner() {
+        productScannerCameraHandoff = .cancel
+        showProductScannerCamera = false
+        showProductScanner = false
+        focusProductDiscoverySearch = false
+        pendingProductBarcode = nil
+    }
+
+    func completeProductScannerScan(_ code: String) {
+        pendingProductBarcode = code
+        productScannerCameraHandoff = .scan
+        showProductScannerCamera = false
+    }
+
+    func productScannerCameraDidDismiss() {
+        let handoff = productScannerCameraHandoff
+        productScannerCameraHandoff = .none
+        guard showProductScanner, handoff == .search else { return }
+        focusProductDiscoverySearch = true
     }
 
     func beginLoggingYesterdayFromMorningCheckIn() {

@@ -46,11 +46,60 @@ struct DashboardView: View {
             NavigationStack {
                 ProductDiscoveryView(
                     intent: .analyze,
-                    startsWithScanner: true,
-                    onScannerCancelled: { app.showProductScanner = false },
                     onLogged: { app.showProductScanner = false }
                 )
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { app.showProductScanner = false }
+                    }
+                }
             }
+            .onAppear { app.presentProductScannerCameraIfNeeded() }
+            .fullScreenCover(isPresented: $app.showProductScannerCamera, onDismiss: {
+                app.productScannerCameraDidDismiss()
+            }) {
+                TodayProductScannerCover()
+            }
+        }
+    }
+}
+
+private struct TodayProductScannerCover: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
+    @State private var scannerStatus: BarcodeScannerStatus = .requestingPermission
+
+    var body: some View {
+        NavigationStack {
+            BarcodeScannerView(onCode: { app.completeProductScannerScan($0) }, onStatusChange: { scannerStatus = $0 })
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle("Scan barcode")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { app.cancelProductScanner() }
+                    }
+                }
+                .safeAreaInset(edge: .bottom) {
+                    VStack(spacing: LeafySpacing.xSmall) {
+                        if scannerStatus == .denied {
+                            Button("Open Settings") {
+                                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                                openURL(url)
+                            }
+                            .font(LeafyTypography.subheadlineSemibold)
+                            .foregroundStyle(.white)
+                            .frame(minHeight: 44)
+                        }
+                        Button("Search Instead") {
+                            app.dismissProductScannerCameraForSearch()
+                        }
+                        .font(LeafyTypography.subheadlineSemibold)
+                        .foregroundStyle(.white)
+                        .frame(minHeight: 44)
+                    }
+                    .padding(.horizontal, LeafyTheme.pageInset)
+                }
         }
     }
 }
