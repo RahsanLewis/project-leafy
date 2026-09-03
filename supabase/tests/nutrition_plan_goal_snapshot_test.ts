@@ -18,7 +18,12 @@ function checkExpression(sql: string): string {
   return match[1]
 }
 
-Deno.test('nutrition_plans input_snapshot goal CHECK is added NOT VALID then VALIDATE', () => {
+// STATIC migration-shape coverage only. These tests read the SQL file and pin
+// required tokens. They do not connect to Postgres and do not prove CHECK
+// evaluation, three-valued logic, or UNKNOWN handling. Live engine evidence
+// lives on the PR body (read-only SELECT truth table).
+
+Deno.test('STATIC: nutrition_plans goal CHECK migration adds NOT VALID then VALIDATE', () => {
   const addMatch = migration.match(/add constraint\s+(\w+)\s+check/i)
   const validateMatch = migration.match(/validate constraint\s+(\w+)/i)
   assertEquals(addMatch?.[1], CONSTRAINT)
@@ -28,24 +33,27 @@ Deno.test('nutrition_plans input_snapshot goal CHECK is added NOT VALID then VAL
   assertStringIncludes(migration, `validate constraint ${CONSTRAINT}`)
 })
 
-Deno.test('nutrition_plans input_snapshot goal CHECK requires the key and a coalesce-wrapped label', () => {
+Deno.test('STATIC: nutrition_plans goal CHECK shape requires key + parenthesized coalesce IN-list', () => {
   const check = checkExpression(migration)
   assertStringIncludes(check, "input_snapshot ? 'goal'")
   assert(
-    /coalesce\s*\(\s*input_snapshot->>'goal'\s+in\s*\(/i.test(check),
-    "CHECK must wrap input_snapshot->>'goal' IN (...) with coalesce so SQL NULL is false, not UNKNOWN",
+    /coalesce\s*\(\s*\(\s*input_snapshot->>'goal'\s*\)\s+in\s*\(/i.test(check),
+    "migration shape must include coalesce((input_snapshot->>'goal') IN (...), false)",
   )
   assertStringIncludes(check, 'lose')
   assertStringIncludes(check, 'maintain')
   assertStringIncludes(check, 'gain')
-  const inListWithoutWrapper = check.replace(/coalesce\s*\(\s*input_snapshot->>'goal'\s+in\s*\([^)]*\)\s*,\s*false\s*\)/gi, '')
+  const stripped = check.replace(
+    /coalesce\s*\(\s*\(\s*input_snapshot->>'goal'\s*\)\s+in\s*\([^)]*\)\s*,\s*false\s*\)/gi,
+    '',
+  )
   assert(
-    !/->>'goal'\s+in\s*\(/i.test(inListWithoutWrapper),
-    "bare ->>'goal' IN (...) without a null-forcing wrapper is not accepted",
+    !/->>'goal'\s*\)?\s+in\s*\(/i.test(stripped),
+    "migration shape must not leave a bare ->>'goal' IN (...) without coalesce((...) IN (...), false)",
   )
 })
 
-Deno.test('nutrition_plans input_snapshot CHECK is goal-only and does not constrain pace or target weight', () => {
+Deno.test('STATIC: nutrition_plans goal CHECK is goal-only (no pace / target_weight_kg)', () => {
   const check = checkExpression(migration)
   assert(!/\bpace\b/.test(check), 'pace must not appear in the CHECK expression')
   assert(!/target_weight_kg/.test(check), 'target_weight_kg must not appear in the CHECK expression')
@@ -54,24 +62,4 @@ Deno.test('nutrition_plans input_snapshot CHECK is goal-only and does not constr
     !/target_weight_kg/.test(migration),
     'migration must not mention target_weight_kg as a constrained field',
   )
-})
-
-// Required cases (source-string CI; no live Postgres). How the CHECK treats them:
-// - missing key → reject (`input_snapshot ? 'goal'` is false)
-// - JSON null goal (`{"goal": null}`) → reject
-//     This is the three-valued-logic hole: `? 'goal'` passes, `->>'goal'` is
-//     SQL NULL, `NULL IN (...)` is UNKNOWN, and CHECK treats UNKNOWN as pass.
-//     `coalesce(..., false)` forces false on SQL NULL.
-// - invalid string (e.g. "maintainence") → reject (not in lose/maintain/gain)
-// - valid lose / maintain / gain → accept
-// - maintain with missing or null target_weight_kg → accept (not constrained)
-Deno.test('nutrition_plans input_snapshot goal CHECK documents required accept/reject cases', () => {
-  const check = checkExpression(migration)
-  assertStringIncludes(check, "input_snapshot ? 'goal'")
-  assertStringIncludes(check, 'coalesce(')
-  assertStringIncludes(check, 'false')
-  assertStringIncludes(check, "'lose'")
-  assertStringIncludes(check, "'maintain'")
-  assertStringIncludes(check, "'gain'")
-  assert(!/target_weight_kg/.test(check))
 })

@@ -15,7 +15,7 @@ alter table public.nutrition_plans
   add constraint nutrition_plans_input_snapshot_goal_check
   check (
     input_snapshot ? 'goal'
-    and coalesce(input_snapshot->>'goal' in ('lose', 'maintain', 'gain'), false)
+    and coalesce((input_snapshot->>'goal') IN ('lose', 'maintain', 'gain'), false)
   )
   not valid;
 
