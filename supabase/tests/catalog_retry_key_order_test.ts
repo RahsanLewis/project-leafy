@@ -381,9 +381,12 @@ Deno.test(
         import.meta.url,
       ),
     );
-    const retryBranch = reviewSource.slice(
-      reviewSource.indexOf('if (action === "retry")'),
-      reviewSource.indexOf("if (!reviewableStatuses.includes"),
+    const retryStart = reviewSource.indexOf('if (action === "retry")');
+    assert(retryStart >= 0);
+    const afterRetry = reviewSource.slice(retryStart);
+    const retryBranch = afterRetry.slice(
+      0,
+      afterRetry.indexOf("if (!reviewableStatuses.includes"),
     );
 
     assert(retrySource.includes(".maybeSingle()"));
