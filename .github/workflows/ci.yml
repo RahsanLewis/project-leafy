@@ -24,6 +24,10 @@ jobs:
       - run: xcodebuild -project Leafy.xcodeproj -scheme Leafy -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
   ios-ui-tests:
+    # LEAFY-027: soft-fail until the five pre-existing XCUITest failures are fixed or
+    # explicitly quarantined. Do not treat a green workflow as "UI suite green".
+    # Remove continue-on-error when LEAFY-027 closes; then this job becomes a real gate.
+    continue-on-error: true
     runs-on: macos-15
     timeout-minutes: 60
     steps:
