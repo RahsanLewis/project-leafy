@@ -370,6 +370,73 @@ final class LeafyUITests: XCTestCase {
     }
 
     @MainActor
+    func testScanTabSearchInsteadDismissesCameraAndActivatesSearchPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
+        app.launch()
+
+        attachUITestScreenshot(app, named: "01-today-before-tap")
+
+        XCTAssertTrue(app.tabBars.buttons["Scan"].waitForExistence(timeout: 3))
+        app.tabBars.buttons["Scan"].tap()
+        XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
+        attachUITestScreenshot(app, named: "02-scan-tab-landing")
+
+        XCTAssertTrue(app.buttons["scanBarcodeButton"].waitForExistence(timeout: 3))
+        app.buttons["scanBarcodeButton"].tap()
+        XCTAssertTrue(app.navigationBars["Scan barcode"].waitForExistence(timeout: 3))
+        attachUITestScreenshot(app, named: "03-camera-open")
+
+        XCTAssertTrue(app.buttons["Search Instead"].waitForExistence(timeout: 3))
+        app.buttons["Search Instead"].tap()
+
+        XCTAssertTrue(
+            app.buttons["Cancel"].waitForExistence(timeout: 3),
+            "Search was not activated by Search Instead"
+        )
+
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 3), "Search field did not appear after Search Instead")
+
+        XCTAssertFalse(
+            app.staticTexts["Scan a packaged food"].exists,
+            "scanLanding was still visible after Search Instead; searchContent should have replaced it"
+        )
+        XCTAssertTrue(
+            app.staticTexts["Search packaged foods"].waitForExistence(timeout: 3),
+            "searchContent empty state was not visible after Search Instead"
+        )
+
+        waitForNonExistence(
+            of: app.navigationBars["Scan barcode"],
+            timeout: 5,
+            "camera cover still on screen after Search Instead"
+        )
+
+        attachUITestScreenshot(app, named: "04-after-search-instead")
+        attachUITestScreenshot(app, named: "05-search-active")
+
+        _ = app.keyboards.firstMatch.exists
+
+        XCTAssertTrue(
+            app.buttons["Cancel"].waitForExistence(timeout: 3),
+            "Search Cancel button was gone before it could be tapped"
+        )
+        app.buttons["Cancel"].tap()
+
+        XCTAssertTrue(app.navigationBars["Scan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts["Scan a packaged food"].waitForExistence(timeout: 3),
+            "Scan landing did not return after cancelling search"
+        )
+        attachUITestScreenshot(app, named: "06-back-on-scan-tab")
+
+        app.tabBars.buttons["Today"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["calorieBudgetCard"].waitForExistence(timeout: 3))
+        attachUITestScreenshot(app, named: "07-back-on-today")
+    }
+
+    @MainActor
     func testLogFoodChooseFromLibraryOpensSystemPhotoPicker() {
         let app = XCUIApplication()
         app.launchArguments = ["-CICOPreview", "-SkipMorningCheckIn"]
@@ -769,5 +836,25 @@ final class LeafyUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["weightHistoryView"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Weight history"].exists)
+    }
+
+    func attachUITestScreenshot(_ app: XCUIApplication, named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func waitForNonExistence(
+        of element: XCUIElement,
+        timeout: TimeInterval,
+        _ message: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let predicate = NSPredicate(format: "exists == false")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        XCTAssertEqual(result, .completed, message, file: file, line: line)
     }
 }
