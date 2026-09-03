@@ -134,7 +134,9 @@ struct PlanResultsView: View {
             } else {
                 HStack(alignment: .top, spacing: LeafySpacing.large) {
                     goalDatum("Direction", value: input.goal == .lose ? "Lose weight" : "Gain weight")
-                    goalDatum("Projected pace", value: directionalWeeklyChange)
+                    if let pace = plan.projectedPaceLabel(draftGoal: input.goal, unitSystem: input.unitSystem) {
+                        goalDatum("Projected pace", value: pace)
+                    }
                 }
                 if let date = plan.estimatedGoalDate {
                     VStack(alignment: .leading, spacing: LeafySpacing.xSmall) {
@@ -194,16 +196,6 @@ struct PlanResultsView: View {
             }
         }
         .leafyDetachedBottomControl()
-    }
-
-    private var directionalWeeklyChange: String {
-        let amount = input.unitSystem == .imperial
-            ? plan.projectedWeeklyChangeKG * 2.20462
-            : plan.projectedWeeklyChangeKG
-        let number = input.unitSystem == .imperial
-            ? String(format: "%.1f", amount)
-            : String(format: "%.2f", amount)
-        return "\(number) \(input.unitSystem == .imperial ? "lb" : "kg") per week"
     }
 }
 

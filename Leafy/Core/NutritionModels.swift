@@ -110,6 +110,9 @@ struct NutritionPlan: Codable, Equatable, Sendable, Identifiable {
     var projectedWeeklyChangeKG: Double
     var estimatedGoalDate: Date?
     var createdAt: Date
+    /// Goal and inputs the plan was computed from. Optional so PlanCache
+    /// records written before this field still decode.
+    var inputSnapshot: NutritionPlanInput? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, revision
@@ -123,6 +126,29 @@ struct NutritionPlan: Codable, Equatable, Sendable, Identifiable {
         case projectedWeeklyChangeKG = "projected_weekly_change_kg"
         case estimatedGoalDate = "estimated_goal_date"
         case createdAt = "created_at"
+        case inputSnapshot = "input_snapshot"
+    }
+
+    /// Snapshot `goal` only. Never inferred from target presence or absence.
+    var snapshotGoal: WeightGoal? { inputSnapshot?.goal }
+
+    /// True only when the snapshot's own goal is a change goal and matches the live draft.
+    /// Missing snapshot (pre-upgrade cache) suppresses pace.
+    func showsProjectedPace(draftGoal: WeightGoal) -> Bool {
+        guard let snapshotGoal else { return false }
+        return snapshotGoal != .maintain && snapshotGoal == draftGoal
+    }
+
+    /// Formats the stored weekly change. Does not recompute from target or draft.
+    func projectedPaceLabel(draftGoal: WeightGoal, unitSystem: UnitSystem) -> String? {
+        guard showsProjectedPace(draftGoal: draftGoal) else { return nil }
+        let amount = unitSystem == .imperial
+            ? projectedWeeklyChangeKG * 2.20462
+            : projectedWeeklyChangeKG
+        let number = unitSystem == .imperial
+            ? String(format: "%.1f", amount)
+            : String(format: "%.2f", amount)
+        return "\(number) \(unitSystem == .imperial ? "lb" : "kg") per week"
     }
 }
 
