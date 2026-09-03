@@ -15,7 +15,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
             .write(to: url, atomically: true, encoding: .utf8)
 
         let cache = PlanCache(fileURL: url)
-        let state = try XCTUnwrap(await cache.load(timeZone: newYork))
+        let migrated = await cache.load(timeZone: newYork)
+        let state = try XCTUnwrap(migrated)
         XCTAssertEqual(state.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29))
         XCTAssertEqual(state.plan.estimatedGoalDate, try LocalDate(year: 2027, month: 2, day: 19))
         XCTAssertEqual(state.plan.calorieTargetKcal, 1840)
@@ -38,7 +39,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         )
         try await cache.save(plan, input: input)
 
-        let loaded = try XCTUnwrap(await cache.load(timeZone: honolulu))
+        let loadedState = await cache.load(timeZone: honolulu)
+        let loaded = try XCTUnwrap(loadedState)
         XCTAssertEqual(loaded.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29))
         XCTAssertEqual(loaded.plan.estimatedGoalDate, plan.estimatedGoalDate)
         XCTAssertEqual(loaded.plan.calorieTargetKcal, plan.calorieTargetKcal)
@@ -58,7 +60,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         try await cache.save(plan, input: input)
 
         for timeZone in [utc, newYork, losAngeles, kiritimati, honolulu] {
-            let loaded = try XCTUnwrap(await cache.load(timeZone: timeZone))
+            let loadedState = await cache.load(timeZone: timeZone)
+            let loaded = try XCTUnwrap(loadedState)
             XCTAssertEqual(loaded.plan.bmrKcal, plan.bmrKcal, timeZone.identifier)
             XCTAssertEqual(loaded.plan.tdeeKcal, plan.tdeeKcal)
             XCTAssertEqual(loaded.plan.calorieTargetKcal, plan.calorieTargetKcal)
@@ -74,7 +77,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
         try "{ not json".write(to: url, atomically: true, encoding: .utf8)
         let cache = PlanCache(fileURL: url)
-        XCTAssertNil(await cache.load(timeZone: utc))
+        let dropped = await cache.load(timeZone: utc)
+        XCTAssertNil(dropped)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
@@ -85,7 +89,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
             .write(to: url, atomically: true, encoding: .utf8)
 
         let cache = PendingOnboardingCache(fileURL: url)
-        let state = try XCTUnwrap(await cache.load(timeZone: newYork))
+        let pending = await cache.load(timeZone: newYork)
+        let state = try XCTUnwrap(pending)
         XCTAssertTrue(state.requiresBirthDateConfirmation)
         XCTAssertEqual(state.stepID, OnboardingDraft.Step.birthDate.rawValue)
         XCTAssertTrue(state.termsAccepted)
@@ -106,7 +111,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
             requiresBirthDateConfirmation: false
         )
         try await cache.save(original)
-        let loaded = try XCTUnwrap(await cache.load(timeZone: kiritimati))
+        let loadedState = await cache.load(timeZone: kiritimati)
+        let loaded = try XCTUnwrap(loadedState)
         XCTAssertEqual(loaded.input.birthDate, try LocalDate(year: 1976, month: 7, day: 1))
         XCTAssertFalse(loaded.requiresBirthDateConfirmation)
         XCTAssertEqual(loaded.stepID, OnboardingDraft.Step.results.rawValue)
@@ -120,7 +126,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
             requiresBirthDateConfirmation: true
         )
         try await cache.save(unconfirmed)
-        let flagged = try XCTUnwrap(await cache.load(timeZone: honolulu))
+        let flaggedState = await cache.load(timeZone: honolulu)
+        let flagged = try XCTUnwrap(flaggedState)
         XCTAssertTrue(flagged.requiresBirthDateConfirmation)
         XCTAssertEqual(flagged.stepID, OnboardingDraft.Step.birthDate.rawValue)
     }
@@ -139,7 +146,8 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         """.write(to: url, atomically: true, encoding: .utf8)
 
         let cache = PendingOnboardingCache(fileURL: url)
-        let state = try XCTUnwrap(await cache.load(timeZone: utc))
+        let recovered = await cache.load(timeZone: utc)
+        let state = try XCTUnwrap(recovered)
         XCTAssertTrue(state.requiresBirthDateConfirmation)
         XCTAssertEqual(state.stepID, OnboardingDraft.Step.birthDate.rawValue)
         XCTAssertTrue(state.termsAccepted)
