@@ -901,18 +901,16 @@ final class AppCoordinator {
     }
 
     func presentProductScanner() {
-        let id = activeProductFlow?.id ?? UUID()
         focusProductDiscoverySearch = false
         pendingSearchAfterDiscoveryAppear = false
         pendingProductBarcode = nil
-        activeProductFlow = ActiveProductFlow(id: id, mode: .camera)
+        activeProductFlow = ActiveProductFlow(id: UUID(), mode: .camera)
     }
 
     func dismissProductScannerCameraForSearch() {
-        let id = activeProductFlow?.id ?? UUID()
         pendingSearchAfterDiscoveryAppear = true
         focusProductDiscoverySearch = false
-        activeProductFlow = ActiveProductFlow(id: id, mode: .discovery)
+        activeProductFlow = ActiveProductFlow(id: UUID(), mode: .discovery)
     }
 
     func cancelProductScanner() {
@@ -923,11 +921,10 @@ final class AppCoordinator {
     }
 
     func completeProductScannerScan(_ code: String) {
-        let id = activeProductFlow?.id ?? UUID()
         pendingProductBarcode = code
         pendingSearchAfterDiscoveryAppear = false
         focusProductDiscoverySearch = false
-        activeProductFlow = ActiveProductFlow(id: id, mode: .discovery)
+        activeProductFlow = ActiveProductFlow(id: UUID(), mode: .discovery)
     }
 
     func productDiscoveryFlowDidAppear() {
