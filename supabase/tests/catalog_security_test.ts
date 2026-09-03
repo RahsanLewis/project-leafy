@@ -98,10 +98,12 @@ Deno.test('F-07 catalog review key fails closed and never falls back to the serv
   assertEquals(catalogReviewKeyAuthorizes('other', 'secret'), false)
   assert(!reviewSource.includes('CATALOG_REVIEW_KEY") ?? secret'))
   assert(!manageSource.includes('CATALOG_REVIEW_KEY") ?? secret'))
+  assert(!reviewRetrySource.includes('CATALOG_REVIEW_KEY") ?? secret'))
   assertStringIncludes(
     reviewRetrySource,
     'Catalog review key is not configured.',
   )
+  assertStringIncludes(reviewRetrySource, 'configuredCatalogReviewKey')
   assertStringIncludes(manageSource, 'configuredCatalogReviewKey')
 })
 
