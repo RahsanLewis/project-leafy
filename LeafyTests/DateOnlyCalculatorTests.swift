@@ -124,13 +124,27 @@ final class DateOnlyCalculatorTests: XCTestCase {
 
     func testOnboardingAgeLabelUsesUTCCivilTodayLikeCalculator() throws {
         let birth = try civil(2008, 7, 29)
-        let labelAge = birth.ageInYears(asOf: LocalDate.utcCivilDate(from: afterUTC))
-        XCTAssertEqual(labelAge, 18)
-        XCTAssertNoThrow(try NutritionCalculator.calculate(input: maintainFemale(birth), now: afterUTC))
+        let utcToday = LocalDate.utcCivilDate(from: afterUTC)
+        var displayedAges: [Int] = []
 
-        let localToday = try XCTUnwrap(LocalDate(localCivilFrom: afterUTC, timeZone: newYork))
-        XCTAssertEqual(localToday, try civil(2026, 7, 28))
-        XCTAssertEqual(birth.ageInYears(asOf: localToday), 17)
+        for timeZone in surroundingZones {
+            let displayedAge = birth.ageInYears(asOf: utcToday)
+            displayedAges.append(displayedAge)
+            let plan = try NutritionCalculator.calculate(input: maintainFemale(birth), now: afterUTC)
+            XCTAssertEqual(displayedAge, 18, timeZone.identifier)
+            XCTAssertEqual(plan.bmrKcal, 1430, timeZone.identifier)
+
+            let localToday = try XCTUnwrap(LocalDate(localCivilFrom: afterUTC, timeZone: timeZone))
+            if localToday != utcToday {
+                XCTAssertNotEqual(
+                    birth.ageInYears(asOf: localToday),
+                    displayedAge,
+                    "local civil today would disagree with calculatePreview in \(timeZone.identifier)"
+                )
+            }
+        }
+
+        XCTAssertEqual(Set(displayedAges), [18])
     }
 
     private func assertCalculate(
