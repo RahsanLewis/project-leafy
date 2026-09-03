@@ -88,6 +88,7 @@ final class AppCoordinator {
     var showPasswordRecovery = false
     var requiresBirthDateConfirmation = false
     let pendingOnboardingCache = PendingOnboardingCache()
+    private var recoveredPendingInput: NutritionPlanInput?
     private var authObserverTask: Task<Void, Never>?
     private var lastPromptedCheckInDay: Date?
     private var morningCheckInLoggingHandoff = MorningCheckInLoggingHandoff.idle
@@ -130,22 +131,8 @@ final class AppCoordinator {
         guard await service.currentUserID() != nil else {
             isAuthenticated = false
             if let pending = await pendingOnboardingCache.load() {
-                apply(pending.input)
-                termsAccepted = pending.termsAccepted
-                privacyAccepted = pending.privacyAccepted
-                coreDataAccepted = pending.coreDataAccepted
-                requiresBirthDateConfirmation = pending.requiresBirthDateConfirmation
-                if pending.requiresBirthDateConfirmation {
-                    draft.step = .birthDate
-                    preview = nil
-                } else if let stepID = pending.stepID, let step = OnboardingDraft.Step(rawValue: stepID) {
-                    draft.step = step
-                    _ = calculatePreview()
-                } else if let legacyStep = pending.stepRawValue {
-                    draft.step = OnboardingDraft.Step.legacy(legacyStep, draft: draft)
-                    _ = calculatePreview()
-                } else {
-                    draft.step = .results
+                applyPendingOnboarding(pending)
+                if !pending.requiresBirthDateConfirmation {
                     _ = calculatePreview()
                 }
             }
@@ -179,7 +166,7 @@ final class AppCoordinator {
     }
 
     func calculatePreview() -> Bool {
-        guard !requiresBirthDateConfirmation else {
+        guard !requiresBirthDateConfirmation, draft.birthDateChosen, draft.input.birthDate != nil else {
             preview = nil
             return false
         }
@@ -194,7 +181,28 @@ final class AppCoordinator {
     }
 
     func confirmOnboardingBirthDate() {
+        guard requiresBirthDateConfirmation else { return }
+        guard draft.birthDateChosen, draft.input.birthDate != nil else { return }
         requiresBirthDateConfirmation = false
+    }
+
+    func applyPendingOnboarding(_ pending: PendingOnboardingState) {
+        recoveredPendingInput = pending.input
+        apply(pending.input)
+        termsAccepted = pending.termsAccepted
+        privacyAccepted = pending.privacyAccepted
+        coreDataAccepted = pending.coreDataAccepted
+        requiresBirthDateConfirmation = pending.requiresBirthDateConfirmation
+        if pending.requiresBirthDateConfirmation {
+            draft.step = .birthDate
+            preview = nil
+        } else if let stepID = pending.stepID, let step = OnboardingDraft.Step(rawValue: stepID) {
+            draft.step = step
+        } else if let legacyStep = pending.stepRawValue {
+            draft.step = OnboardingDraft.Step.legacy(legacyStep, draft: draft)
+        } else {
+            draft.step = .results
+        }
     }
 
     func createAccount() async {
@@ -280,7 +288,7 @@ final class AppCoordinator {
     }
 
     func saveAuthenticatedDraft(accessToken: String? = nil, recordLegalAcceptance: Bool = false) async throws {
-        guard !requiresBirthDateConfirmation else {
+        guard !requiresBirthDateConfirmation, draft.birthDateChosen, draft.input.birthDate != nil else {
             draft.step = .birthDate
             throw PlanValidationError.invalidAge
         }
@@ -1333,8 +1341,19 @@ final class AppCoordinator {
     }
 
     func persistPendingOnboarding() async {
+        let input: NutritionPlanInput?
+        if draft.birthDateChosen {
+            input = draft.input
+        } else if requiresBirthDateConfirmation, var recovered = recoveredPendingInput {
+            recovered.birthDate = nil
+            input = recovered
+        } else if requiresBirthDateConfirmation {
+            input = nil
+        } else {
+            input = draft.input
+        }
         try? await pendingOnboardingCache.save(PendingOnboardingState(
-            input: draft.input,
+            input: input,
             stepID: draft.step.rawValue,
             termsAccepted: termsAccepted,
             privacyAccepted: privacyAccepted,
@@ -1423,7 +1442,7 @@ final class AppCoordinator {
         showLogFood = false
         isAuthenticated = false
         account = nil; authFlowState = .signedOut
-        draft = OnboardingDraft(); requiresBirthDateConfirmation = false; route = .onboarding
+        draft = OnboardingDraft(); requiresBirthDateConfirmation = false; recoveredPendingInput = nil; route = .onboarding
     }
 
     private func loadAuthenticatedAccount(accessToken: String) async throws {
@@ -1485,11 +1504,25 @@ final class AppCoordinator {
         if let adjustment = response.adjustment { planAdjustmentNotice = adjustment }
     }
 
-    private func apply(_ input: NutritionPlanInput) {
-        draft.birthDate = input.birthDate; draft.calculationSex = input.calculationSex
-        draft.heightCM = input.heightCM; draft.currentWeightKG = input.currentWeightKG
+    private func apply(_ input: NutritionPlanInput?) {
+        guard let input else {
+            draft.birthDateChosen = false
+            return
+        }
+        if let birthDate = input.birthDate {
+            draft.birthDate = birthDate
+            draft.birthDateChosen = true
+        } else {
+            draft.birthDateChosen = false
+        }
+        draft.calculationSex = input.calculationSex
+        draft.heightCM = input.heightCM
+        draft.currentWeightKG = input.currentWeightKG
         draft.targetWeightKG = input.targetWeightKG ?? input.currentWeightKG
-        draft.activityLevel = input.activityLevel; draft.goal = input.goal; draft.pace = input.pace; draft.unitSystem = input.unitSystem
+        draft.activityLevel = input.activityLevel
+        draft.goal = input.goal
+        draft.pace = input.pace
+        draft.unitSystem = input.unitSystem
     }
 
     private func perform(_ state: SaveState, operation: () async throws -> Void) async {

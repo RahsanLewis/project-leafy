@@ -17,7 +17,7 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         let cache = PlanCache(fileURL: url)
         let migrated = await cache.load(timeZone: newYork)
         let state = try XCTUnwrap(migrated)
-        XCTAssertEqual(state.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29))
+        XCTAssertEqual(state.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29) as LocalDate?)
         XCTAssertEqual(state.plan.estimatedGoalDate, try LocalDate(year: 2027, month: 2, day: 19))
         XCTAssertEqual(state.plan.calorieTargetKcal, 1840)
 
@@ -41,7 +41,7 @@ final class PlanCacheDateOnlyTests: XCTestCase {
 
         let loadedState = await cache.load(timeZone: honolulu)
         let loaded = try XCTUnwrap(loadedState)
-        XCTAssertEqual(loaded.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29))
+        XCTAssertEqual(loaded.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29) as LocalDate?)
         XCTAssertEqual(loaded.plan.estimatedGoalDate, plan.estimatedGoalDate)
         XCTAssertEqual(loaded.plan.calorieTargetKcal, plan.calorieTargetKcal)
         XCTAssertEqual(loaded.plan.proteinG, plan.proteinG)
@@ -95,7 +95,7 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         XCTAssertEqual(state.stepID, OnboardingDraft.Step.birthDate.rawValue)
         XCTAssertTrue(state.termsAccepted)
         XCTAssertTrue(state.privacyAccepted)
-        XCTAssertEqual(state.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29))
+        XCTAssertEqual(state.input?.birthDate, try LocalDate(year: 1990, month: 7, day: 29) as LocalDate?)
     }
 
     func testPendingV2RoundTripAndConfirmationFlag() async throws {
@@ -113,7 +113,7 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         try await cache.save(original)
         let loadedState = await cache.load(timeZone: kiritimati)
         let loaded = try XCTUnwrap(loadedState)
-        XCTAssertEqual(loaded.input.birthDate, try LocalDate(year: 1976, month: 7, day: 1))
+        XCTAssertEqual(loaded.input?.birthDate, try LocalDate(year: 1976, month: 7, day: 1) as LocalDate?)
         XCTAssertFalse(loaded.requiresBirthDateConfirmation)
         XCTAssertEqual(loaded.stepID, OnboardingDraft.Step.results.rawValue)
 
@@ -132,6 +132,7 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         XCTAssertEqual(flagged.stepID, OnboardingDraft.Step.birthDate.rawValue)
     }
 
+    @MainActor
     func testPendingMalformedDateKeepsConsentsAndRequiresReentry() async throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -153,6 +154,82 @@ final class PlanCacheDateOnlyTests: XCTestCase {
         XCTAssertTrue(state.termsAccepted)
         XCTAssertFalse(state.privacyAccepted)
         XCTAssertTrue(state.coreDataAccepted)
+        XCTAssertNil(state.input)
+        XCTAssertNil(state.input?.birthDate)
+        XCTAssertNotEqual(state.input?.birthDate, LocalDate.yearsBeforeNow(30, timeZone: utc) as LocalDate?)
+
+        let app = AppCoordinator()
+        app.applyPendingOnboarding(state)
+        XCTAssertTrue(app.requiresBirthDateConfirmation)
+        XCTAssertEqual(app.draft.step, .birthDate)
+        XCTAssertFalse(app.draft.birthDateChosen)
+        XCTAssertNil(app.draft.input.birthDate)
+
+        app.confirmOnboardingBirthDate()
+        XCTAssertTrue(app.requiresBirthDateConfirmation)
+        XCTAssertFalse(app.calculatePreview())
+        XCTAssertNil(app.preview)
+
+        app.draft.selectBirthDate(try LocalDate(year: 1994, month: 3, day: 15))
+        app.confirmOnboardingBirthDate()
+        XCTAssertFalse(app.requiresBirthDateConfirmation)
+        XCTAssertEqual(app.draft.input.birthDate, try LocalDate(year: 1994, month: 3, day: 15) as LocalDate?)
+        XCTAssertTrue(app.calculatePreview())
+    }
+
+    @MainActor
+    func testPendingUndecodableBirthInstantDoesNotInventDate() async throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try v1PendingJSON(birthInstant: "not-a-date")
+            .write(to: url, atomically: true, encoding: .utf8)
+
+        let cache = PendingOnboardingCache(fileURL: url)
+        let recovered = await cache.load(timeZone: utc)
+        let state = try XCTUnwrap(recovered)
+        XCTAssertTrue(state.requiresBirthDateConfirmation)
+        XCTAssertEqual(state.stepID, OnboardingDraft.Step.birthDate.rawValue)
+        XCTAssertTrue(state.termsAccepted)
+        XCTAssertTrue(state.privacyAccepted)
+        XCTAssertNil(state.input?.birthDate)
+        XCTAssertEqual(state.input?.heightCM, 165)
+        XCTAssertEqual(state.input?.currentWeightKG, 65)
+        XCTAssertNotEqual(state.input?.birthDate, LocalDate.yearsBeforeNow(30, timeZone: utc) as LocalDate?)
+
+        let app = AppCoordinator()
+        app.applyPendingOnboarding(state)
+        app.confirmOnboardingBirthDate()
+        XCTAssertTrue(app.requiresBirthDateConfirmation)
+        XCTAssertFalse(app.calculatePreview())
+        XCTAssertNil(app.preview)
+
+        app.draft.selectBirthDate(try LocalDate(year: 1988, month: 11, day: 2))
+        app.confirmOnboardingBirthDate()
+        XCTAssertFalse(app.requiresBirthDateConfirmation)
+        XCTAssertTrue(app.calculatePreview())
+    }
+
+    @MainActor
+    func testPendingDisplayedMigrationAllowsConfirmWithoutPickerChange() async throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try v1PendingJSON(birthInstant: "1990-07-29T10:00:00Z")
+            .write(to: url, atomically: true, encoding: .utf8)
+
+        let cache = PendingOnboardingCache(fileURL: url)
+        let pending = await cache.load(timeZone: newYork)
+        let state = try XCTUnwrap(pending)
+        XCTAssertEqual(state.input?.birthDate, try LocalDate(year: 1990, month: 7, day: 29) as LocalDate?)
+        XCTAssertTrue(state.requiresBirthDateConfirmation)
+
+        let app = AppCoordinator()
+        app.applyPendingOnboarding(state)
+        XCTAssertTrue(app.draft.birthDateChosen)
+        XCTAssertEqual(app.draft.input.birthDate, try LocalDate(year: 1990, month: 7, day: 29) as LocalDate?)
+
+        app.confirmOnboardingBirthDate()
+        XCTAssertFalse(app.requiresBirthDateConfirmation)
+        XCTAssertTrue(app.calculatePreview())
     }
 
     private func maintainInput(birth: LocalDate) -> NutritionPlanInput {

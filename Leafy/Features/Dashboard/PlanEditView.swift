@@ -105,7 +105,7 @@ struct PlanEditView: View {
 
                 DisclosureGroup("Profile details", isExpanded: $showingProfile) {
                     VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                        DatePicker("Date of birth", selection: binding(\.birthDate, fallback: input.birthDate).datePickerSelection, in: birthDateRange, displayedComponents: .date)
+                        DatePicker("Date of birth", selection: birthDatePickerBinding(fallback: input.birthDate).datePickerSelection, in: birthDateRange, displayedComponents: .date)
                         Picker("Calculation sex", selection: binding(\.calculationSex, fallback: input.calculationSex)) {
                             ForEach(CalculationSex.allCases) { Text($0.title).tag($0) }
                         }
@@ -222,6 +222,13 @@ struct PlanEditView: View {
 
     private func binding<Value>(_ keyPath: WritableKeyPath<NutritionPlanInput, Value>, fallback: Value) -> Binding<Value> {
         Binding(get: { edited?[keyPath: keyPath] ?? fallback }, set: { value in update { $0[keyPath: keyPath] = value } })
+    }
+
+    private func birthDatePickerBinding(fallback: LocalDate?) -> Binding<LocalDate> {
+        Binding(
+            get: { edited?.birthDate ?? fallback ?? app.draft.birthDate },
+            set: { value in update { $0.birthDate = value } }
+        )
     }
 
     private func targetWeightBinding(fallback: Double) -> Binding<Double> {

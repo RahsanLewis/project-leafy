@@ -75,7 +75,9 @@ enum UnitSystem: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 struct NutritionPlanInput: Codable, Equatable, Sendable {
-    var birthDate: LocalDate
+    /// Civil birth date. `nil` only for pending onboarding recovery that has
+    /// no user-selected or successfully migrated YMD — never an invented date.
+    var birthDate: LocalDate?
     var calculationSex: CalculationSex
     var heightCM: Double
     var currentWeightKG: Double

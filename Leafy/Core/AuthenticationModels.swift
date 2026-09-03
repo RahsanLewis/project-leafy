@@ -55,7 +55,7 @@ struct CoreDataUseStatus: Codable, Equatable, Sendable {
 }
 
 struct PendingOnboardingState: Equatable, Sendable {
-    let input: NutritionPlanInput
+    let input: NutritionPlanInput?
     let stepID: String?
     let stepRawValue: Int?
     let termsAccepted: Bool
@@ -64,7 +64,7 @@ struct PendingOnboardingState: Equatable, Sendable {
     let requiresBirthDateConfirmation: Bool
 
     init(
-        input: NutritionPlanInput,
+        input: NutritionPlanInput?,
         stepID: String?,
         stepRawValue: Int? = nil,
         termsAccepted: Bool,
@@ -115,7 +115,7 @@ actor PendingOnboardingCache {
         }
         if let consents = decodeConsents(data) {
             let recovered = PendingOnboardingState(
-                input: defaultRecoveredInput(timeZone: timeZone),
+                input: nil,
                 stepID: "birthDate",
                 termsAccepted: consents.termsAccepted,
                 privacyAccepted: consents.privacyAccepted,
@@ -143,8 +143,12 @@ actor PendingOnboardingCache {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let legacy = try? decoder.decode(LegacyV1.self, from: data) else { return nil }
-        let birthDate = LocalDate.displayed(from: legacy.input.birthDate, timeZone: timeZone)
-            ?? LocalDate.yearsBeforeNow(30, timeZone: timeZone)
+        let birthDate: LocalDate?
+        if let instant = legacy.input.birthDate {
+            birthDate = LocalDate.displayed(from: instant, timeZone: timeZone)
+        } else {
+            birthDate = nil
+        }
         let input = NutritionPlanInput(
             birthDate: birthDate,
             calculationSex: legacy.input.calculationSex,
@@ -164,20 +168,6 @@ actor PendingOnboardingCache {
             privacyAccepted: legacy.privacyAccepted,
             coreDataAccepted: legacy.coreDataAccepted ?? false,
             requiresBirthDateConfirmation: true
-        )
-    }
-
-    private func defaultRecoveredInput(timeZone: TimeZone) -> NutritionPlanInput {
-        NutritionPlanInput(
-            birthDate: LocalDate.yearsBeforeNow(30, timeZone: timeZone),
-            calculationSex: .female,
-            heightCM: 168,
-            currentWeightKG: 70,
-            targetWeightKG: 64,
-            activityLevel: .moderate,
-            goal: .lose,
-            pace: .steady,
-            unitSystem: .imperial
         )
     }
 
@@ -201,7 +191,7 @@ actor PendingOnboardingCache {
 
 private struct EnvelopeV2: Codable {
     var version: Int
-    var input: NutritionPlanInput
+    var input: NutritionPlanInput?
     var stepID: String?
     var stepRawValue: Int?
     var termsAccepted: Bool
@@ -244,7 +234,7 @@ private struct LegacyV1: Decodable {
 }
 
 private struct LegacyV1Input: Decodable {
-    var birthDate: Date
+    var birthDate: Date?
     var calculationSex: CalculationSex
     var heightCM: Double
     var currentWeightKG: Double
@@ -263,6 +253,19 @@ private struct LegacyV1Input: Decodable {
         case activityLevel = "activity_level"
         case goal, pace
         case unitSystem = "unit_system"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        birthDate = try? container.decode(Date.self, forKey: .birthDate)
+        calculationSex = try container.decode(CalculationSex.self, forKey: .calculationSex)
+        heightCM = try container.decode(Double.self, forKey: .heightCM)
+        currentWeightKG = try container.decode(Double.self, forKey: .currentWeightKG)
+        targetWeightKG = try container.decodeIfPresent(Double.self, forKey: .targetWeightKG)
+        activityLevel = try container.decode(ActivityLevel.self, forKey: .activityLevel)
+        goal = try container.decode(WeightGoal.self, forKey: .goal)
+        pace = try container.decode(GoalPace.self, forKey: .pace)
+        unitSystem = try container.decode(UnitSystem.self, forKey: .unitSystem)
     }
 }
 

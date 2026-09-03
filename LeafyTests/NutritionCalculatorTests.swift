@@ -69,6 +69,18 @@ final class NutritionCalculatorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(carbShare, 0.44)
     }
 
+    func testMissingBirthDateDoesNotCalculate() {
+        var input = NutritionPlanInput(
+            birthDate: try! LocalDate(year: 1990, month: 1, day: 1),
+            calculationSex: .female, heightCM: 168, currentWeightKG: 70, targetWeightKG: 64,
+            activityLevel: .moderate, goal: .lose, pace: .steady, unitSystem: .imperial
+        )
+        input.birthDate = nil
+        XCTAssertThrowsError(try NutritionCalculator.calculate(input: input, now: now)) {
+            XCTAssertEqual($0 as? PlanValidationError, .invalidAge)
+        }
+    }
+
     func testEligibilityStartsUnanswered() {
         let draft = OnboardingDraft()
 

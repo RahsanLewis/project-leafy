@@ -8,7 +8,8 @@ enum NutritionCalculator {
         now: Date = .now
     ) throws -> NutritionPlan {
         let today = LocalDate.utcCivilDate(from: now)
-        let age = input.birthDate.ageInYears(asOf: today)
+        guard let birthDate = input.birthDate else { throw PlanValidationError.invalidAge }
+        let age = birthDate.ageInYears(asOf: today)
         guard (18...100).contains(age) else { throw PlanValidationError.invalidAge }
         guard (120...230).contains(input.heightCM) else { throw PlanValidationError.invalidHeight }
         guard (35...350).contains(input.currentWeightKG) else { throw PlanValidationError.invalidWeight }
