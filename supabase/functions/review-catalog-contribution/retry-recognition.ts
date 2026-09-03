@@ -5,6 +5,23 @@ type Reviewer =
   | { kind: "admin"; user_id: string; email: string }
   | { kind: "key"; user_id: null; email: "review-key" };
 
+export const RETRY_CONFLICT_MESSAGE =
+  "This submission is already being reviewed.";
+
+export class CatalogRetryConflictError extends Error {
+  readonly status = 409 as const;
+  constructor() {
+    super(RETRY_CONFLICT_MESSAGE);
+    this.name = "CatalogRetryConflictError";
+  }
+}
+
+export function isCatalogRetryConflict(
+  error: unknown,
+): error is CatalogRetryConflictError {
+  return error instanceof CatalogRetryConflictError;
+}
+
 export async function retryRecognition(
   admin: any,
   contribution: Row,
@@ -32,36 +49,48 @@ export async function retryRecognition(
   // Claim the contribution first. The revision guard must fail closed before
   // any job row is written, otherwise a concurrent edit leaves a queued job
   // with no worker and no status event.
-  const update = await admin.from("catalog_contributions").update({
+  const claim = await admin.from("catalog_contributions").update({
     status: "processing",
     review_reason: null,
     updated_at: now,
   }).eq("id", contribution.id).eq("revision", contribution.revision).select(
     "*",
-  ).single();
-  if (update.error) throw update.error;
+  ).maybeSingle();
+  if (claim.error) throw claim.error;
+  if (!claim.data) {
+    throw new CatalogRetryConflictError();
+  }
 
-  const job = await admin.from("catalog_contribution_jobs").upsert({
-    contribution_id: contribution.id,
-    user_id: contribution.user_id,
-    status: "queued",
-    attempts: 0,
-    next_attempt_at: now,
-    last_error: null,
-    started_at: null,
-    completed_at: null,
-    updated_at: now,
-  }, { onConflict: "contribution_id" });
-  if (job.error) throw job.error;
+  try {
+    const job = await admin.from("catalog_contribution_jobs").upsert({
+      contribution_id: contribution.id,
+      user_id: contribution.user_id,
+      status: "queued",
+      attempts: 0,
+      next_attempt_at: now,
+      last_error: null,
+      started_at: null,
+      completed_at: null,
+      updated_at: now,
+    }, { onConflict: "contribution_id" });
+    if (job.error) throw job.error;
 
-  await options.addEvent(
-    admin,
-    contribution.id,
-    String(contribution.status),
-    "processing",
-    "Recognition retried by catalog review.",
-    reviewer,
-  );
+    await options.addEvent(
+      admin,
+      contribution.id,
+      String(contribution.status),
+      "processing",
+      "Recognition retried by catalog review.",
+      reviewer,
+    );
+  } catch (error) {
+    await admin.from("catalog_contributions").update({
+      status: contribution.status,
+      review_reason: contribution.review_reason,
+      updated_at: new Date().toISOString(),
+    }).eq("id", contribution.id).eq("status", "processing");
+    throw error;
+  }
 
   const fetchImpl = options.fetchImpl ?? fetch;
   options.waitUntil(
@@ -82,6 +111,5 @@ export async function retryRecognition(
     }).catch((error) => console.error("admin catalog retry failed", error)),
   );
 
-  return update.data;
+  return claim.data;
 }
-

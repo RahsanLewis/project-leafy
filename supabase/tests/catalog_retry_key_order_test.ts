@@ -1,11 +1,16 @@
 import { assertEquals, assert } from "jsr:@std/assert@1";
-import { retryRecognition } from "../functions/review-catalog-contribution/retry-recognition.ts";
+import {
+  CatalogRetryConflictError,
+  isCatalogRetryConflict,
+  retryRecognition,
+} from "../functions/review-catalog-contribution/retry-recognition.ts";
 
 const contribution = {
   id: "c1",
   user_id: "u1",
   status: "pending_review",
   revision: 1,
+  review_reason: "Needs clearer photos",
 };
 const reviewer = {
   kind: "admin" as const,
@@ -47,6 +52,14 @@ function recordingAdmin(options: {
         },
         update(payload: Record<string, unknown>) {
           const filters: Array<[string, unknown]> = [];
+          const call: AdminCall = {
+            op: "contributions.update",
+            table,
+            payload,
+            filters,
+          };
+          calls.push(call);
+          timeline.push("contributions.update");
           const builder = {
             eq(column: string, value: unknown) {
               filters.push([column, value]);
@@ -55,16 +68,18 @@ function recordingAdmin(options: {
             select(_columns?: string) {
               return builder;
             },
-            single() {
-              calls.push({
-                op: "contributions.update",
-                table,
-                payload,
-                filters,
-              });
-              timeline.push("contributions.update");
+            maybeSingle() {
               return Promise.resolve(
                 options.updateResult ?? { data: updatedRow, error: null },
+              );
+            },
+            then(
+              onFulfilled?: (value: { data: null; error: null }) => unknown,
+              onRejected?: (reason: unknown) => unknown,
+            ) {
+              return Promise.resolve({ data: null, error: null }).then(
+                onFulfilled,
+                onRejected,
               );
             },
           };
@@ -217,13 +232,10 @@ Deno.test(
 );
 
 Deno.test(
-  "LEAFY-015: revision-guarded status update failure writes no job, event, or internal hop",
+  "LEAFY-022: empty maybeSingle revision conflict writes nothing and throws 409",
   async () => {
     const { admin, calls } = recordingAdmin({
-      updateResult: {
-        data: null,
-        error: { message: "JSON object requested, multiple (or no) rows returned" },
-      },
+      updateResult: { data: null, error: null },
     });
     const addEventCalls: unknown[] = [];
     let waitUntilCalls = 0;
@@ -256,7 +268,15 @@ Deno.test(
       error = e;
     }
 
-    assert(error);
+    assert(error instanceof CatalogRetryConflictError);
+    assert(isCatalogRetryConflict(error));
+    assertEquals(error.status, 409);
+    assertEquals(error.message, "This submission is already being reviewed.");
+    assertEquals(
+      String(error.message).includes("JSON object requested"),
+      false,
+    );
+
     assertEquals(calls.length, 1);
     assertEquals(calls[0].op, "contributions.update");
     assertEquals(calls[0].table, "catalog_contributions");
@@ -271,5 +291,108 @@ Deno.test(
     assertEquals(addEventCalls.length, 0);
     assertEquals(waitUntilCalls, 0);
     assertEquals(fetchCalls, 0);
+  },
+);
+
+Deno.test(
+  "LEAFY-022: job upsert failure after claim reverts status and review_reason",
+  async () => {
+    const jobError = new Error("job upsert failed");
+    const { admin, calls } = recordingAdmin({
+      jobResult: { data: null, error: jobError },
+    });
+    const addEventCalls: unknown[] = [];
+    let waitUntilCalls = 0;
+    let fetchCalls = 0;
+
+    let error: unknown;
+    try {
+      await retryRecognition(
+        admin,
+        contribution,
+        reviewer,
+        functionUrl,
+        {
+          catalogReviewKeyValue: catalogReviewKey,
+          addEvent: async (...args: unknown[]) => {
+            addEventCalls.push(args);
+            throw new Error("unexpected addEvent() call");
+          },
+          waitUntil: (_promise: Promise<unknown>) => {
+            waitUntilCalls += 1;
+            throw new Error("unexpected waitUntil() call");
+          },
+          fetchImpl: async () => {
+            fetchCalls += 1;
+            return new Response("{}", { status: 200 });
+          },
+        },
+      );
+    } catch (e) {
+      error = e;
+    }
+
+    assertEquals(error, jobError);
+
+    assertEquals(calls.length, 3);
+    assertEquals(calls[0].op, "contributions.update");
+    assertEquals(calls[0].payload.status, "processing");
+    assertEquals(calls[0].payload.review_reason, null);
+    assertEquals(calls[0].filters, [
+      ["id", contribution.id],
+      ["revision", contribution.revision],
+    ]);
+
+    assertEquals(calls[1].op, "jobs.upsert");
+    assertEquals(calls[1].table, "catalog_contribution_jobs");
+
+    const revert = calls[2];
+    assertEquals(revert.op, "contributions.update");
+    assertEquals(revert.table, "catalog_contributions");
+    assertEquals(revert.payload.status, contribution.status);
+    assert(
+      Object.hasOwn(revert.payload, "review_reason"),
+      "revert payload must restore review_reason; a status-only revert is a bug",
+    );
+    assertEquals(revert.payload.review_reason, contribution.review_reason);
+    assertEquals(revert.filters, [
+      ["id", contribution.id],
+      ["status", "processing"],
+    ]);
+
+    assertEquals(addEventCalls.length, 0);
+    assertEquals(waitUntilCalls, 0);
+    assertEquals(fetchCalls, 0);
+  },
+);
+
+Deno.test(
+  "LEAFY-022: retry action maps CatalogRetryConflictError to HTTP 409",
+  async () => {
+    const reviewSource = await Deno.readTextFile(
+      new URL(
+        "../functions/review-catalog-contribution/index.ts",
+        import.meta.url,
+      ),
+    );
+    const retrySource = await Deno.readTextFile(
+      new URL(
+        "../functions/review-catalog-contribution/retry-recognition.ts",
+        import.meta.url,
+      ),
+    );
+    const retryBranch = reviewSource.slice(
+      reviewSource.indexOf('if (action === "retry")'),
+      reviewSource.indexOf("if (!reviewableStatuses.includes"),
+    );
+
+    assert(retrySource.includes(".maybeSingle()"));
+    assertEquals(retrySource.includes(".single()"), false);
+    assert(retrySource.includes("CatalogRetryConflictError"));
+    assert(retrySource.includes("This submission is already being reviewed."));
+
+    assert(retryBranch.includes("isCatalogRetryConflict"));
+    assert(retryBranch.includes("409"));
+    assertEquals(retryBranch.includes("JSON object requested"), false);
   },
 );
