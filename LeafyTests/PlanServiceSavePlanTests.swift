@@ -9,8 +9,25 @@ final class PlanServiceSavePlanTests: XCTestCase {
 
         let raw = try JSONEncoder().encode(input)
         let rawObject = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
-        if let birthDate = rawObject["birth_date"] {
-            XCTAssertTrue(birthDate is NSNull, "nil birthDate must not encode a civil birth_date string")
+        XCTAssertNil(rawObject["birth_date"], "pending-local encode must omit birth_date")
+
+        let pendingURL = FileManager.default.temporaryDirectory.appending(path: "leafy-021-pending-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: pendingURL) }
+        try await PendingOnboardingCache(fileURL: pendingURL).save(
+            PendingOnboardingState(
+                input: input,
+                stepID: OnboardingDraft.Step.birthDate.rawValue,
+                termsAccepted: true,
+                privacyAccepted: true,
+                coreDataAccepted: true,
+                requiresBirthDateConfirmation: true
+            )
+        )
+        let pendingObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: pendingURL)) as? [String: Any]
+        )
+        if let pendingInput = pendingObject["input"] as? [String: Any] {
+            XCTAssertNil(pendingInput["birth_date"], "pending-local input must omit birth_date")
         }
 
         do {
