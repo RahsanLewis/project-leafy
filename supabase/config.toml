@@ -56,6 +56,12 @@ verify_jwt = true
 [functions.manage-food-entry]
 verify_jwt = true
 
+[functions.manage-weight-entry]
+verify_jwt = true
+
+[functions.manage-daily-checkin]
+verify_jwt = true
+
 [functions.manage-legal-acceptance]
 verify_jwt = true
 
