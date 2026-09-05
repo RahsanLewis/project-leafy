@@ -1,13 +1,28 @@
-# Leafy release policy
+# Leafy review and release policy
 
-For every completed user-facing implementation plan, production release is part of the definition of done. User-facing work includes iOS behavior or configuration and production backend behavior consumed by the app. Documentation, tests, and tooling-only changes do not require a TestFlight build.
+For qualifying implementation work, the implementation agent's responsibility ends with a review-ready pull request. Qualifying work includes iOS behavior or configuration and production backend behavior consumed by the app.
 
-Before declaring qualifying work complete:
+Before declaring qualifying implementation work review-ready, the implementation agent must:
 
-1. Run the relevant iOS and backend verification.
-2. Deploy required production migrations, Edge Functions, and data backfills before shipping a dependent client.
-3. Create a scoped commit containing only the completed plan and push the current branch.
-4. Upload the matching clean commit with `./scripts/upload-testflight.sh` as an internal-only TestFlight build.
-5. Report the commit SHA, deployed backend changes, marketing version, and TestFlight build number.
+1. Work on a scoped feature branch.
+2. Run the relevant iOS and backend verification.
+3. Identify any required migrations, Edge Function deployments, data backfills, or other release dependencies in the pull request.
+4. Create a scoped commit containing only the completed work.
+5. Push the feature branch.
+6. Open or update a pull request against `main`.
+7. Report the commit SHA and verification results.
 
-Do not include unrelated user changes in a release commit. If verification, production deployment, Git push, or TestFlight upload fails, preserve recoverable state, stop at the failed gate, and report the blocker instead of claiming the plan is complete or released. External tester promotion remains manual.
+The implementation agent must not:
+
+- Push directly to `main`.
+- Merge its own pull request.
+- Deploy production backend changes.
+- Upload a TestFlight build.
+
+Reviewer findings must be fixed on the same feature branch. After each fix, re-run the appropriate verification, push the new commit, and update the pull request.
+
+Production backend deployment and TestFlight distribution occur only after the pull request has passed the required automated checks, passed independent review, and been merged. External TestFlight tester promotion remains manual.
+
+Do not include unrelated user changes in a feature commit. If verification, Git push, or pull request creation fails, preserve recoverable state, stop at the failed gate, and report the blocker instead of claiming the work is review-ready.
+
+Keep `scripts/upload-testflight.sh` as a manual fallback. Implementation agents must not invoke it automatically.
