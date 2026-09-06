@@ -545,6 +545,73 @@ Deno.test(
 );
 
 Deno.test(
+  "LEAFY-022: event failure with a job neutralization database error keeps the contribution processing",
+  async () => {
+    const eventError = new Error("event insert failed");
+    const neutralizationError = new Error("job neutralization failed");
+    const { admin, calls, state } = recordingAdmin({
+      jobRecoveryResult: { data: null, error: neutralizationError },
+    });
+
+    let error: unknown;
+    try {
+      await retryRecognition(admin, contribution, reviewer, functionUrl, {
+        catalogReviewKeyValue: catalogReviewKey,
+        addEvent: async () => {
+          throw eventError;
+        },
+        waitUntil: () => {},
+        fetchImpl: async () => new Response("{}", { status: 200 }),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    assert(error instanceof CatalogRetryRecoveryError);
+    assertEquals(error.originalError, eventError);
+    assertEquals(error.recoveryErrors.length, 1);
+    assertStringIncludes(error.message, neutralizationError.message);
+    assertEquals(calls.length, 3);
+    assertNeutralizedJob(calls[2]);
+    assertContributionRestoreSkipped(calls);
+    assertEquals(state.jobStatus, "queued");
+  },
+);
+
+Deno.test(
+  "LEAFY-022: event failure with no queued job match keeps the contribution processing",
+  async () => {
+    const eventError = new Error("event insert failed");
+    const { admin, calls, state } = recordingAdmin({
+      jobRecoveryResult: { data: null, error: null },
+    });
+
+    let error: unknown;
+    try {
+      await retryRecognition(admin, contribution, reviewer, functionUrl, {
+        catalogReviewKeyValue: catalogReviewKey,
+        addEvent: async () => {
+          throw eventError;
+        },
+        waitUntil: () => {},
+        fetchImpl: async () => new Response("{}", { status: 200 }),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    assert(error instanceof CatalogRetryRecoveryError);
+    assertEquals(error.originalError, eventError);
+    assertEquals(error.recoveryErrors.length, 1);
+    assertStringIncludes(error.message, "was not found");
+    assertEquals(calls.length, 3);
+    assertNeutralizedJob(calls[2]);
+    assertContributionRestoreSkipped(calls);
+    assertEquals(state.jobStatus, "queued");
+  },
+);
+
+Deno.test(
   "LEAFY-022: worker handoff failure does not roll back a completed claim",
   async () => {
     const handoffError = new Error("waitUntil failed");
@@ -638,4 +705,12 @@ function assertNeutralizedJob(call: AdminCall) {
     ["contribution_id", contribution.id],
     ["status", "queued"],
   ]);
+}
+
+function assertContributionRestoreSkipped(calls: AdminCall[]) {
+  const contributionUpdates = calls.filter((call) =>
+    call.op === "contributions.update"
+  );
+  assertEquals(contributionUpdates.length, 1);
+  assertEquals(contributionUpdates[0].payload.status, "processing");
 }

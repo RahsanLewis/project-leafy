@@ -119,6 +119,7 @@ export async function retryRecognition(
   } catch (error) {
     const recoveryErrors: Error[] = [];
     const recoveredAt = new Date().toISOString();
+    let queuedJobNeutralized = !queuedJobWritten;
 
     // A queued job is runnable independently of this request. If the status
     // event failed, neutralize that job before restoring the contribution so
@@ -150,6 +151,8 @@ export async function retryRecognition(
               "Could not neutralize the queued recognition job because it was not found",
             ),
           );
+        } else {
+          queuedJobNeutralized = true;
         }
       } catch (jobRecoveryError) {
         recoveryErrors.push(
@@ -159,6 +162,13 @@ export async function retryRecognition(
           ),
         );
       }
+    }
+
+    // Keep the contribution in processing when the queued job could not be
+    // neutralized. It may already be running, so restoring the prior status
+    // would make that work appear unclaimed and allow another retry.
+    if (!queuedJobNeutralized) {
+      throw new CatalogRetryRecoveryError(error, recoveryErrors);
     }
 
     try {
