@@ -61,8 +61,12 @@ struct LocalDate: Codable, Equatable, Hashable, Sendable, Comparable {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "en_US_POSIX")
         calendar.timeZone = timeZone
-        let past = calendar.date(byAdding: .year, value: -years, to: now) ?? now
-        return LocalDate(localCivilFrom: past, timeZone: timeZone) ?? (try! LocalDate(year: 1996, month: 1, day: 1))
+        guard let past = calendar.date(byAdding: .year, value: -years, to: now),
+              let civil = LocalDate(localCivilFrom: past, timeZone: timeZone)
+        else {
+            preconditionFailure("Unable to construct a Gregorian civil date \(years) years before \(now)")
+        }
+        return civil
     }
 
     func ageInYears(asOf other: LocalDate) -> Int {
