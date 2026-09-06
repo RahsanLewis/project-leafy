@@ -1,0 +1,78 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leafy-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    environment: testflight
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - name: Check out triggering commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          missing=0
+          if [[ -z "${ASC_KEY_ID:-}" ]]; then
+            echo "::error::Missing required testflight environment secret: ASC_KEY_ID"
+            missing=1
+          fi
+          if [[ -z "${ASC_ISSUER_ID:-}" ]]; then
+            echo "::error::Missing required testflight environment secret: ASC_ISSUER_ID"
+            missing=1
+          fi
+          if [[ -z "${ASC_PRIVATE_KEY:-}" ]]; then
+            echo "::error::Missing required testflight environment secret: ASC_PRIVATE_KEY"
+            missing=1
+          fi
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Print Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Restore clean checkout for release validation
+        # The upload script validates the checkout before generating the project again.
+        run: git restore --worktree -- Leafy.xcodeproj/project.pbxproj
+
+      - name: Prepare App Store Connect private key
+        shell: bash
+        env:
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          key_path="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_PRIVATE_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Upload internal TestFlight build
+        run: ./scripts/upload-testflight.sh
+
+      - name: Remove App Store Connect private key
+        if: always()
+        shell: bash
+        run: rm -f "${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID}.p8"
