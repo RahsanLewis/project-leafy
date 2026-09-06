@@ -234,11 +234,9 @@ struct OnboardingView: View {
 
     private var birthdayPicker: some View {
         @Bindable var draft = app.draft
-        let calendar = Calendar.current
-        let latest = calendar.date(byAdding: .year, value: -18, to: .now) ?? .now
-        let earliest = calendar.date(byAdding: .year, value: -120, to: .now) ?? .distantPast
+        let allowableRange = BirthDatePickerAdapter.allowableRange()
         return VStack(spacing: LeafySpacing.medium) {
-            DatePicker("Date of birth", selection: draft.birthDatePickerSelection, in: earliest...latest, displayedComponents: .date)
+            DatePicker("Date of birth", selection: draft.birthDatePickerSelection, in: allowableRange, displayedComponents: .date)
                 .datePickerStyle(.wheel)
                 .labelsHidden()
             Text("Age \(age(for: draft.birthDate))")

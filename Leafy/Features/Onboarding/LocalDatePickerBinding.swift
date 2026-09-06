@@ -1,5 +1,18 @@
 import SwiftUI
 
+enum BirthDatePickerAdapter {
+    /// UTC civil eligibility bounds converted to local-noon DatePicker adapters.
+    static func allowableRange(
+        now: Date = .now,
+        timeZone: TimeZone = .current
+    ) -> ClosedRange<Date> {
+        let utc = TimeZone(secondsFromGMT: 0)!
+        let earliest = LocalDate.yearsBeforeNow(120, now: now, timeZone: utc)
+        let latest = LocalDate.yearsBeforeNow(18, now: now, timeZone: utc)
+        return earliest.dateForPicker(timeZone: timeZone)...latest.dateForPicker(timeZone: timeZone)
+    }
+}
+
 extension Binding where Value == LocalDate {
     /// DatePicker adapter. Converts selected local civil Y/M/D at the view boundary.
     var datePickerSelection: Binding<Date> {

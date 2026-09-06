@@ -285,8 +285,7 @@ struct PlanEditView: View {
         }
     }
     private var birthDateRange: ClosedRange<Date> {
-        let calendar = Calendar.current
-        return (calendar.date(byAdding: .year, value: -120, to: .now) ?? .distantPast)...(calendar.date(byAdding: .year, value: -18, to: .now) ?? .now)
+        BirthDatePickerAdapter.allowableRange()
     }
     private func weightText(_ kilograms: Double) -> String {
         edited?.unitSystem == .metric ? String(format: "%.1f kg", kilograms) : String(format: "%.1f lb", kilograms * 2.20462)

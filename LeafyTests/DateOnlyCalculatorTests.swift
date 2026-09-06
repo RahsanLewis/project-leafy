@@ -147,6 +147,30 @@ final class DateOnlyCalculatorTests: XCTestCase {
         XCTAssertEqual(Set(displayedAges), [18])
     }
 
+    func testBirthDatePickerCutoffUsesUTCCivilTodayInUTCPlusZone() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-07-28T12:00:00Z")!
+        let localToday = try XCTUnwrap(LocalDate(localCivilFrom: now, timeZone: kiritimati))
+        XCTAssertEqual(localToday, try civil(2026, 7, 29))
+
+        try assertPickerCutoff(
+            now: now,
+            timeZone: kiritimati,
+            expectedLatestBirthDate: civil(2008, 7, 28)
+        )
+    }
+
+    func testBirthDatePickerCutoffUsesUTCCivilTodayInUTCMinusZone() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-07-29T00:00:00Z")!
+        let localToday = try XCTUnwrap(LocalDate(localCivilFrom: now, timeZone: honolulu))
+        XCTAssertEqual(localToday, try civil(2026, 7, 28))
+
+        try assertPickerCutoff(
+            now: now,
+            timeZone: honolulu,
+            expectedLatestBirthDate: civil(2008, 7, 29)
+        )
+    }
+
     private func assertCalculate(
         birth: LocalDate,
         now: Date,
@@ -168,6 +192,24 @@ final class DateOnlyCalculatorTests: XCTestCase {
             XCTAssertEqual(error as? PlanValidationError, want, "\(birth) @ \(now) in \(zone.identifier)")
         default:
             XCTFail("outcome mismatch for \(birth) @ \(now) in \(zone.identifier): \(result)")
+        }
+    }
+
+    private func assertPickerCutoff(
+        now: Date,
+        timeZone: TimeZone,
+        expectedLatestBirthDate: LocalDate
+    ) throws {
+        let range = BirthDatePickerAdapter.allowableRange(now: now, timeZone: timeZone)
+        let pickerLatest = try XCTUnwrap(LocalDate(localCivilFrom: range.upperBound, timeZone: timeZone))
+        XCTAssertEqual(pickerLatest, expectedLatestBirthDate)
+        XCTAssertTrue(range.contains(expectedLatestBirthDate.dateForPicker(timeZone: timeZone)))
+        XCTAssertNoThrow(try NutritionCalculator.calculate(input: maintainFemale(expectedLatestBirthDate), now: now))
+
+        let underageBirthDate = expectedLatestBirthDate.adding(days: 1)
+        XCTAssertFalse(range.contains(underageBirthDate.dateForPicker(timeZone: timeZone)))
+        XCTAssertThrowsError(try NutritionCalculator.calculate(input: maintainFemale(underageBirthDate), now: now)) {
+            XCTAssertEqual($0 as? PlanValidationError, .invalidAge)
         }
     }
 
