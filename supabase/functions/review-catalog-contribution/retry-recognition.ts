@@ -8,6 +8,12 @@ type Reviewer =
 export const RETRY_CONFLICT_MESSAGE =
   "This submission is already being reviewed.";
 
+const RETRYABLE_CONTRIBUTION_STATUSES = [
+  "draft",
+  "needs_review",
+  "pending_review",
+];
+
 export class CatalogRetryConflictError extends Error {
   readonly status = 409 as const;
 
@@ -21,6 +27,31 @@ export function isCatalogRetryConflict(
   error: unknown,
 ): error is CatalogRetryConflictError {
   return error instanceof CatalogRetryConflictError;
+}
+
+export class CatalogRetryRecoveryError extends Error {
+  readonly originalError: unknown;
+  readonly recoveryErrors: readonly Error[];
+
+  constructor(originalError: unknown, recoveryErrors: Error[]) {
+    const originalMessage = originalError instanceof Error
+      ? originalError.message
+      : String(originalError);
+    super(
+      `Recognition retry failed (${originalMessage}) and recovery did not complete: ${
+        recoveryErrors.map((error) => error.message).join("; ")
+      }`,
+    );
+    this.name = "CatalogRetryRecoveryError";
+    this.originalError = originalError;
+    this.recoveryErrors = recoveryErrors;
+  }
+}
+
+function recoveryError(message: string, error?: unknown) {
+  if (error instanceof Error) return new Error(`${message}: ${error.message}`);
+  if (error != null) return new Error(`${message}: ${String(error)}`);
+  return new Error(message);
 }
 
 export async function retryRecognition(
@@ -47,19 +78,21 @@ export async function retryRecognition(
   }
 
   const now = new Date().toISOString();
-  // Claim the contribution first. The revision guard must fail closed before
-  // any job row is written, otherwise a concurrent edit leaves a queued job
-  // with no worker and no status event.
+  // Claim the contribution first. The revision and pre-processing status
+  // guards must fail closed before any job row is written, otherwise a
+  // concurrent edit or retry can leave a duplicate queued job.
   const claim = await admin.from("catalog_contributions").update({
     status: "processing",
     review_reason: null,
     updated_at: now,
-  }).eq("id", contribution.id).eq("revision", contribution.revision).select(
-    "*",
-  ).maybeSingle();
+  }).eq("id", contribution.id).eq("revision", contribution.revision).in(
+    "status",
+    RETRYABLE_CONTRIBUTION_STATUSES,
+  ).select("*").maybeSingle();
   if (claim.error) throw claim.error;
   if (!claim.data) throw new CatalogRetryConflictError();
 
+  let queuedJobWritten = false;
   try {
     const job = await admin.from("catalog_contribution_jobs").upsert({
       contribution_id: contribution.id,
@@ -73,6 +106,7 @@ export async function retryRecognition(
       updated_at: now,
     }, { onConflict: "contribution_id" });
     if (job.error) throw job.error;
+    queuedJobWritten = true;
 
     await options.addEvent(
       admin,
@@ -83,11 +117,88 @@ export async function retryRecognition(
       reviewer,
     );
   } catch (error) {
-    await admin.from("catalog_contributions").update({
-      status: contribution.status,
-      review_reason: contribution.review_reason,
-      updated_at: new Date().toISOString(),
-    }).eq("id", contribution.id).eq("status", "processing");
+    const recoveryErrors: Error[] = [];
+    const recoveredAt = new Date().toISOString();
+
+    // A queued job is runnable independently of this request. If the status
+    // event failed, neutralize that job before restoring the contribution so
+    // another request cannot pick up work that was never fully recorded.
+    if (queuedJobWritten) {
+      try {
+        const jobRecovery = await admin.from("catalog_contribution_jobs")
+          .update({
+            status: "failed",
+            last_error:
+              "Retry setup failed before its status event was recorded.",
+            completed_at: recoveredAt,
+            updated_at: recoveredAt,
+          })
+          .eq("contribution_id", contribution.id)
+          .eq("status", "queued")
+          .select("id")
+          .maybeSingle();
+        if (jobRecovery.error) {
+          recoveryErrors.push(
+            recoveryError(
+              "Could not neutralize the queued recognition job",
+              jobRecovery.error,
+            ),
+          );
+        } else if (!jobRecovery.data) {
+          recoveryErrors.push(
+            recoveryError(
+              "Could not neutralize the queued recognition job because it was not found",
+            ),
+          );
+        }
+      } catch (jobRecoveryError) {
+        recoveryErrors.push(
+          recoveryError(
+            "Could not neutralize the queued recognition job",
+            jobRecoveryError,
+          ),
+        );
+      }
+    }
+
+    try {
+      const contributionRecovery = await admin.from("catalog_contributions")
+        .update({
+          status: contribution.status,
+          review_reason: contribution.review_reason,
+          updated_at: recoveredAt,
+        })
+        .eq("id", contribution.id)
+        .eq("revision", contribution.revision)
+        .eq("status", "processing")
+        .select("id")
+        .maybeSingle();
+      if (contributionRecovery.error) {
+        recoveryErrors.push(
+          recoveryError(
+            "Could not restore the claimed catalog contribution",
+            contributionRecovery.error,
+          ),
+        );
+      } else if (!contributionRecovery.data) {
+        recoveryErrors.push(
+          recoveryError(
+            "Could not restore the claimed catalog contribution because it no longer matched the claim",
+          ),
+        );
+      }
+    } catch (contributionRecoveryError) {
+      recoveryErrors.push(
+        recoveryError(
+          "Could not restore the claimed catalog contribution",
+          contributionRecoveryError,
+        ),
+      );
+    }
+
+    if (recoveryErrors.length > 0) {
+      throw new CatalogRetryRecoveryError(error, recoveryErrors);
+    }
     throw error;
   }
 

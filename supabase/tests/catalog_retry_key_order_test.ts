@@ -1,6 +1,7 @@
-import { assertEquals, assert } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   CatalogRetryConflictError,
+  CatalogRetryRecoveryError,
   isCatalogRetryConflict,
   retryRecognition,
 } from "../functions/review-catalog-contribution/retry-recognition.ts";
@@ -19,22 +20,32 @@ const reviewer = {
 };
 const catalogReviewKey = "review-key-configured";
 const functionUrl = "https://internal.example";
+const retryableContributionStatuses = [
+  "draft",
+  "needs_review",
+  "pending_review",
+];
 
 type AdminCall = {
-  op: "contributions.update" | "jobs.upsert";
+  op: "contributions.update" | "jobs.update" | "jobs.upsert";
   table: string;
   payload: Record<string, unknown>;
   opts?: Record<string, unknown>;
   filters?: Array<[string, unknown]>;
 };
 
+type QueryResult = { data: unknown; error: unknown };
+
 function recordingAdmin(options: {
-  updateResult?: { data: unknown; error: unknown };
-  jobResult?: { data: unknown; error: unknown };
+  updateResult?: QueryResult;
+  rollbackResult?: QueryResult;
+  jobResult?: QueryResult;
+  jobRecoveryResult?: QueryResult;
   timeline?: string[];
 } = {}) {
   const calls: AdminCall[] = [];
   const timeline = options.timeline ?? [];
+  const state: { jobStatus: string | null } = { jobStatus: null };
   const updatedRow = {
     ...contribution,
     status: "processing",
@@ -43,43 +54,56 @@ function recordingAdmin(options: {
   const admin = {
     from(table: string) {
       return {
-        upsert(payload: Record<string, unknown>, opts?: Record<string, unknown>) {
+        upsert(
+          payload: Record<string, unknown>,
+          opts?: Record<string, unknown>,
+        ) {
           calls.push({ op: "jobs.upsert", table, payload, opts });
           timeline.push("jobs.upsert");
-          return Promise.resolve(
-            options.jobResult ?? { data: payload, error: null },
-          );
+          const result = options.jobResult ?? { data: payload, error: null };
+          if (!result.error) state.jobStatus = String(payload.status);
+          return Promise.resolve(result);
         },
         update(payload: Record<string, unknown>) {
+          const op = table === "catalog_contribution_jobs"
+            ? "jobs.update"
+            : "contributions.update";
           const filters: Array<[string, unknown]> = [];
           calls.push({
-            op: "contributions.update",
+            op,
             table,
             payload,
             filters,
           });
-          timeline.push("contributions.update");
+          timeline.push(op);
+          const result = op === "jobs.update"
+            ? options.jobRecoveryResult ?? {
+              data: { id: "job-1" },
+              error: null,
+            }
+            : payload.status === "processing"
+            ? options.updateResult ?? { data: updatedRow, error: null }
+            : options.rollbackResult ?? {
+              data: { id: contribution.id },
+              error: null,
+            };
           const builder = {
             eq(column: string, value: unknown) {
               filters.push([column, value]);
+              return builder;
+            },
+            in(column: string, values: unknown[]) {
+              filters.push([column, values]);
               return builder;
             },
             select(_columns?: string) {
               return builder;
             },
             maybeSingle() {
-              return Promise.resolve(
-                options.updateResult ?? { data: updatedRow, error: null },
-              );
-            },
-            then(
-              onFulfilled?: (value: { data: null; error: null }) => unknown,
-              onRejected?: (reason: unknown) => unknown,
-            ) {
-              return Promise.resolve({ data: null, error: null }).then(
-                onFulfilled,
-                onRejected,
-              );
+              if (op === "jobs.update" && !result.error && result.data) {
+                state.jobStatus = String(payload.status);
+              }
+              return Promise.resolve(result);
             },
           };
           return builder;
@@ -87,7 +111,61 @@ function recordingAdmin(options: {
       };
     },
   };
-  return { admin, calls, updatedRow, timeline };
+  return { admin, calls, state, updatedRow, timeline };
+}
+
+function concurrentClaimAdmin() {
+  const state = {
+    contributionStatus: String(contribution.status),
+    jobUpserts: 0,
+  };
+  const admin = {
+    from(table: string) {
+      return {
+        update(payload: Record<string, unknown>) {
+          const equalityFilters = new Map<string, unknown>();
+          const inFilters = new Map<string, unknown[]>();
+          const builder = {
+            eq(column: string, value: unknown) {
+              equalityFilters.set(column, value);
+              return builder;
+            },
+            in(column: string, values: unknown[]) {
+              inFilters.set(column, values);
+              return builder;
+            },
+            select(_columns?: string) {
+              return builder;
+            },
+            async maybeSingle() {
+              // Let both retry calls reach the guarded update before resolving
+              // either one, matching two requests racing on the same snapshot.
+              await Promise.resolve();
+              assertEquals(table, "catalog_contributions");
+              const matches = equalityFilters.get("id") === contribution.id &&
+                equalityFilters.get("revision") === contribution.revision &&
+                (inFilters.get("status") ?? []).includes(
+                  state.contributionStatus,
+                );
+              if (!matches) return { data: null, error: null };
+              state.contributionStatus = String(payload.status);
+              return {
+                data: { ...contribution, status: state.contributionStatus },
+                error: null,
+              };
+            },
+          };
+          return builder;
+        },
+        upsert(payload: Record<string, unknown>) {
+          assertEquals(table, "catalog_contribution_jobs");
+          state.jobUpserts += 1;
+          return Promise.resolve({ data: payload, error: null });
+        },
+      };
+    },
+  };
+  return { admin, state };
 }
 
 Deno.test(
@@ -195,6 +273,7 @@ Deno.test(
     assertEquals(statusUpdate.filters, [
       ["id", contribution.id],
       ["revision", contribution.revision],
+      ["status", retryableContributionStatuses],
     ]);
 
     const jobUpsert = calls[1];
@@ -279,6 +358,7 @@ Deno.test(
     assertEquals(calls[0].filters, [
       ["id", contribution.id],
       ["revision", contribution.revision],
+      ["status", retryableContributionStatuses],
     ]);
     assertEquals(
       calls.some((call) => call.op === "jobs.upsert"),
@@ -287,6 +367,49 @@ Deno.test(
     assertEquals(addEventCalls.length, 0);
     assertEquals(waitUntilCalls, 0);
     assertEquals(fetchCalls, 0);
+  },
+);
+
+Deno.test(
+  "LEAFY-022: concurrent retries of one revision allow only one processing claim",
+  async () => {
+    const { admin, state } = concurrentClaimAdmin();
+    const handoffs: Promise<unknown>[] = [];
+    let addEventCalls = 0;
+    let fetchCalls = 0;
+
+    const options = {
+      catalogReviewKeyValue: catalogReviewKey,
+      addEvent: async () => {
+        addEventCalls += 1;
+      },
+      waitUntil: (promise: Promise<unknown>) => {
+        handoffs.push(promise);
+      },
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return new Response("{}", { status: 200 });
+      },
+    };
+    const results = await Promise.allSettled([
+      retryRecognition(admin, contribution, reviewer, functionUrl, options),
+      retryRecognition(admin, contribution, reviewer, functionUrl, options),
+    ]);
+    await Promise.all(handoffs);
+
+    assertEquals(
+      results.map((result) => result.status).sort(),
+      ["fulfilled", "rejected"],
+    );
+    const rejected = results.find((result) => result.status === "rejected");
+    assert(rejected?.status === "rejected");
+    assert(rejected.reason instanceof CatalogRetryConflictError);
+    assertEquals(rejected.reason.status, 409);
+    assertEquals(state.contributionStatus, "processing");
+    assertEquals(state.jobUpserts, 1);
+    assertEquals(addEventCalls, 1);
+    assertEquals(fetchCalls, 1);
+    assertEquals(handoffs.length, 1);
   },
 );
 
@@ -331,10 +454,60 @@ Deno.test(
 );
 
 Deno.test(
-  "LEAFY-022: event failure after claim restores status and review_reason",
+  "LEAFY-022: rollback database and no-row failures surface recovery errors",
+  async () => {
+    const cases: Array<{
+      name: string;
+      rollbackResult: QueryResult;
+      expectedMessage: string;
+    }> = [
+      {
+        name: "database error",
+        rollbackResult: {
+          data: null,
+          error: new Error("rollback update failed"),
+        },
+        expectedMessage: "rollback update failed",
+      },
+      {
+        name: "no restored row",
+        rollbackResult: { data: null, error: null },
+        expectedMessage: "no longer matched the claim",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const jobError = new Error(`job upsert failed: ${testCase.name}`);
+      const { admin } = recordingAdmin({
+        jobResult: { data: null, error: jobError },
+        rollbackResult: testCase.rollbackResult,
+      });
+
+      let error: unknown;
+      try {
+        await retryRecognition(admin, contribution, reviewer, functionUrl, {
+          catalogReviewKeyValue: catalogReviewKey,
+          addEvent: async () => {},
+          waitUntil: () => {},
+          fetchImpl: async () => new Response("{}", { status: 200 }),
+        });
+      } catch (caught) {
+        error = caught;
+      }
+
+      assert(error instanceof CatalogRetryRecoveryError);
+      assertEquals(error.originalError, jobError);
+      assertEquals(error.recoveryErrors.length, 1);
+      assertStringIncludes(error.message, testCase.expectedMessage);
+    }
+  },
+);
+
+Deno.test(
+  "LEAFY-022: event failure neutralizes the queued job before restoring the contribution",
   async () => {
     const eventError = new Error("event insert failed");
-    const { admin, calls } = recordingAdmin();
+    const { admin, calls, state } = recordingAdmin();
     let addEventCalls = 0;
     let waitUntilCalls = 0;
     let fetchCalls = 0;
@@ -360,9 +533,11 @@ Deno.test(
     }
 
     assertEquals(error, eventError);
-    assertEquals(calls.length, 3);
+    assertEquals(calls.length, 4);
     assertEquals(calls[1].op, "jobs.upsert");
-    assertRevertedContribution(calls[2]);
+    assertEquals(state.jobStatus, "failed");
+    assertNeutralizedJob(calls[2]);
+    assertRevertedContribution(calls[3]);
     assertEquals(addEventCalls, 1);
     assertEquals(waitUntilCalls, 0);
     assertEquals(fetchCalls, 0);
@@ -445,6 +620,22 @@ function assertRevertedContribution(call: AdminCall) {
   assertEquals(call.payload.review_reason, contribution.review_reason);
   assertEquals(call.filters, [
     ["id", contribution.id],
+    ["revision", contribution.revision],
     ["status", "processing"],
+  ]);
+}
+
+function assertNeutralizedJob(call: AdminCall) {
+  assertEquals(call.op, "jobs.update");
+  assertEquals(call.table, "catalog_contribution_jobs");
+  assertEquals(call.payload.status, "failed");
+  assertEquals(
+    ["queued", "retry_wait"].includes(String(call.payload.status)),
+    false,
+  );
+  assertEquals(call.payload.completed_at == null, false);
+  assertEquals(call.filters, [
+    ["contribution_id", contribution.id],
+    ["status", "queued"],
   ]);
 }
