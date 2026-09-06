@@ -330,7 +330,12 @@ export async function deleteAuthenticatedAccount(input: {
     paths = await collectPathsToPurge(input.admin, input.storage, userId)
     await purgeOwnedStorage(input.storage, paths)
   } catch (error) {
-    if (error instanceof DeleteAccountError) throw error
+    if (error instanceof DeleteAccountError) {
+      throw new DeleteAccountError(error.message, error.status, error.code, {
+        ...error.details,
+        apple_identity: appleIdentity,
+      })
+    }
     throw new DeleteAccountError('Unable to delete account media.', 500, 'storage_purge_failed', {
       apple_identity: appleIdentity,
       apple_revoked: appleRevoked,

@@ -330,7 +330,32 @@ Deno.test('D-05: storage purge failure does not delete the auth user', async () 
     DeleteAccountError,
   )
   assertEquals(error.code, 'storage_purge_failed')
+  assertEquals(error.details.apple_identity, false)
   assertEquals(deleted, [])
+})
+
+Deno.test('LEAFY-026: storage list failure preserves the authenticated Apple identity', async () => {
+  const error = await assertRejects(
+    () =>
+      deleteAuthenticatedAccount({
+        user: user({ identities: [{ provider: 'apple' }] }),
+        body: { apple_authorization_code: 'one-time-code' },
+        admin: adminGateway({}),
+        storage: {
+          async list() {
+            return { data: null, error: { message: 'list failed', statusCode: 500 } }
+          },
+          async remove() {
+            return { error: null }
+          },
+        },
+        appleConfig: { clientID: 'id', clientSecret: 'secret' },
+      }),
+    DeleteAccountError,
+  )
+
+  assertEquals(error.code, 'storage_purge_failed')
+  assertEquals(error.details.apple_identity, true)
 })
 
 Deno.test('D-011: storage purge failure prevents Apple revoke and leaves the auth user alive', async () => {
@@ -359,6 +384,7 @@ Deno.test('D-011: storage purge failure prevents Apple revoke and leaves the aut
     DeleteAccountError,
   )
   assertEquals(error.code, 'storage_purge_failed')
+  assertEquals(error.details.apple_identity, true)
   assertEquals(deleted, [])
   assertEquals(revokeCalls, 0)
 
@@ -372,6 +398,8 @@ Deno.test('D-011: storage purge failure prevents Apple revoke and leaves the aut
     apple_revoke_error: null,
     errors: ['Unable to delete account'],
   })
+  assertEquals(typeof payload.apple_identity, 'boolean')
+  assertEquals(payload.apple_identity, true)
   assertEquals(payload.apple_revoked, false)
   assertEquals(payload.apple_revoke_error, null)
 })
@@ -444,6 +472,56 @@ Deno.test('failure payloads never claim Apple cleanup succeeded', () => {
   assertEquals(body.apple_revoked, false)
   assertEquals(body.apple_revoke_error, 'missing_authorization_code')
   assertEquals(body.error_code, 'apple_authorization_code_required')
+})
+
+Deno.test('LEAFY-026: request fallbacks expose identity only after authentication', () => {
+  const preAuthentication = failureBody(new Error('auth lookup failed'), {
+    ok: false,
+    error: 'Unable to delete account',
+    error_code: 'invalid_request',
+    apple_revoked: false,
+    apple_revoke_error: null,
+    errors: ['Unable to delete account'],
+  })
+  assertEquals(Object.hasOwn(preAuthentication, 'apple_identity'), false)
+
+  const authenticatedNonApple = failureBody(new Error('request failed'), {
+    ok: false,
+    error: 'Unable to delete account',
+    error_code: 'invalid_request',
+    apple_identity: false,
+    apple_revoked: false,
+    apple_revoke_error: null,
+    errors: ['Unable to delete account'],
+  })
+  assertEquals(authenticatedNonApple.apple_identity, false)
+
+  const authenticatedApple = failureBody(
+    new DeleteAccountError('Invalid request', 400, 'invalid_request'),
+    {
+      ok: false,
+      error: 'Unable to delete account',
+      error_code: 'invalid_request',
+      apple_identity: true,
+      apple_revoked: false,
+      apple_revoke_error: null,
+      errors: ['Unable to delete account'],
+    },
+  )
+  assertEquals(authenticatedApple.apple_identity, true)
+})
+
+Deno.test('LEAFY-026: request handler records identity only after auth succeeds', async () => {
+  const source = await Deno.readTextFile(
+    new URL('../functions/delete-account/index.ts', import.meta.url),
+  )
+  const authGuard = source.indexOf('if (authError || !user)')
+  const identityAssignment = source.indexOf('appleIdentity = hasAppleIdentity(user as AuthUserLike)')
+
+  assert(authGuard >= 0)
+  assert(identityAssignment > authGuard)
+  assertStringIncludes(source, 'let appleIdentity: boolean | undefined')
+  assertStringIncludes(source, 'if (appleIdentity !== undefined) fallback.apple_identity = appleIdentity')
 })
 
 Deno.test('delete-account source no longer skips soft-deleted nutrition media', async () => {
