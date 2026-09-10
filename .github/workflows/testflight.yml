@@ -7,8 +7,6 @@ on:
       - main
     paths:
       - 'Leafy/**'
-      - 'LeafyTests/**'
-      - 'LeafyUITests/**'
       - 'Config/**'
       - 'project.yml'
       - 'scripts/upload-testflight.sh'
