@@ -11,7 +11,10 @@ import { additiveRegistry } from "../_shared/pfqs/additive-registry.ts";
 import { PFQS_INGREDIENT_DATABASE_VERSION } from "../_shared/pfqs/types.ts";
 import type { PFQSNutrientCode, PFQSNutrients } from "../_shared/pfqs/types.ts";
 import { nutrientUnits as sharedNutrientUnits } from "../_shared/nutrients.ts";
-import { retryRecognition } from "./retry-recognition.ts";
+import {
+  isCatalogRetryConflict,
+  retryRecognition,
+} from "./retry-recognition.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -360,17 +363,24 @@ Deno.serve(async (request) => {
           error: "This submission can no longer be reprocessed.",
         }, 409);
       }
-      const retried = await retryRecognition(
-        admin,
-        contribution,
-        reviewer,
-        url,
-        {
-          addEvent,
-          waitUntil: (promise) => EdgeRuntime.waitUntil(promise),
-        },
-      );
-      return respond({ contribution: await withEvidence(admin, retried) }, 202);
+      try {
+        const retried = await retryRecognition(
+          admin,
+          contribution,
+          reviewer,
+          url,
+          {
+            addEvent,
+            waitUntil: (promise) => EdgeRuntime.waitUntil(promise),
+          },
+        );
+        return respond({ contribution: await withEvidence(admin, retried) }, 202);
+      } catch (error) {
+        if (isCatalogRetryConflict(error)) {
+          return respond({ error: error.message }, error.status);
+        }
+        throw error;
+      }
     }
     if (!reviewableStatuses.includes(String(contribution.status))) {
       return respond({ error: "This submission is not awaiting review." }, 409);
