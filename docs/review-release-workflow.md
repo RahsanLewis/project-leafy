@@ -12,7 +12,8 @@ Codex implementation
 → Codex fixes reviewer blockers
 → CI + review repeat until satisfactory
 → human merge to main
-→ manual TestFlight workflow in GitHub Actions
+→ automatic TestFlight workflow queued for qualifying changes
+→ human approval through the protected testflight environment
 → internal TestFlight distribution
 ```
 
@@ -28,7 +29,7 @@ Codex must not push directly to `main`, merge its own pull request, deploy produ
 
 A human merges the approved pull request to `main`. Reviewed code must be merged before a TestFlight release begins. Only after the pull request has passed its required checks, passed independent review, and been merged may the release process deploy production backend dependencies or distribute an internal TestFlight build. Backend release dependencies must be deployed in the required order before distributing a client that depends on them.
 
-TestFlight is currently launched manually from the **TestFlight** workflow in GitHub Actions. The workflow only releases commits from `main` and uses the protected `testflight` GitHub environment for its App Store Connect credentials. Automatic post-merge TestFlight runs will be enabled only after the manual workflow has completed successfully.
+Qualifying merges to `main` automatically queue the **TestFlight** workflow in GitHub Actions. Qualifying changes are limited to iOS app, test, configuration, project-generation, and release-script paths, so documentation-only and Supabase-only merges do not trigger a release. The protected `testflight` GitHub environment still requires human approval before the workflow can access its App Store Connect credentials and proceed with the upload. The manual `workflow_dispatch` trigger remains available for authorized releases from `main`.
 
 Promotion to external TestFlight testers remains a manual decision.
 
