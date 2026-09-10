@@ -5,10 +5,11 @@ enum NutritionCalculator {
 
     static func calculate(
         input: NutritionPlanInput,
-        now: Date = .now,
-        calendar: Calendar = .current
+        now: Date = .now
     ) throws -> NutritionPlan {
-        let age = calendar.dateComponents([.year], from: input.birthDate, to: now).year ?? 0
+        let today = LocalDate.utcCivilDate(from: now)
+        guard let birthDate = input.birthDate else { throw PlanValidationError.invalidAge }
+        let age = birthDate.ageInYears(asOf: today)
         guard (18...100).contains(age) else { throw PlanValidationError.invalidAge }
         guard (120...230).contains(input.heightCM) else { throw PlanValidationError.invalidHeight }
         guard (35...350).contains(input.currentWeightKG) else { throw PlanValidationError.invalidWeight }
@@ -48,10 +49,11 @@ enum NutritionCalculator {
         let carbohydrateCalories = Double(calorieTarget) - proteinCalories - fatCalories
 
         let weeklyChange = input.goal == .maintain ? 0 : abs(rawTDEE - Double(calorieTarget)) * 7 / 7_700
-        var estimatedDate: Date?
+        var estimatedDate: LocalDate?
         if input.goal != .maintain, let target = input.targetWeightKG, weeklyChange > 0 {
             let weeks = abs(target - input.currentWeightKG) / weeklyChange
-            estimatedDate = calendar.date(byAdding: .day, value: Int((weeks * 7).rounded(.up)), to: now)
+            let days = Int((weeks * 7).rounded(.up))
+            estimatedDate = today.adding(days: days)
         }
 
         return NutritionPlan(

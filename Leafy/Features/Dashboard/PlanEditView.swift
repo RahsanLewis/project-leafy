@@ -105,7 +105,7 @@ struct PlanEditView: View {
 
                 DisclosureGroup("Profile details", isExpanded: $showingProfile) {
                     VStack(alignment: .leading, spacing: LeafySpacing.large) {
-                        DatePicker("Date of birth", selection: binding(\.birthDate, fallback: input.birthDate), in: birthDateRange, displayedComponents: .date)
+                        DatePicker("Date of birth", selection: birthDatePickerBinding(fallback: input.birthDate).datePickerSelection, in: birthDateRange, displayedComponents: .date)
                         Picker("Calculation sex", selection: binding(\.calculationSex, fallback: input.calculationSex)) {
                             ForEach(CalculationSex.allCases) { Text($0.title).tag($0) }
                         }
@@ -224,6 +224,13 @@ struct PlanEditView: View {
         Binding(get: { edited?[keyPath: keyPath] ?? fallback }, set: { value in update { $0[keyPath: keyPath] = value } })
     }
 
+    private func birthDatePickerBinding(fallback: LocalDate?) -> Binding<LocalDate> {
+        Binding(
+            get: { edited?.birthDate ?? fallback ?? app.draft.birthDate },
+            set: { value in update { $0.birthDate = value } }
+        )
+    }
+
     private func targetWeightBinding(fallback: Double) -> Binding<Double> {
         Binding(
             get: { edited?.targetWeightKG ?? fallback },
@@ -278,8 +285,7 @@ struct PlanEditView: View {
         }
     }
     private var birthDateRange: ClosedRange<Date> {
-        let calendar = Calendar.current
-        return (calendar.date(byAdding: .year, value: -120, to: .now) ?? .distantPast)...(calendar.date(byAdding: .year, value: -18, to: .now) ?? .now)
+        BirthDatePickerAdapter.allowableRange()
     }
     private func weightText(_ kilograms: Double) -> String {
         edited?.unitSystem == .metric ? String(format: "%.1f kg", kilograms) : String(format: "%.1f lb", kilograms * 2.20462)
