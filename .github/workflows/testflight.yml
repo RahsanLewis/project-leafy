@@ -2,6 +2,15 @@ name: TestFlight
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Leafy/**'
+      - 'Config/**'
+      - 'project.yml'
+      - 'scripts/upload-testflight.sh'
+      - 'scripts/validate-release.sh'
 
 permissions:
   contents: read
