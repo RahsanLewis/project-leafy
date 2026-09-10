@@ -23,6 +23,8 @@ Codex works on a scoped feature branch, runs the relevant iOS and backend verifi
 
 The pull request must pass all required GitHub CI checks and receive an independent Grok review. Codex addresses reviewer blockers on the same feature branch, re-runs the appropriate verification, and pushes the fixes to the existing pull request. CI and independent review repeat until the change is satisfactory.
 
+The required PR gates are `backend-tests`, `ios-build`, `ios-unit-tests`, and an independent Grok review of the current PR head SHA. The repository-wide `ios-ui-tests` job is informational and non-blocking under LEAFY-027 while it uses `continue-on-error: true`. Codex stops monitoring after the required gates pass; it reports a running or failed `ios-ui-tests` job as informational without waiting for it or taking unrelated corrective action. Targeted UI verification may still be appropriate when a change specifically concerns UI-test behavior.
+
 Codex must not push directly to `main`, merge its own pull request, deploy production backend changes, or upload a TestFlight build.
 
 ## Merge and release
