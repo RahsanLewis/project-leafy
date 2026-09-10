@@ -12,7 +12,7 @@ Codex implementation
 → Codex fixes reviewer blockers
 → CI + review repeat until satisfactory
 → human merge to main
-→ Xcode Cloud build/archive
+→ manual TestFlight workflow in GitHub Actions
 → internal TestFlight distribution
 ```
 
@@ -26,10 +26,12 @@ Codex must not push directly to `main`, merge its own pull request, deploy produ
 
 ## Merge and release
 
-A human merges the approved pull request to `main`. Only after the pull request has passed its required checks, passed independent review, and been merged may the release process deploy production backend dependencies and use Xcode Cloud to build and archive the iOS app for internal TestFlight distribution. Backend release dependencies must be deployed in the required order before distributing a client that depends on them.
+A human merges the approved pull request to `main`. Reviewed code must be merged before a TestFlight release begins. Only after the pull request has passed its required checks, passed independent review, and been merged may the release process deploy production backend dependencies or distribute an internal TestFlight build. Backend release dependencies must be deployed in the required order before distributing a client that depends on them.
+
+TestFlight is currently launched manually from the **TestFlight** workflow in GitHub Actions. The workflow only releases commits from `main` and uses the protected `testflight` GitHub environment for its App Store Connect credentials. Automatic post-merge TestFlight runs will be enabled only after the manual workflow has completed successfully.
 
 Promotion to external TestFlight testers remains a manual decision.
 
 ## Manual TestFlight fallback
 
-`scripts/upload-testflight.sh` remains available as a manual fallback. Implementation agents must not invoke it automatically. Using the fallback is a separate, post-merge release action performed by an authorized human or release process.
+The GitHub Actions workflow delegates release validation, archive, export, and upload to `scripts/upload-testflight.sh`. The script also remains available as a manual fallback. Implementation agents must not invoke it automatically. Using the fallback is a separate, post-merge release action performed by an authorized human or release process.
