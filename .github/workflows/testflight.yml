@@ -50,8 +50,8 @@ jobs:
       - name: Print Xcode version
         run: xcodebuild -version
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install release CLI dependencies
+        run: brew install xcodegen ripgrep
 
       - name: Generate Xcode project
         run: xcodegen generate
