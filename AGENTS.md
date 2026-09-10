@@ -21,6 +21,21 @@ The implementation agent must not:
 
 Reviewer findings must be fixed on the same feature branch. After each fix, re-run the appropriate verification, push the new commit, and update the pull request.
 
+## Independent reviewer handoff
+
+When Codex is invoked from a pull request comment containing a Grok review:
+
+- Verify that the review's `Reviewed SHA` matches the current pull request head before changing code.
+- If the reviewed SHA does not match the current pull request head, do not implement the stale review.
+- Address all `BLOCKER` and `IMPORTANT` findings.
+- Treat `SUGGESTION` findings as non-blocking. Do not implement them unless the user requests them or a blocking fix requires them.
+- Keep fixes on the existing pull request branch.
+- Run the relevant verification after making fixes.
+- Push fixes to the same pull request.
+- Never merge the pull request.
+- Never deploy production changes.
+- Never upload a build to TestFlight.
+
 Production backend deployment and TestFlight distribution occur only after the pull request has passed the required automated checks, passed independent review, and been merged. External TestFlight tester promotion remains manual.
 
 Do not include unrelated user changes in a feature commit. If verification, Git push, or pull request creation fails, preserve recoverable state, stop at the failed gate, and report the blocker instead of claiming the work is review-ready.
