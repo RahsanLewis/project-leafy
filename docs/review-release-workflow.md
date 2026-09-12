@@ -7,10 +7,11 @@ The target workflow is:
 ```text
 Codex implementation
 → GitHub pull request
-→ required GitHub CI checks
+→ GitHub backend-tests
+→ Leafy Test Bot iOS build, unit tests, and UI smoke tests
 → independent Grok review
 → Codex fixes reviewer blockers
-→ CI + review repeat until satisfactory
+→ tests + review repeat for the current head until satisfactory
 → human merge to main
 → automatic TestFlight workflow queued for qualifying changes
 → human approval through the protected testflight environment
@@ -21,15 +22,22 @@ Codex implementation
 
 Codex works on a scoped feature branch, runs the relevant iOS and backend verification, and opens or updates a pull request against `main`. The pull request must identify release dependencies such as database migrations, Edge Function deployments, data backfills, configuration changes, and client/backend sequencing requirements.
 
-The pull request must pass all required GitHub CI checks and receive an independent Grok review. Codex addresses reviewer blockers on the same feature branch, re-runs the appropriate verification, and pushes the fixes to the existing pull request. CI and independent review repeat until the change is satisfactory.
+For the current pull request head SHA, GitHub `backend-tests` must pass, the
+`Leafy Test Bot / PR Tests` commit status must be successful, and the independent
+Grok review must report `REVIEW PASSED`. A new commit invalidates the previous
+test-bot result and Grok review. Codex addresses reviewer blockers on the same
+feature branch, re-runs the appropriate verification, and pushes the fixes to the
+existing pull request. Tests and independent review repeat until the change is
+satisfactory.
 
-## UI test CI
+## Test ownership
 
-Pull requests run `ios-ui-smoke-tests`, a focused UI gate covering eligibility onboarding, morning check-in through authenticated navigation, AI-assisted food logging, and weight entry. Codex waits for this smoke job along with `backend-tests`, `ios-build`, `ios-unit-tests`, and the current-head Grok review.
+GitHub Actions owns fast backend CI through `backend-tests`. The external Leafy
+Test Bot owns the iOS build, all `LeafyTests`, and the four-test pull-request UI
+smoke suite. The independent Grok reviewer owns code review, and a human still
+performs the merge. Codex does not wait for the removed GitHub-hosted iOS PR jobs.
 
 The complete `LeafyUITests` target runs in the separate `ios-ui-tests` job after pushes to `main` and through manual workflow dispatch. It preserves result bundles and extracted screenshots, but remains soft-fail under LEAFY-027 and does not hold normal pull requests open. A full-suite failure after merge must be surfaced and investigated as follow-up work; it does not retroactively require Codex to wait for the full suite on every PR.
-
-Once LEAFY-027 is closed and the selected smoke tests have demonstrated reliability, `ios-ui-smoke-tests` should be added to the repository's required status checks. The full suite should remain a post-merge or manually triggered signal.
 
 Codex must not push directly to `main`, merge its own pull request, deploy production backend changes, or upload a TestFlight build.
 
