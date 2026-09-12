@@ -23,6 +23,14 @@ Codex works on a scoped feature branch, runs the relevant iOS and backend verifi
 
 The pull request must pass all required GitHub CI checks and receive an independent Grok review. Codex addresses reviewer blockers on the same feature branch, re-runs the appropriate verification, and pushes the fixes to the existing pull request. CI and independent review repeat until the change is satisfactory.
 
+## UI test CI
+
+Pull requests run `ios-ui-smoke-tests`, a focused UI gate covering eligibility onboarding, morning check-in through authenticated navigation, AI-assisted food logging, and weight entry. Codex waits for this smoke job along with `backend-tests`, `ios-build`, `ios-unit-tests`, and the current-head Grok review.
+
+The complete `LeafyUITests` target runs in the separate `ios-ui-tests` job after pushes to `main` and through manual workflow dispatch. It preserves result bundles and extracted screenshots, but remains soft-fail under LEAFY-027 and does not hold normal pull requests open. A full-suite failure after merge must be surfaced and investigated as follow-up work; it does not retroactively require Codex to wait for the full suite on every PR.
+
+Once LEAFY-027 is closed and the selected smoke tests have demonstrated reliability, `ios-ui-smoke-tests` should be added to the repository's required status checks. The full suite should remain a post-merge or manually triggered signal.
+
 Codex must not push directly to `main`, merge its own pull request, deploy production backend changes, or upload a TestFlight build.
 
 ## Merge and release
