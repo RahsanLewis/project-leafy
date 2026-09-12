@@ -36,6 +36,28 @@ When Codex is invoked from a pull request comment containing a Grok review:
 - Never deploy production changes.
 - Never upload a build to TestFlight.
 
+## CI completion policy
+
+For normal pull requests, Codex treats these as the required completion gates for
+the current pull request head SHA:
+
+- GitHub `backend-tests` passed.
+- The `Leafy Test Bot / PR Tests` commit status is `success`.
+- The independent Grok review result is `REVIEW PASSED`.
+
+The Leafy Test Bot runs the iOS build, all `LeafyTests`, and the four-test PR UI
+smoke suite against the exact pull request head. GitHub Actions owns the fast
+backend test gate. Codex must not wait for the removed GitHub-hosted `ios-build`,
+`ios-unit-tests`, or `ios-ui-smoke-tests` jobs.
+
+A new commit invalidates both the previous `Leafy Test Bot / PR Tests` status and
+the previous Grok review. Codex must require new successful results that identify
+the current pull request head SHA.
+
+The complete `ios-ui-tests` suite runs separately after pushes to `main` and on manual workflow dispatch. While LEAFY-027 remains unresolved, the full suite keeps `continue-on-error: true` and is a non-blocking signal. Codex must not wait for it to finish as part of a normal PR task. If it is still running, report that it remains in progress and is non-blocking under LEAFY-027. If it fails, surface the failure for follow-up investigation without retroactively waiting on every pull request or attempting unrelated fixes.
+
+A task specifically concerning UI-test behavior may still run additional targeted UI verification as appropriate.
+
 Production backend deployment and TestFlight distribution occur only after the pull request has passed the required automated checks, passed independent review, and been merged. External TestFlight tester promotion remains manual.
 
 Do not include unrelated user changes in a feature commit. If verification, Git push, or pull request creation fails, preserve recoverable state, stop at the failed gate, and report the blocker instead of claiming the work is review-ready.
